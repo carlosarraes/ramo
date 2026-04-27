@@ -53,7 +53,7 @@ pub struct App {
     pub toast: Option<String>,
     pub tmux_panes: Vec<crate::tmux::TmuxPane>,
     pub tmux_cursor: usize,
-    pub tmux_last_target: Option<String>,
+    pub tmux_last_target: Option<(String, crate::tmux::PasteMode)>,
     pub tmux_pending_text: String,
     pub tmux_save_annotation_on_send: bool,
 }
@@ -676,9 +676,9 @@ impl App {
         self.tmux_save_annotation_on_send = save_annotation;
 
         // Try direct-send to remembered target
-        if let Some(target) = self.tmux_last_target.clone() {
+        if let Some((target, mode)) = self.tmux_last_target.clone() {
             if crate::tmux::pane_exists(&target) {
-                self.dispatch_tmux_send(&target);
+                self.dispatch_tmux_send(&target, mode);
                 return;
             }
             // Stale target: fall through to picker with a toast
@@ -710,16 +710,22 @@ impl App {
         self.mode = Mode::TmuxPanePick;
     }
 
-    fn dispatch_tmux_send(&mut self, target: &str) {
+    fn dispatch_tmux_send(&mut self, target: &str, mode: crate::tmux::PasteMode) {
         let text = std::mem::take(&mut self.tmux_pending_text);
         let save = std::mem::take(&mut self.tmux_save_annotation_on_send);
-        match crate::tmux::send_to_pane(target, &text) {
+        match crate::tmux::send_to_pane(target, &text, mode) {
             Ok(()) => {
-                self.tmux_last_target = Some(target.to_string());
-                self.toast = Some(format!("sent {} byte{} to {}",
+                self.tmux_last_target = Some((target.to_string(), mode));
+                let mode_label = match mode {
+                    crate::tmux::PasteMode::Bracketed => "bracketed",
+                    crate::tmux::PasteMode::Plain => "plain",
+                };
+                self.toast = Some(format!(
+                    "sent {} byte{} to {} ({})",
                     text.len(),
                     if text.len() == 1 { "" } else { "s" },
                     target,
+                    mode_label,
                 ));
                 if save {
                     self.submit_comment();
@@ -759,7 +765,8 @@ impl App {
             }
             KeyCode::Enter => {
                 if let Some(pane) = self.tmux_panes.get(self.tmux_cursor).cloned() {
-                    self.dispatch_tmux_send(&pane.id);
+                    let mode = crate::tmux::paste_mode_for_command(&pane.current_command);
+                    self.dispatch_tmux_send(&pane.id, mode);
                 }
             }
             _ => {}
