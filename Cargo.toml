@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = { version = "0.28", features = ["use-dev-tty"] }
 clap = { version = "4", features = ["derive"] }
 syntect = "5"
 dirs = "6"
