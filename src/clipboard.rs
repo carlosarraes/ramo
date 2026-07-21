@@ -32,9 +32,12 @@ fn b64_encode(bytes: &[u8]) -> String {
     out
 }
 
-pub fn copy_to_clipboard(text: &str) -> io::Result<()> {
+pub fn write_osc52(writer: &mut dyn Write, text: &str) -> io::Result<()> {
     let encoded = b64_encode(text.as_bytes());
-    let mut stdout = io::stdout().lock();
-    write!(stdout, "\x1b]52;c;{encoded}\x07")?;
-    stdout.flush()
+    write!(writer, "\x1b]52;c;{encoded}\x07")?;
+    writer.flush()
+}
+
+pub fn copy_to_clipboard(text: &str) -> io::Result<()> {
+    write_osc52(&mut io::stdout().lock(), text)
 }

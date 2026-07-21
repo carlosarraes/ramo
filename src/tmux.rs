@@ -1,15 +1,13 @@
-use std::io::{self, Write};
-use std::process::{Command, Stdio};
+use std::ffi::OsString;
+use std::io;
+
+use crate::process::command::{
+    CommandExecutor, CommandRequest, CommandResult, SystemCommandExecutor,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasteMode {
-    /// Bracketed paste (-p -r): target receives the whole buffer as a single literal
-    /// insertion. Suitable for apps that support bracketed paste (modern readline,
-    /// Claude Code, vim/nvim, fish/zsh/bash 4.4+). Multi-line preserved.
     Bracketed,
-    /// Plain paste-buffer (default): tmux converts each LF to CR (Enter). Each line
-    /// gets submitted separately by the target. Suitable for line-submit apps that
-    /// don't understand bracketed paste (e.g., pi). Multi-line collapses into N submits.
     Plain,
 }
 
@@ -20,28 +18,98 @@ pub struct TmuxPane {
     pub current_command: String,
 }
 
-pub fn in_tmux() -> bool {
-    std::env::var("TMUX").is_ok()
+pub struct TmuxClient<E> {
+    executor: E,
+    self_pane: Option<String>,
 }
 
-/// Decide which paste protocol to use for a target pane based on the program
-/// running there (`tmux #{pane_current_command}`).
-///
-/// Customize the match arms below for the agents/shells you actually use.
-/// A few notes from the codebase exploration:
-/// - `claude` — Claude Code CLI, supports bracketed paste, multi-line works great.
-/// - `pi` — pi-mono coding agent (sets `process.title = "pi"`). Treats every
-///   LF/CR as Enter, has no bracketed-paste support, and fans multi-line text out
-///   into separate submissions in plain mode.
-/// - `node` — generic Node CLI (the binary didn't override process.title). Could
-///   be Claude, pi, or anything else, so use a safe default.
-/// - Shells — bash/zsh/fish with readline 8+ support bracketed paste.
-/// - Editors — vim/nvim support bracketed paste in insert mode.
-///
-/// TODO: pick the default for unknown commands, and add any agents you use.
-pub fn paste_mode_for_command(cmd: &str) -> PasteMode {
-    match cmd {
-        "claude" => PasteMode::Bracketed,
+impl<E> TmuxClient<E> {
+    pub fn new(executor: E) -> Self {
+        Self::with_self_pane(executor, self_pane_id())
+    }
+
+    pub fn with_self_pane(executor: E, self_pane: Option<String>) -> Self {
+        Self {
+            executor,
+            self_pane,
+        }
+    }
+
+    pub fn into_executor(self) -> E {
+        self.executor
+    }
+}
+
+impl<E: CommandExecutor> TmuxClient<E> {
+    pub fn list_panes(&mut self) -> io::Result<Vec<TmuxPane>> {
+        let output = self.executor.execute(CommandRequest {
+            argv: strings(&[
+                "tmux",
+                "list-panes",
+                "-a",
+                "-F",
+                "#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}",
+            ]),
+            stdin: None,
+            inherit_stdio: false,
+        })?;
+        require_success("list panes", &output)?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        Ok(text
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(4, '\t');
+                let id = parts.next()?.to_owned();
+                let target = parts.next()?;
+                let window = parts.next()?;
+                let command = parts.next()?.to_owned();
+                Some(TmuxPane {
+                    label: format!("{id}  {target}  {window}  [{command}]"),
+                    id,
+                    current_command: command,
+                })
+            })
+            .filter(|pane| self.self_pane.as_deref() != Some(pane.id.as_str()))
+            .collect())
+    }
+
+    pub fn pane_exists(&mut self, id: &str) -> io::Result<bool> {
+        let output = self.executor.execute(CommandRequest {
+            argv: strings(&["tmux", "display-message", "-p", "-t", id, "#{pane_id}"]),
+            stdin: None,
+            inherit_stdio: false,
+        })?;
+        Ok(output.code == Some(0))
+    }
+
+    pub fn send_to_pane(&mut self, target: &str, text: &str, mode: PasteMode) -> io::Result<()> {
+        let load = self.executor.execute(CommandRequest {
+            argv: strings(&["tmux", "load-buffer", "-b", "pdiff-send", "-"]),
+            stdin: Some(text.as_bytes().to_vec()),
+            inherit_stdio: false,
+        })?;
+        require_success("load buffer", &load)?;
+
+        let mut argv = strings(&["tmux", "paste-buffer"]);
+        if mode == PasteMode::Bracketed {
+            argv.extend(strings(&["-p", "-r"]));
+        }
+        argv.extend(strings(&["-b", "pdiff-send", "-t", target, "-d"]));
+        let paste = self.executor.execute(CommandRequest {
+            argv,
+            stdin: None,
+            inherit_stdio: false,
+        })?;
+        require_success("paste buffer", &paste)
+    }
+}
+
+pub fn in_tmux() -> bool {
+    std::env::var_os("TMUX").is_some()
+}
+
+pub fn paste_mode_for_command(command: &str) -> PasteMode {
+    match command {
         "pi" => PasteMode::Plain,
         _ => PasteMode::Bracketed,
     }
@@ -52,92 +120,32 @@ pub fn self_pane_id() -> Option<String> {
 }
 
 pub fn list_panes() -> io::Result<Vec<TmuxPane>> {
-    let output = Command::new("tmux")
-        .args([
-            "list-panes",
-            "-a",
-            "-F",
-            "#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}",
-        ])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(io::Error::other(format!(
-            "tmux list-panes failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-
-    let self_id = self_pane_id();
-    let text = String::from_utf8_lossy(&output.stdout);
-    let panes = text
-        .lines()
-        .filter_map(|line| {
-            let mut parts = line.splitn(4, '\t');
-            let id = parts.next()?.to_string();
-            let target = parts.next()?;
-            let window = parts.next()?;
-            let cmd = parts.next()?;
-            Some(TmuxPane {
-                label: format!("{id}  {target}  {window}  [{cmd}]"),
-                id,
-                current_command: cmd.to_string(),
-            })
-        })
-        .filter(|p| self_id.as_deref() != Some(&p.id))
-        .collect();
-
-    Ok(panes)
+    TmuxClient::new(SystemCommandExecutor).list_panes()
 }
 
 pub fn pane_exists(id: &str) -> bool {
-    Command::new("tmux")
-        .args(["display-message", "-p", "-t", id, "#{pane_id}"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
+    TmuxClient::new(SystemCommandExecutor)
+        .pane_exists(id)
         .unwrap_or(false)
 }
 
 pub fn send_to_pane(target: &str, text: &str, mode: PasteMode) -> io::Result<()> {
-    let buffer_name = "pi-diff-send";
+    TmuxClient::new(SystemCommandExecutor).send_to_pane(target, text, mode)
+}
 
-    let mut child = Command::new("tmux")
-        .args(["load-buffer", "-b", buffer_name, "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    child
-        .stdin
-        .as_mut()
-        .ok_or_else(|| io::Error::other("failed to open tmux stdin"))?
-        .write_all(text.as_bytes())?;
-    let load = child.wait_with_output()?;
-    if !load.status.success() {
-        return Err(io::Error::other(format!(
-            "tmux load-buffer failed: {}",
-            String::from_utf8_lossy(&load.stderr)
-        )));
+fn strings(values: &[&str]) -> Vec<OsString> {
+    values.iter().map(OsString::from).collect()
+}
+
+fn require_success(operation: &str, result: &CommandResult) -> io::Result<()> {
+    if result.code == Some(0) {
+        return Ok(());
     }
-
-    let mut args: Vec<&str> = vec!["paste-buffer"];
-    if mode == PasteMode::Bracketed {
-        // -p: bracketed paste so the target treats the whole buffer as one insertion.
-        // -r: keep LF as LF instead of converting to CR.
-        args.push("-p");
-        args.push("-r");
-    }
-    args.extend(["-b", buffer_name, "-t", target, "-d"]);
-
-    let paste = Command::new("tmux").args(&args).output()?;
-    if !paste.status.success() {
-        return Err(io::Error::other(format!(
-            "tmux paste-buffer failed: {}",
-            String::from_utf8_lossy(&paste.stderr)
-        )));
-    }
-
-    Ok(())
+    let status = result
+        .code
+        .map_or_else(|| "signal".into(), |code| code.to_string());
+    Err(io::Error::other(format!(
+        "tmux {operation} failed with status {status}: {}",
+        String::from_utf8_lossy(&result.stderr).trim()
+    )))
 }
