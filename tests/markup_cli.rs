@@ -47,7 +47,9 @@ fn guide_is_embedded_and_all_stml_fences_layout_at_reference_width() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let guide = String::from_utf8(output.stdout).unwrap();
+    let guide = String::from_utf8(output.stdout)
+        .unwrap()
+        .replace("\r\n", "\n");
     assert!(guide.contains("ramo markup render"));
     assert!(!guide.contains("hunk markup render"));
     let mut rest = guide.as_str();

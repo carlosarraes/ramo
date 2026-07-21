@@ -11,6 +11,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 const DEADLINE: Duration = Duration::from_secs(5);
 
 struct PtyProcess {
+    _master: Box<dyn portable_pty::MasterPty + Send>,
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     writer: Option<Box<dyn Write + Send>>,
     chunks: Receiver<Vec<u8>>,
@@ -54,6 +55,7 @@ impl PtyProcess {
             }
         });
         Self {
+            _master: pair.master,
             child: Some(child),
             writer: Some(writer),
             chunks,

@@ -427,16 +427,8 @@ impl Layout {
         let fixed_total: usize = fixed.iter().flatten().sum();
         let flex_count = fixed.iter().filter(|value| value.is_none()).count();
         let flex_space = available.saturating_sub(fixed_total).max(flex_count);
-        let flex_width = if flex_count == 0 {
-            0
-        } else {
-            flex_space / flex_count
-        };
-        let mut remainder = if flex_count == 0 {
-            0
-        } else {
-            flex_space - flex_width * flex_count
-        };
+        let flex_width = flex_space.checked_div(flex_count).unwrap_or(0);
+        let mut remainder = flex_space.checked_rem(flex_count).unwrap_or(0);
         let widths: Vec<_> = fixed
             .into_iter()
             .map(|fixed| {

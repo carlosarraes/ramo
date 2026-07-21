@@ -18,17 +18,12 @@ pub const MAX_AGENT_ANNOTATIONS: usize = 10_000;
 const MAX_NOTE_TEXT_BYTES: usize = 64 * 1024;
 const MAX_NOTE_MARKUP_BYTES: usize = 64 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum AgentContextSource {
+    #[default]
     None,
     File(PathBuf),
     Snapshot(AgentContext),
-}
-
-impl Default for AgentContextSource {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 #[derive(Debug)]

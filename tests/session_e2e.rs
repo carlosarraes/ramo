@@ -13,6 +13,7 @@ const PATCH_ONE: &str = "diff --git a/src/one.rs b/src/one.rs\n--- a/src/one.rs\
 const PATCH_TWO: &str = "diff --git a/src/two.rs b/src/two.rs\n--- a/src/two.rs\n+++ b/src/two.rs\n@@ -1 +1 @@\n-old two\n+new two\n@@ -20 +20 @@\n-old twenty\n+new twenty\n";
 
 struct ReviewPty {
+    _master: Box<dyn portable_pty::MasterPty + Send>,
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     writer: Option<Box<dyn Write + Send>>,
 }
@@ -43,6 +44,7 @@ impl ReviewPty {
             while reader.read(&mut buffer).is_ok_and(|count| count > 0) {}
         });
         Self {
+            _master: pair.master,
             child: Some(child),
             writer: Some(writer),
         }
