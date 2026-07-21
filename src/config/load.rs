@@ -84,17 +84,20 @@ pub struct ConfigPaths {
 
 impl ConfigPaths {
     pub fn discover(cwd: &Path) -> Self {
-        let user = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .or_else(dirs::config_dir)
-            .map(|path| path.join("ramo/config.toml"));
+        let user = user_config_dir().map(|path| path.join("ramo/config.toml"));
         let repo = cwd.ancestors().find_map(|ancestor| {
             let candidate = ancestor.join(".ramo/config.toml");
             candidate.is_file().then_some(candidate)
         });
         Self { user, repo }
     }
+}
+
+pub(crate) fn user_config_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(dirs::config_dir)
 }
 
 #[derive(Debug, Clone)]

@@ -76,7 +76,7 @@ pub fn resolve_skill_refresh_notice(
 }
 
 fn state_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|path| path.join("ramo/state.json"))
+    crate::config::user_config_dir().map(|path| path.join("ramo/state.json"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
