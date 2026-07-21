@@ -1,5 +1,6 @@
 pub mod annotations;
 pub mod app;
+pub mod cli;
 pub mod clipboard;
 pub mod core;
 pub mod diff;
