@@ -4,8 +4,10 @@ use std::process::Command;
 
 use pdiff::config::ResolvedConfig;
 use pdiff::core::input::{CommonOptions, ReviewInput};
+use pdiff::diff::model::SourceSpec;
 use pdiff::input::{LoadContext, LoadError, LoadedReview, ReloadPlan, ReviewLoader};
 use pdiff::vcs::SystemCommandRunner;
+use pdiff::vcs::source::{SourceError, SourceReader};
 
 struct GitFixture {
     temp: tempfile::TempDir,
@@ -170,6 +172,14 @@ fn range_and_pathspec_review_only_the_requested_history() {
             .collect::<Vec<_>>(),
         ["src/lib.rs"]
     );
+    assert!(matches!(
+        loaded.changeset.files[0].old_source,
+        SourceSpec::GitBlob { .. }
+    ));
+    assert!(matches!(
+        loaded.changeset.files[0].new_source,
+        SourceSpec::GitBlob { .. }
+    ));
 }
 
 #[test]
@@ -267,4 +277,142 @@ fn invalid_repo_revision_and_empty_stash_are_actionable() {
         })
         .to_string();
     assert!(missing_stash.contains("git stash push"));
+}
+
+#[test]
+fn large_tracked_and_untracked_files_are_bounded_placeholders_with_stats() {
+    let repo = GitFixture::new();
+    repo.commit_file("tracked.txt", "base\n");
+    repo.write("tracked.txt", &"changed\n".repeat(20_001));
+    repo.write("untracked.txt", &"new\n".repeat(300_001));
+    let loaded = repo.load(working_tree_input());
+    let tracked = loaded
+        .changeset
+        .files
+        .iter()
+        .find(|file| file.path == "tracked.txt")
+        .unwrap();
+    let untracked = loaded
+        .changeset
+        .files
+        .iter()
+        .find(|file| file.path == "untracked.txt")
+        .unwrap();
+    assert!(tracked.is_too_large);
+    assert!(tracked.hunks.is_empty());
+    assert_eq!(tracked.stats.additions, 20_001);
+    assert_eq!(tracked.stats.deletions, 1);
+    assert!(untracked.is_too_large);
+    assert!(untracked.hunks.is_empty());
+    assert!(untracked.stats_truncated);
+}
+
+#[test]
+fn source_specs_match_worktree_staged_show_and_rename_endpoints() {
+    let repo = GitFixture::new();
+    repo.commit_file("old.txt", "base\n");
+    repo.write("old.txt", "worktree\n");
+    let worktree = repo.load(working_tree_input());
+    assert!(matches!(
+        worktree.changeset.files[0].old_source,
+        SourceSpec::GitIndex { .. }
+    ));
+    assert!(matches!(
+        worktree.changeset.files[0].new_source,
+        SourceSpec::File(_)
+    ));
+
+    repo.git(["add", "old.txt"]);
+    let staged = repo.load(ReviewInput::VcsDiff {
+        range: None,
+        staged: true,
+        pathspecs: vec![],
+        options: CommonOptions::default(),
+    });
+    assert!(matches!(
+        staged.changeset.files[0].old_source,
+        SourceSpec::GitBlob { .. }
+    ));
+    assert!(matches!(
+        staged.changeset.files[0].new_source,
+        SourceSpec::GitIndex { .. }
+    ));
+
+    repo.commit_all("update");
+    repo.git(["mv", "old.txt", "new.txt"]);
+    let renamed = repo.load(ReviewInput::VcsDiff {
+        range: None,
+        staged: true,
+        pathspecs: vec![],
+        options: CommonOptions::default(),
+    });
+    assert_eq!(
+        renamed.changeset.files[0].previous_path.as_deref(),
+        Some("old.txt")
+    );
+    assert!(matches!(
+        &renamed.changeset.files[0].old_source,
+        SourceSpec::GitBlob { path, .. } if path == "old.txt"
+    ));
+    assert!(matches!(
+        &renamed.changeset.files[0].new_source,
+        SourceSpec::GitIndex { path, .. } if path == "new.txt"
+    ));
+
+    let shown = repo.load(ReviewInput::Show {
+        reference: Some("HEAD".into()),
+        pathspecs: vec![],
+        options: CommonOptions::default(),
+    });
+    assert!(matches!(
+        shown.changeset.files[0].old_source,
+        SourceSpec::GitBlob { .. }
+    ));
+    assert!(matches!(
+        shown.changeset.files[0].new_source,
+        SourceSpec::GitBlob { .. }
+    ));
+}
+
+#[test]
+fn source_reader_bounds_text_and_returns_none_for_absent_sides() {
+    let repo = GitFixture::new();
+    repo.commit_file("file.txt", "12345\n");
+    let runner = SystemCommandRunner;
+    let mut reader = SourceReader::new(&runner, "git", 4);
+    assert_eq!(reader.read(&SourceSpec::None).unwrap(), None);
+    let spec = SourceSpec::GitBlob {
+        repo_root: repo.path().into(),
+        reference: "HEAD".into(),
+        path: "file.txt".into(),
+    };
+    assert!(matches!(
+        reader.read(&spec),
+        Err(SourceError::TooLarge { limit: 4 })
+    ));
+    let mut reader = SourceReader::new(&runner, "git", 1024);
+    let missing_parent = SourceSpec::GitBlob {
+        repo_root: repo.path().into(),
+        reference: "HEAD^".into(),
+        path: "file.txt".into(),
+    };
+    assert_eq!(reader.read(&missing_parent).unwrap(), None);
+}
+
+#[test]
+fn source_reader_reads_and_caches_the_git_index_side() {
+    let repo = GitFixture::new();
+    repo.commit_file("file.txt", "base\n");
+    repo.write("file.txt", "staged\n");
+    repo.git(["add", "file.txt"]);
+    let runner = SystemCommandRunner;
+    let mut reader = SourceReader::new(&runner, "git", 1024);
+    let spec = SourceSpec::GitIndex {
+        repo_root: repo.path().into(),
+        path: "file.txt".into(),
+    };
+    assert_eq!(reader.read(&spec).unwrap().as_deref(), Some("staged\n"));
+    repo.write("file.txt", "new index\n");
+    repo.git(["add", "file.txt"]);
+    assert_eq!(reader.read(&spec).unwrap().as_deref(), Some("staged\n"));
 }

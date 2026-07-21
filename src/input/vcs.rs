@@ -1,9 +1,10 @@
 use crate::core::changeset::Changeset;
 use crate::core::input::{ReviewInput, VcsId};
+use crate::diff::model::{FileChangeKind, SourceSpec};
 use crate::diff::parser::parse_unified_diff;
 use crate::vcs::detect::{VcsDetection, select_vcs};
 use crate::vcs::git::GitAdapter;
-use crate::vcs::{VcsAdapter, VcsError, VcsLoadContext};
+use crate::vcs::{SourceEndpoint, SourceEndpoints, VcsAdapter, VcsError, VcsLoadContext};
 
 use super::{LoadContext, LoadError, LoadedReview, ReloadPlan};
 
@@ -33,9 +34,16 @@ pub(super) fn load(
             .into());
         }
     };
-    let normalized = super::patch::normalize_patch_text(&patch.patch_text);
-    let mut files = parse_unified_diff(&normalized);
+    let mut files = if patch.vcs == VcsId::Git {
+        crate::vcs::git::parse_git_patch(&patch.patch_text)
+    } else {
+        let normalized = super::patch::normalize_patch_text(&patch.patch_text);
+        parse_unified_diff(&normalized)
+    };
     files.extend(patch.extra_files);
+    if let Some(endpoints) = &patch.source_endpoints {
+        apply_source_endpoints(&mut files, endpoints);
+    }
     Ok(LoadedReview {
         changeset: Changeset::new(patch.source_label, patch.title, files),
         reload_plan: ReloadPlan::Vcs {
@@ -43,4 +51,39 @@ pub(super) fn load(
             repo_root: patch.repo_root,
         },
     })
+}
+
+fn apply_source_endpoints(files: &mut [crate::diff::model::DiffFile], endpoints: &SourceEndpoints) {
+    for file in files.iter_mut().filter(|file| !file.is_untracked) {
+        let old_path = file.previous_path.as_deref().unwrap_or(&file.path);
+        file.old_source = if file.change_kind == FileChangeKind::Added {
+            SourceSpec::None
+        } else {
+            source_spec(&endpoints.old, old_path)
+        };
+        file.new_source = if file.change_kind == FileChangeKind::Deleted {
+            SourceSpec::None
+        } else {
+            source_spec(&endpoints.new, &file.path)
+        };
+    }
+}
+
+fn source_spec(endpoint: &SourceEndpoint, path: &str) -> SourceSpec {
+    match endpoint {
+        SourceEndpoint::None => SourceSpec::None,
+        SourceEndpoint::Worktree { repo_root } => SourceSpec::File(repo_root.join(path)),
+        SourceEndpoint::GitBlob {
+            repo_root,
+            reference,
+        } => SourceSpec::GitBlob {
+            repo_root: repo_root.clone(),
+            reference: reference.clone(),
+            path: path.into(),
+        },
+        SourceEndpoint::GitIndex { repo_root } => SourceSpec::GitIndex {
+            repo_root: repo_root.clone(),
+            path: path.into(),
+        },
+    }
 }

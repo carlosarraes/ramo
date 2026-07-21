@@ -5,12 +5,18 @@ use similar::TextDiff;
 
 use crate::core::changeset::stable_file_id;
 use crate::core::input::{ReviewInput, VcsId};
-use crate::diff::model::{DiffFile, FileChangeKind};
+use crate::diff::model::{
+    DiffFile, FileChangeKind, FileStats, LineType, MovedLineKind, SourceSpec,
+};
 use crate::diff::parser::parse_unified_diff;
 
 use super::command::CommandSpec;
 use super::detect;
-use super::{VcsAdapter, VcsError, VcsLoadContext, VcsPatch};
+use super::{SourceEndpoint, SourceEndpoints, VcsAdapter, VcsError, VcsLoadContext, VcsPatch};
+
+const LARGE_DIFF_FILE_MAX_BYTES: u64 = 1_000_000;
+const LARGE_DIFF_FILE_MAX_LINES: usize = 20_000;
+const LARGE_DIFF_FILE_SNIFF_BYTES: usize = 256 * 1024;
 
 const PREFIX_ARGS: &[&str] = &[
     "-c",
@@ -44,6 +50,80 @@ const MOVED_COLOR_CONFIG: &[&str] = &[
 
 pub struct GitAdapter;
 
+pub fn parse_git_patch(input: &str) -> Vec<DiffFile> {
+    let move_kinds = input
+        .lines()
+        .filter_map(|line| {
+            let clean = strip_ansi_line(line);
+            if clean.starts_with("--- ") || clean.starts_with("+++ ") {
+                return None;
+            }
+            matches!(clean.as_bytes().first(), Some(b'+') | Some(b'-'))
+                .then(|| moved_line_kind(line, clean.as_bytes()[0]))
+        })
+        .collect::<Vec<_>>();
+    let mut move_kinds = move_kinds.into_iter();
+    let mut files = parse_unified_diff(input);
+    for line in files
+        .iter_mut()
+        .flat_map(|file| &mut file.hunks)
+        .flat_map(|hunk| &mut hunk.lines)
+        .filter(|line| matches!(line.kind, LineType::Addition | LineType::Deletion))
+    {
+        line.moved = move_kinds.next().flatten();
+    }
+    files
+}
+
+fn moved_line_kind(line: &str, sign: u8) -> Option<MovedLineKind> {
+    let mut parameters = Vec::new();
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index + 2 < bytes.len() {
+        if bytes[index] == 0x1b && bytes[index + 1] == b'[' {
+            let start = index + 2;
+            index = start;
+            while index < bytes.len() && !(0x40..=0x7e).contains(&bytes[index]) {
+                index += 1;
+            }
+            if index < bytes.len() && bytes[index] == b'm' {
+                parameters.extend(
+                    String::from_utf8_lossy(&bytes[start..index])
+                        .split(';')
+                        .filter_map(|value| value.parse::<u16>().ok()),
+                );
+            }
+        }
+        index += 1;
+    }
+    let dimmed = parameters.contains(&2);
+    match sign {
+        b'-' if parameters.contains(&35) && dimmed => Some(MovedLineKind::OldMovedDimmed),
+        b'-' if parameters.contains(&35) => Some(MovedLineKind::OldMoved),
+        b'+' if parameters.contains(&36) && dimmed => Some(MovedLineKind::NewMovedDimmed),
+        b'+' if parameters.contains(&36) => Some(MovedLineKind::NewMoved),
+        _ => None,
+    }
+}
+
+fn strip_ansi_line(line: &str) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut characters = line.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '\u{1b}' && characters.peek() == Some(&'[') {
+            characters.next();
+            for character in characters.by_ref() {
+                if ('@'..='~').contains(&character) {
+                    break;
+                }
+            }
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
 impl VcsAdapter for GitAdapter {
     fn id(&self) -> VcsId {
         VcsId::Git
@@ -63,28 +143,37 @@ impl VcsAdapter for GitAdapter {
             .file_name()
             .unwrap_or(repo_root.as_os_str())
             .to_string_lossy();
+        let mut extra_files = Vec::new();
         let (title, args) = match input {
             ReviewInput::VcsDiff {
                 range,
                 staged,
                 pathspecs,
                 ..
-            } => (
-                if *staged {
-                    format!("{repo_name} staged changes")
-                } else if let Some(range) = range {
-                    format!("{repo_name} {range}")
-                } else {
-                    format!("{repo_name} working tree")
-                },
-                build_git_diff_args(
-                    range.as_deref(),
-                    *staged,
-                    pathspecs,
-                    &[],
-                    context.config.color_moved,
-                ),
-            ),
+            } => {
+                let large_files = large_tracked_files(input, context, &repo_root)?;
+                let excluded = large_files
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>();
+                extra_files.extend(large_files.into_iter().map(large_tracked_placeholder));
+                (
+                    if *staged {
+                        format!("{repo_name} staged changes")
+                    } else if let Some(range) = range {
+                        format!("{repo_name} {range}")
+                    } else {
+                        format!("{repo_name} working tree")
+                    },
+                    build_git_diff_args(
+                        range.as_deref(),
+                        *staged,
+                        pathspecs,
+                        &excluded,
+                        context.config.color_moved,
+                    ),
+                )
+            }
             ReviewInput::Show {
                 reference,
                 pathspecs,
@@ -124,7 +213,8 @@ impl VcsAdapter for GitAdapter {
             return Err(missing_stash_error(input));
         }
         let patch_text = decode_stdout(input, patch_output.stdout)?;
-        let extra_files = load_untracked_files(input, context, &repo_root)?;
+        extra_files.extend(load_untracked_files(input, context, &repo_root)?);
+        let source_endpoints = resolve_source_endpoints(input, context, &repo_root)?;
 
         Ok(VcsPatch {
             vcs: VcsId::Git,
@@ -133,6 +223,7 @@ impl VcsAdapter for GitAdapter {
             title,
             patch_text,
             extra_files,
+            source_endpoints,
         })
     }
 }
@@ -158,6 +249,33 @@ pub fn build_git_diff_args(
         args.push(range.into());
     }
     append_pathspecs(&mut args, pathspecs, excluded);
+    args
+}
+
+fn build_git_numstat_args(range: Option<&str>, staged: bool, pathspecs: &[String]) -> Vec<String> {
+    let mut args = PREFIX_ARGS
+        .iter()
+        .map(|value| (*value).into())
+        .collect::<Vec<_>>();
+    args.extend(
+        [
+            "diff",
+            "--no-ext-diff",
+            "--find-renames",
+            "--no-color",
+            "--numstat",
+            "-z",
+        ]
+        .into_iter()
+        .map(String::from),
+    );
+    if staged {
+        args.push("--staged".into());
+    }
+    if let Some(range) = range {
+        args.push(range.into());
+    }
+    append_pathspecs(&mut args, pathspecs, &[]);
     args
 }
 
@@ -257,6 +375,77 @@ fn decode_stdout(input: &ReviewInput, stdout: Vec<u8>) -> Result<String, VcsErro
     })
 }
 
+#[derive(Debug)]
+struct LargeTrackedFile {
+    path: String,
+    stats: FileStats,
+}
+
+fn large_tracked_files(
+    input: &ReviewInput,
+    context: &VcsLoadContext<'_>,
+    repo_root: &Path,
+) -> Result<Vec<LargeTrackedFile>, VcsError> {
+    let ReviewInput::VcsDiff {
+        range,
+        staged,
+        pathspecs,
+        ..
+    } = input
+    else {
+        return Ok(Vec::new());
+    };
+    let output = run_command(
+        input,
+        context,
+        CommandSpec::new(context.git_executable, repo_root).args(build_git_numstat_args(
+            range.as_deref(),
+            *staged,
+            pathspecs,
+        )),
+    )?;
+    let text = decode_stdout(input, output.stdout)?;
+    Ok(text
+        .split('\0')
+        .filter_map(|entry| {
+            let mut fields = entry.splitn(3, '\t');
+            let additions = fields.next()?.parse::<usize>().ok()?;
+            let deletions = fields.next()?.parse::<usize>().ok()?;
+            let path = fields.next()?.to_string();
+            let changed_lines = additions.saturating_add(deletions);
+            let current_size = fs::metadata(repo_root.join(&path))
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            should_skip_large(changed_lines, current_size).then_some(LargeTrackedFile {
+                path,
+                stats: FileStats {
+                    additions,
+                    deletions,
+                },
+            })
+        })
+        .collect())
+}
+
+fn large_tracked_placeholder(file: LargeTrackedFile) -> DiffFile {
+    DiffFile {
+        id: stable_file_id(&file.path, None),
+        path: file.path,
+        previous_path: None,
+        patch: String::new(),
+        hunks: Vec::new(),
+        change_kind: FileChangeKind::Modified,
+        is_binary: false,
+        is_untracked: false,
+        is_too_large: true,
+        stats_truncated: false,
+        language: None,
+        stats: file.stats,
+        old_source: SourceSpec::None,
+        new_source: SourceSpec::None,
+    }
+}
+
 fn load_untracked_files(
     input: &ReviewInput,
     context: &VcsLoadContext<'_>,
@@ -338,6 +527,231 @@ fn range_includes_worktree(
     Ok(positive == 1 && negative == 0)
 }
 
+fn resolve_source_endpoints(
+    input: &ReviewInput,
+    context: &VcsLoadContext<'_>,
+    repo_root: &Path,
+) -> Result<Option<SourceEndpoints>, VcsError> {
+    let endpoints = match input {
+        ReviewInput::VcsDiff { range, staged, .. } => {
+            if *staged {
+                let old = if let Some(range) = range {
+                    let (positive, negative) =
+                        resolve_range_revisions(input, context, repo_root, range)?;
+                    if positive.len() == 1 && negative.is_empty() {
+                        SourceEndpoint::GitBlob {
+                            repo_root: repo_root.into(),
+                            reference: positive[0].clone(),
+                        }
+                    } else {
+                        return Ok(None);
+                    }
+                } else if let Some(head) = try_resolve_commit(input, context, repo_root, "HEAD")? {
+                    SourceEndpoint::GitBlob {
+                        repo_root: repo_root.into(),
+                        reference: head,
+                    }
+                } else {
+                    SourceEndpoint::None
+                };
+                SourceEndpoints {
+                    old,
+                    new: SourceEndpoint::GitIndex {
+                        repo_root: repo_root.into(),
+                    },
+                }
+            } else if let Some(range) = range {
+                if let Some((left, right)) = symmetric_range(range) {
+                    let merge_base = run_git_text(
+                        input,
+                        context,
+                        CommandSpec::new(context.git_executable, repo_root).args([
+                            "merge-base",
+                            left.as_str(),
+                            right.as_str(),
+                        ]),
+                    )?;
+                    let right = resolve_commit(input, context, repo_root, &right)?;
+                    SourceEndpoints {
+                        old: SourceEndpoint::GitBlob {
+                            repo_root: repo_root.into(),
+                            reference: merge_base.trim().into(),
+                        },
+                        new: SourceEndpoint::GitBlob {
+                            repo_root: repo_root.into(),
+                            reference: right,
+                        },
+                    }
+                } else {
+                    let (positive, negative) =
+                        resolve_range_revisions(input, context, repo_root, range)?;
+                    match (positive.as_slice(), negative.as_slice()) {
+                        ([old], []) => SourceEndpoints {
+                            old: SourceEndpoint::GitBlob {
+                                repo_root: repo_root.into(),
+                                reference: old.clone(),
+                            },
+                            new: SourceEndpoint::Worktree {
+                                repo_root: repo_root.into(),
+                            },
+                        },
+                        ([new], [old]) => SourceEndpoints {
+                            old: SourceEndpoint::GitBlob {
+                                repo_root: repo_root.into(),
+                                reference: old.clone(),
+                            },
+                            new: SourceEndpoint::GitBlob {
+                                repo_root: repo_root.into(),
+                                reference: new.clone(),
+                            },
+                        },
+                        _ => return Ok(None),
+                    }
+                }
+            } else {
+                SourceEndpoints {
+                    old: SourceEndpoint::GitIndex {
+                        repo_root: repo_root.into(),
+                    },
+                    new: SourceEndpoint::Worktree {
+                        repo_root: repo_root.into(),
+                    },
+                }
+            }
+        }
+        ReviewInput::Show { reference, .. } => {
+            let new = resolve_commit(
+                input,
+                context,
+                repo_root,
+                reference.as_deref().unwrap_or("HEAD"),
+            )?;
+            SourceEndpoints {
+                old: SourceEndpoint::GitBlob {
+                    repo_root: repo_root.into(),
+                    reference: format!("{new}^"),
+                },
+                new: SourceEndpoint::GitBlob {
+                    repo_root: repo_root.into(),
+                    reference: new,
+                },
+            }
+        }
+        ReviewInput::StashShow { reference, .. } => {
+            let new = resolve_commit(
+                input,
+                context,
+                repo_root,
+                reference.as_deref().unwrap_or("stash@{0}"),
+            )?;
+            SourceEndpoints {
+                old: SourceEndpoint::GitBlob {
+                    repo_root: repo_root.into(),
+                    reference: format!("{new}^"),
+                },
+                new: SourceEndpoint::GitBlob {
+                    repo_root: repo_root.into(),
+                    reference: new,
+                },
+            }
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(endpoints))
+}
+
+fn resolve_commit(
+    input: &ReviewInput,
+    context: &VcsLoadContext<'_>,
+    repo_root: &Path,
+    reference: &str,
+) -> Result<String, VcsError> {
+    run_git_text(
+        input,
+        context,
+        CommandSpec::new(context.git_executable, repo_root).args([
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &format!("{reference}^{{commit}}"),
+        ]),
+    )
+    .map(|value| value.lines().next().unwrap_or_default().trim().into())
+}
+
+fn try_resolve_commit(
+    input: &ReviewInput,
+    context: &VcsLoadContext<'_>,
+    repo_root: &Path,
+    reference: &str,
+) -> Result<Option<String>, VcsError> {
+    let object = format!("{reference}^{{commit}}");
+    let output = run_command(
+        input,
+        context,
+        CommandSpec::new(context.git_executable, repo_root)
+            .args(["rev-parse", "--verify", "--end-of-options", object.as_str()])
+            .accepted_exit_codes([0, 1, 128]),
+    )?;
+    if output.code == 0 {
+        decode_stdout(input, output.stdout).map(|value| Some(value.trim().into()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn resolve_range_revisions(
+    input: &ReviewInput,
+    context: &VcsLoadContext<'_>,
+    repo_root: &Path,
+    range: &str,
+) -> Result<(Vec<String>, Vec<String>), VcsError> {
+    let revisions = run_git_text(
+        input,
+        context,
+        CommandSpec::new(context.git_executable, repo_root).args([
+            "rev-parse",
+            "--revs-only",
+            range,
+        ]),
+    )?;
+    let mut positive = Vec::new();
+    let mut negative = Vec::new();
+    for revision in revisions.lines().filter(|line| !line.is_empty()) {
+        if let Some(revision) = revision.strip_prefix('^') {
+            negative.push(revision.into());
+        } else {
+            positive.push(revision.into());
+        }
+    }
+    Ok((positive, negative))
+}
+
+fn symmetric_range(range: &str) -> Option<(String, String)> {
+    if range.contains("....") {
+        return None;
+    }
+    let mut parts = range.split("...");
+    let left = parts.next()?;
+    let right = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((
+        if left.is_empty() { "HEAD" } else { left }.into(),
+        if right.is_empty() { "HEAD" } else { right }.into(),
+    ))
+}
+
+fn run_git_text(
+    input: &ReviewInput,
+    context: &VcsLoadContext<'_>,
+    spec: CommandSpec,
+) -> Result<String, VcsError> {
+    let output = run_command(input, context, spec)?;
+    decode_stdout(input, output.stdout)
+}
+
 fn is_reviewable_untracked(repo_root: &Path, path: &str) -> bool {
     let absolute = repo_root.join(path);
     let Ok(metadata) = fs::symlink_metadata(&absolute) else {
@@ -356,6 +770,24 @@ fn is_reviewable_untracked(repo_root: &Path, path: &str) -> bool {
 
 fn build_untracked_file(repo_root: &Path, path: &str, _index: usize) -> Result<DiffFile, VcsError> {
     let absolute = repo_root.join(path);
+    if let Some((stats, stats_truncated)) = inspect_large_untracked(&absolute)? {
+        return Ok(DiffFile {
+            id: stable_file_id(path, None),
+            path: path.into(),
+            previous_path: None,
+            patch: String::new(),
+            hunks: Vec::new(),
+            change_kind: FileChangeKind::Added,
+            is_binary: false,
+            is_untracked: true,
+            is_too_large: true,
+            stats_truncated,
+            language: None,
+            stats,
+            old_source: SourceSpec::None,
+            new_source: SourceSpec::File(absolute),
+        });
+    }
     let bytes = fs::read(&absolute).map_err(|source| VcsError::User {
         message: format!(
             "failed to read untracked file {}: {source}",
@@ -376,6 +808,9 @@ fn build_untracked_file(repo_root: &Path, path: &str, _index: usize) -> Result<D
             is_too_large: false,
             stats_truncated: false,
             language: None,
+            stats: FileStats::default(),
+            old_source: SourceSpec::None,
+            new_source: SourceSpec::File(absolute),
         });
     }
     let Ok(text) = String::from_utf8(bytes) else {
@@ -391,6 +826,9 @@ fn build_untracked_file(repo_root: &Path, path: &str, _index: usize) -> Result<D
             is_too_large: false,
             stats_truncated: false,
             language: None,
+            stats: FileStats::default(),
+            old_source: SourceSpec::None,
+            new_source: SourceSpec::File(absolute),
         });
     };
     let body = TextDiff::from_lines("", &text)
@@ -405,7 +843,53 @@ fn build_untracked_file(repo_root: &Path, path: &str, _index: usize) -> Result<D
         help: vec!["Review the file path and try again.".into()],
     })?;
     file.is_untracked = true;
+    file.old_source = SourceSpec::None;
+    file.new_source = SourceSpec::File(absolute);
     Ok(file)
+}
+
+fn inspect_large_untracked(path: &Path) -> Result<Option<(FileStats, bool)>, VcsError> {
+    use std::io::Read;
+
+    let metadata = fs::metadata(path).map_err(|source| VcsError::User {
+        message: format!(
+            "failed to inspect untracked file {}: {source}",
+            path.display()
+        ),
+        help: vec!["Retry after the working tree stops changing.".into()],
+    })?;
+    let read_limit = if metadata.len() > LARGE_DIFF_FILE_MAX_BYTES {
+        LARGE_DIFF_FILE_MAX_BYTES as usize
+    } else {
+        LARGE_DIFF_FILE_SNIFF_BYTES
+    };
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .and_then(|file| {
+            file.take(read_limit as u64)
+                .read_to_end(&mut bytes)
+                .map(|_| ())
+        })
+        .map_err(|source| VcsError::User {
+            message: format!(
+                "failed to inspect untracked file {}: {source}",
+                path.display()
+            ),
+            help: vec!["Retry after the working tree stops changing.".into()],
+        })?;
+    let mut lines = bytes.iter().filter(|byte| **byte == b'\n').count();
+    if bytes.last().is_some_and(|byte| *byte != b'\n') {
+        lines += 1;
+    }
+    let complete = bytes.len() as u64 >= metadata.len();
+    let should_skip = should_skip_large(lines, metadata.len());
+    Ok(should_skip.then_some((
+        FileStats {
+            additions: lines,
+            deletions: 0,
+        },
+        !complete,
+    )))
 }
 
 fn translate_error(input: &ReviewInput, executable: &str, error: VcsError) -> VcsError {
@@ -516,5 +1000,21 @@ fn missing_stash_error(input: &ReviewInput) -> VcsError {
         help: vec![
             "Create one with `git stash push`, or list entries with `git stash list`.".into(),
         ],
+    }
+}
+
+fn should_skip_large(lines: usize, bytes: u64) -> bool {
+    lines > LARGE_DIFF_FILE_MAX_LINES || bytes > LARGE_DIFF_FILE_MAX_BYTES
+}
+
+#[cfg(test)]
+mod large_file_tests {
+    use super::should_skip_large;
+
+    #[test]
+    fn large_file_thresholds_are_exclusive() {
+        assert!(!should_skip_large(20_000, 1_000_000));
+        assert!(should_skip_large(20_001, 1_000_000));
+        assert!(should_skip_large(20_000, 1_000_001));
     }
 }

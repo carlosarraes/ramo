@@ -1,6 +1,7 @@
 mod command;
 pub mod detect;
 pub mod git;
+pub mod source;
 mod types;
 
 use std::error::Error;
@@ -9,11 +10,17 @@ use std::fmt;
 use crate::core::input::{InputKind, VcsId};
 
 pub use command::{CommandOutput, CommandRunner, CommandSpec, SystemCommandRunner};
-pub use types::{VcsAdapter, VcsLoadContext, VcsOperation, VcsPatch};
+pub use types::{
+    SourceEndpoint, SourceEndpoints, VcsAdapter, VcsLoadContext, VcsOperation, VcsPatch,
+};
 
 #[derive(Debug)]
 pub enum VcsError {
     Spawn {
+        program: String,
+        source: std::io::Error,
+    },
+    Capture {
         program: String,
         source: std::io::Error,
     },
@@ -42,6 +49,12 @@ impl fmt::Display for VcsError {
         match self {
             Self::Spawn { program, source } => {
                 write!(formatter, "could not run {program}: {source}")
+            }
+            Self::Capture { program, source } => {
+                write!(
+                    formatter,
+                    "failed to collect output from {program}: {source}"
+                )
             }
             Self::Exit {
                 program,
@@ -74,7 +87,7 @@ impl fmt::Display for VcsError {
 impl Error for VcsError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Spawn { source, .. } => Some(source),
+            Self::Spawn { source, .. } | Self::Capture { source, .. } => Some(source),
             _ => None,
         }
     }

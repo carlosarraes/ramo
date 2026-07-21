@@ -1,6 +1,6 @@
 use crate::core::changeset::stable_file_id;
 
-use super::model::{DiffFile, DiffLine, FileChangeKind, Hunk, LineType};
+use super::model::{DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec};
 
 fn strip_ansi(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -106,6 +106,9 @@ fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
                 is_too_large: false,
                 stats_truncated: false,
                 language: None,
+                stats: FileStats::default(),
+                old_source: SourceSpec::None,
+                new_source: SourceSpec::None,
             }),
             file_len,
         );
@@ -142,6 +145,18 @@ fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
 
     let previous_path = (actual_old_path != actual_new_path).then_some(actual_old_path);
     let change_kind = resolve_change_kind(is_new, is_deleted, is_renamed, is_copied);
+    let stats =
+        hunks
+            .iter()
+            .flat_map(|hunk| &hunk.lines)
+            .fold(FileStats::default(), |mut stats, line| {
+                match line.kind {
+                    LineType::Addition => stats.additions += 1,
+                    LineType::Deletion => stats.deletions += 1,
+                    LineType::Context => {}
+                }
+                stats
+            });
     (
         Some(DiffFile {
             id: stable_file_id(&actual_new_path, previous_path.as_deref()),
@@ -155,6 +170,9 @@ fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
             is_too_large: false,
             stats_truncated: false,
             language: None,
+            stats,
+            old_source: SourceSpec::None,
+            new_source: SourceSpec::None,
         }),
         file_len,
     )
@@ -206,6 +224,7 @@ fn parse_hunk(lines: &[&str]) -> (Hunk, usize) {
                 content: content.to_string(),
                 old_lineno: None,
                 new_lineno: Some(new_line),
+                moved: None,
             });
             new_line += 1;
         } else if let Some(content) = line.strip_prefix('-') {
@@ -214,6 +233,7 @@ fn parse_hunk(lines: &[&str]) -> (Hunk, usize) {
                 content: content.to_string(),
                 old_lineno: Some(old_line),
                 new_lineno: None,
+                moved: None,
             });
             old_line += 1;
         } else if line.starts_with(' ') || line.is_empty() {
@@ -227,6 +247,7 @@ fn parse_hunk(lines: &[&str]) -> (Hunk, usize) {
                 content,
                 old_lineno: Some(old_line),
                 new_lineno: Some(new_line),
+                moved: None,
             });
             old_line += 1;
             new_line += 1;

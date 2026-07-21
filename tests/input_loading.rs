@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
+use pdiff::diff::model::{FileChangeKind, MovedLineKind, SourceSpec};
 use pdiff::input::{LoadError, ReloadPlan, ReviewLoader, normalize_patch_text};
 
 #[test]
@@ -186,4 +187,72 @@ fn unsupported_inputs_fail_before_terminal_startup() {
         ReviewLoader.load(&input, &mut Cursor::new([])).unwrap_err(),
         LoadError::UnsupportedInput(pdiff::core::input::InputKind::Pager)
     ));
+}
+
+#[test]
+fn deterministic_git_ansi_colors_become_moved_line_classes() {
+    let patch = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n\x1b[1;35m-old\x1b[m\n\x1b[1;36m+new\x1b[m\n";
+    let files = pdiff::vcs::git::parse_git_patch(patch);
+    assert_eq!(
+        files[0].hunks[0].lines[0].moved,
+        Some(MovedLineKind::OldMoved)
+    );
+    assert_eq!(
+        files[0].hunks[0].lines[1].moved,
+        Some(MovedLineKind::NewMoved)
+    );
+    assert_eq!(files[0].hunks[0].lines[0].content, "old");
+}
+
+#[cfg(unix)]
+#[test]
+fn difftool_dev_null_side_is_an_added_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let added = temp.path().join("added.txt");
+    std::fs::write(&added, "new\n").unwrap();
+    let loaded = ReviewLoader
+        .load(
+            &ReviewInput::FilePair {
+                left: PathBuf::from("/dev/null"),
+                right: added.clone(),
+                display_path: Some(PathBuf::from("src/added.txt")),
+                options: CommonOptions::default(),
+            },
+            &mut Cursor::new([]),
+        )
+        .unwrap();
+    assert_eq!(loaded.changeset.files[0].change_kind, FileChangeKind::Added);
+    assert_eq!(loaded.changeset.files[0].old_source, SourceSpec::None);
+    assert_eq!(
+        loaded.changeset.files[0].new_source,
+        SourceSpec::File(added)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn difftool_dev_null_right_side_is_a_deleted_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let deleted = temp.path().join("deleted.txt");
+    std::fs::write(&deleted, "old\n").unwrap();
+    let loaded = ReviewLoader
+        .load(
+            &ReviewInput::FilePair {
+                left: deleted.clone(),
+                right: PathBuf::from("/dev/null"),
+                display_path: Some(PathBuf::from("src/deleted.txt")),
+                options: CommonOptions::default(),
+            },
+            &mut Cursor::new([]),
+        )
+        .unwrap();
+    assert_eq!(
+        loaded.changeset.files[0].change_kind,
+        FileChangeKind::Deleted
+    );
+    assert_eq!(
+        loaded.changeset.files[0].old_source,
+        SourceSpec::File(deleted)
+    );
+    assert_eq!(loaded.changeset.files[0].new_source, SourceSpec::None);
 }

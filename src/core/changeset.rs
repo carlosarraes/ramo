@@ -1,10 +1,6 @@
-use crate::diff::model::{DiffFile, LineType};
+use crate::diff::model::DiffFile;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct FileStats {
-    pub additions: usize,
-    pub deletions: usize,
-}
+pub use crate::diff::model::FileStats;
 
 #[derive(Debug, Clone)]
 pub struct Changeset {
@@ -37,15 +33,10 @@ impl Changeset {
     pub fn stats(&self) -> FileStats {
         self.files
             .iter()
-            .flat_map(|file| &file.hunks)
-            .flat_map(|hunk| &hunk.lines)
-            .fold(FileStats::default(), |mut stats, line| {
-                match line.kind {
-                    LineType::Addition => stats.additions += 1,
-                    LineType::Deletion => stats.deletions += 1,
-                    LineType::Context => {}
-                }
-                stats
+            .fold(FileStats::default(), |mut total, file| {
+                total.additions += file.stats.additions;
+                total.deletions += file.stats.deletions;
+                total
             })
     }
 }

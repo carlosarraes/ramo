@@ -32,6 +32,28 @@ pub struct VcsPatch {
     pub title: String,
     pub patch_text: String,
     pub extra_files: Vec<DiffFile>,
+    pub source_endpoints: Option<SourceEndpoints>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceEndpoint {
+    None,
+    Worktree {
+        repo_root: PathBuf,
+    },
+    GitBlob {
+        repo_root: PathBuf,
+        reference: String,
+    },
+    GitIndex {
+        repo_root: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceEndpoints {
+    pub old: SourceEndpoint,
+    pub new: SourceEndpoint,
 }
 
 pub struct VcsLoadContext<'a> {
