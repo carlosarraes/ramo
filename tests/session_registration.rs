@@ -181,18 +181,36 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
     drop(pair.slave);
     let mut writer = pair.master.take_writer().unwrap();
     let mut reader = pair.master.try_clone_reader().unwrap();
+    #[cfg(unix)]
     let output = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    #[cfg(unix)]
     let reader_output = std::sync::Arc::clone(&output);
+    #[cfg(unix)]
     let drain = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let _ = std::io::Read::read_to_end(&mut reader, &mut bytes);
         *reader_output.lock().unwrap() = bytes;
     });
+    #[cfg(windows)]
+    let (chunks, drain) = {
+        let (sender, chunks) = std::sync::mpsc::channel();
+        let drain = std::thread::spawn(move || {
+            let mut buffer = [0_u8; 4096];
+            while let Ok(count) = reader.read(&mut buffer) {
+                if count == 0 || sender.send(buffer[..count].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        (chunks, drain)
+    };
+    #[cfg(windows)]
+    let mut output = Vec::new();
+    #[cfg(windows)]
+    let mut cursor_queries_answered = 0;
     let address = format!("127.0.0.1:{port}").parse().unwrap();
     let client = ramo::session::SessionClient::new(address);
-    // A cold Windows runner may need more than two seconds to start both the
-    // PTY review and its detached session broker.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(3);
     while client
         .request(
             serde_json::json!({"action":"list"}),
@@ -202,10 +220,29 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
         .and_then(|value| value["sessions"].as_array().map(Vec::len))
         != Some(1)
     {
+        #[cfg(windows)]
+        {
+            while let Ok(chunk) = chunks.try_recv() {
+                output.extend(chunk);
+            }
+            let query_count = output
+                .windows(b"\x1b[6n".len())
+                .filter(|bytes| *bytes == b"\x1b[6n")
+                .count();
+            while cursor_queries_answered < query_count {
+                std::io::Write::write_all(&mut writer, b"\x1b[1;1R").unwrap();
+                std::io::Write::flush(&mut writer).unwrap();
+                cursor_queries_answered += 1;
+            }
+        }
+        #[cfg(unix)]
+        let captured = String::from_utf8_lossy(&output.lock().unwrap()).into_owned();
+        #[cfg(windows)]
+        let captured = String::from_utf8_lossy(&output).into_owned();
         assert!(
             Instant::now() < deadline,
             "review did not register; output: {}",
-            String::from_utf8_lossy(&output.lock().unwrap())
+            captured
         );
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -244,5 +281,10 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
     client.shutdown().unwrap();
     drop(writer);
     drop(pair.master);
+    #[cfg(unix)]
     drain.join().unwrap();
+    #[cfg(windows)]
+    drop(chunks);
+    #[cfg(windows)]
+    drop(drain);
 }
