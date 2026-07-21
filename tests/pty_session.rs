@@ -1,3 +1,5 @@
+mod support;
+
 use std::io::{Read, Write};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -18,9 +20,8 @@ fn cli(binary: &std::path::Path, port: u16, args: &[&str]) -> std::process::Outp
 
 #[test]
 fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thread() {
-    let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = reserved.local_addr().unwrap().port();
-    drop(reserved);
+    let daemon = support::TestSessionDaemon::spawn();
+    let port = daemon.client().address().port();
     let temp = tempfile::tempdir().unwrap();
     std::fs::create_dir(temp.path().join(".git")).unwrap();
     let patch = temp.path().join("review.patch");
@@ -234,9 +235,8 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     writer.write_all(b"qq").unwrap();
     writer.flush().unwrap();
     assert!(child.wait().unwrap().success());
-    let client = ramo::session::SessionClient::new(format!("127.0.0.1:{port}").parse().unwrap());
-    client.shutdown().unwrap();
     drop(writer);
     drop(pair.master);
     drain.join().unwrap();
+    drop(daemon);
 }
