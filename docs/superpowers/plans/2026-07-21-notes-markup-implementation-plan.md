@@ -130,25 +130,25 @@ git commit -m "feat: add inline note geometry"
 - Test: `tests/annotations.rs`
 - Test: `tests/pty_ui.rs`
 
-- [ ] **Step 1: Write failing PTY and export tests**
+- [x] **Step 1: Write failing PTY and export tests**
 
 Cover `a` reveal/hide, `c` opening an empty draft without leaking the key, typed text owning all shortcuts, newline insertion, Ctrl-S save, Escape cancel, editing an existing human note, deleting an emptied edit, selected old/new ranges, agent notes excluded from human Markdown export, explicit `--output`, and `--stdout` after TUI exit.
 
-- [ ] **Step 2: Confirm the current modal-only annotation path fails**
+- [x] **Step 2: Confirm the current modal-only annotation path fails**
 
 Run: `cargo test --test pty_notes --test annotations -- --nocapture`
 
 Expected: inline draft/note assertions fail and new controller operations are not wired.
 
-- [ ] **Step 3: Route the composer through `ReviewController`**
+- [x] **Step 3: Route the composer through `ReviewController`**
 
 Keep note editing keyboard-first and centered only when the terminal is too narrow for an inline composer. `c` targets the current semantic row/range. While composing, literal keys never reach navigation. Enter inserts a newline; Ctrl-S saves; Escape cancels. Saved notes become controller-owned inline user notes; editing reuses the stable note id.
 
-- [ ] **Step 4: Export normalized human notes**
+- [x] **Step 4: Export normalized human notes**
 
 Build Markdown annotations from human note targets at exit, including file, old/new side ranges, and bounded diff context. Remove the duplicate legacy flat-index annotation authority. Preserve the existing output heading and compatibility options.
 
-- [ ] **Step 5: Run PTY/output regressions and commit**
+- [x] **Step 5: Run PTY/output regressions and commit**
 
 Run: `cargo test --test pty_notes --test annotations --test pty_ui --test runtime_resolution`
 

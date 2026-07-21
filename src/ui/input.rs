@@ -175,6 +175,7 @@ fn map_text(event: KeyEvent, mode: InputMode) -> Option<AppAction> {
         KeyCode::Tab if mode == InputMode::Filter => Some(AppAction::ToggleFocus),
         KeyCode::Esc => Some(AppAction::Cancel),
         KeyCode::Backspace => Some(AppAction::Backspace),
+        KeyCode::Enter if mode == InputMode::Note => Some(AppAction::Insert('\n')),
         KeyCode::Char('s')
             if mode == InputMode::Note && event.modifiers.contains(KeyModifiers::CONTROL) =>
         {
@@ -207,8 +208,13 @@ fn pager_action(action: &AppAction) -> bool {
                 | ReviewAction::JumpBottom
                 | ReviewAction::ToggleWrap
                 | ReviewAction::ToggleSidebar
+                | ReviewAction::StartNote
                 | ReviewAction::Quit
-        ) | AppAction::BeginSelection
+        ) | AppAction::Insert(_)
+            | AppAction::Backspace
+            | AppAction::Cancel
+            | AppAction::Confirm
+            | AppAction::BeginSelection
             | AppAction::YankSelection
             | AppAction::Suspend
     )

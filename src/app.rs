@@ -478,7 +478,7 @@ impl App {
         let disable_result = terminal.disable_mouse_capture();
         run_result?;
         disable_result?;
-        Ok(self.annotations)
+        Ok(self.review_controller.export_annotations())
     }
 
     fn open_editor(
@@ -602,10 +602,12 @@ impl App {
                 }
             }
             InputMode::Note => {
-                frame.render_widget(
-                    DialogOverlay::note(&self.review_theme, &self.comment_buf),
-                    area,
-                );
+                if area.width < 48 {
+                    frame.render_widget(
+                        DialogOverlay::note(&self.review_theme, &self.comment_buf),
+                        area,
+                    );
+                }
             }
             InputMode::SavePrompt => {
                 frame.render_widget(DialogOverlay::save(&self.review_theme), area);
@@ -772,7 +774,11 @@ impl App {
                         viewport,
                     );
                 }
-                InputMode::Note => self.comment_buf.push(character),
+                InputMode::Note => {
+                    self.comment_buf.push(character);
+                    self.review_controller
+                        .update_human_note_draft(&self.comment_buf, viewport);
+                }
                 _ => {}
             },
             AppAction::Backspace => match self.input_mode {
@@ -785,6 +791,8 @@ impl App {
                 }
                 InputMode::Note => {
                     self.comment_buf.pop();
+                    self.review_controller
+                        .update_human_note_draft(&self.comment_buf, viewport);
                 }
                 _ => {}
             },
@@ -868,8 +876,10 @@ impl App {
                 self.input_mode = InputMode::Theme;
             }
             ReviewEffect::StartNote => {
-                self.comment_buf.clear();
-                self.input_mode = InputMode::Note;
+                if self.review_controller.begin_human_note(viewport).is_some() {
+                    self.comment_buf.clear();
+                    self.input_mode = InputMode::Note;
+                }
             }
             ReviewEffect::EditFile { path, line } => self.editor_request = Some((path, line)),
             ReviewEffect::Reload => self.reload_requested = true,
@@ -950,6 +960,7 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             InputMode::Note => {
+                self.review_controller.cancel_human_note_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
             }
@@ -973,26 +984,9 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             InputMode::Note => {
-                if !self.comment_buf.trim().is_empty() {
-                    let snapshot = self.review_controller.snapshot(viewport).clone();
-                    let file = snapshot
-                        .selected_file_id
-                        .as_deref()
-                        .and_then(|id| snapshot.visible_files.iter().find(|file| file.id == id));
-                    let line = snapshot
-                        .selected_position
-                        .as_ref()
-                        .and_then(|position| position.new_line.or(position.old_line));
-                    self.annotations.push(Annotation {
-                        file: file.map_or_else(|| "unknown".into(), |file| file.path.clone()),
-                        flat_start: 0,
-                        flat_end: 0,
-                        display_range: line
-                            .map_or_else(|| "file".into(), |line| format!("line {line}")),
-                        diff_context: String::new(),
-                        comment: self.comment_buf.trim().to_owned(),
-                    });
-                }
+                self.review_controller
+                    .update_human_note_draft(&self.comment_buf, viewport);
+                self.review_controller.save_human_note_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
             }

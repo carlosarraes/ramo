@@ -2,10 +2,13 @@ use std::collections::HashMap;
 
 use unicode_width::UnicodeWidthStr;
 
+use crate::annotations::model::Annotation;
 use crate::core::input::LayoutMode;
 use crate::diff::model::DiffFile;
 use crate::input::sanitize_terminal_text;
-use crate::notes::{HumanNote, HumanNoteDraft, LineRange, annotated_hunks, resolve_ranges_target};
+use crate::notes::{
+    HumanNote, HumanNoteDraft, LineRange, NoteTarget, annotated_hunks, resolve_ranges_target,
+};
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
 use super::context::{
@@ -287,6 +290,26 @@ impl ReviewController {
 
     pub fn human_notes(&self) -> &[HumanNote] {
         &self.human_notes
+    }
+
+    pub fn export_annotations(&self) -> Vec<Annotation> {
+        self.human_notes
+            .iter()
+            .filter_map(|note| {
+                let file = self
+                    .files
+                    .iter()
+                    .find(|file| file.id == note.target.file_id)?;
+                Some(Annotation {
+                    file: file.path.clone(),
+                    flat_start: 0,
+                    flat_end: 0,
+                    display_range: target_display_range(&note.target),
+                    diff_context: target_diff_context(file, &note.target),
+                    comment: note.body.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn human_note_draft(&self) -> Option<&HumanNoteDraft> {
@@ -1377,6 +1400,65 @@ impl ReviewController {
     }
 }
 
+fn target_display_range(target: &NoteTarget) -> String {
+    let mut ranges = Vec::new();
+    if let Some(range) = target.old_range {
+        ranges.push(format_note_range('L', range));
+    }
+    if let Some(range) = target.new_range {
+        ranges.push(format_note_range('R', range));
+    }
+    if ranges.is_empty() {
+        "file".into()
+    } else {
+        ranges.join(" → ")
+    }
+}
+
+fn format_note_range(prefix: char, range: LineRange) -> String {
+    if range.start == range.end {
+        format!("{prefix}{}", range.start)
+    } else {
+        format!("{prefix}{}–{prefix}{}", range.start, range.end)
+    }
+}
+
+fn target_diff_context(file: &DiffFile, target: &NoteTarget) -> String {
+    const MAX_CONTEXT_LINES: usize = 40;
+    const MAX_CONTEXT_BYTES: usize = 16 * 1024;
+    let mut output = String::new();
+    let lines = file
+        .hunks
+        .iter()
+        .flat_map(|hunk| &hunk.lines)
+        .filter(|line| {
+            target.old_range.is_some_and(|range| {
+                line.old_lineno
+                    .is_some_and(|number| range.start <= number && number <= range.end)
+            }) || target.new_range.is_some_and(|range| {
+                line.new_lineno
+                    .is_some_and(|number| range.start <= number && number <= range.end)
+            })
+        })
+        .take(MAX_CONTEXT_LINES);
+    for line in lines {
+        let rendered = format!("{}{}", line.kind.prefix(), line.content);
+        if output
+            .len()
+            .saturating_add(rendered.len())
+            .saturating_add(1)
+            > MAX_CONTEXT_BYTES
+        {
+            break;
+        }
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&rendered);
+    }
+    output
+}
+
 fn matches_filter(file: &DiffFile, filter: &str) -> bool {
     let filter = filter.trim().to_lowercase();
     filter.is_empty()
@@ -1483,7 +1565,6 @@ fn application_only(action: &ReviewAction) -> bool {
         ReviewAction::FocusFilter
             | ReviewAction::OpenHelp
             | ReviewAction::OpenThemeSelector
-            | ReviewAction::StartNote
             | ReviewAction::EditSelectedFile
             | ReviewAction::Reload
             | ReviewAction::SetFilter(_)
