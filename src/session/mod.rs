@@ -1,3 +1,4 @@
+mod bridge;
 mod cli;
 mod client;
 mod config;
@@ -23,6 +24,7 @@ pub use registration::*;
 pub use skill::{materialize_review_skill, review_skill_path};
 pub use wire::*;
 
+pub use bridge::*;
 pub use cli::*;
 pub use client::*;
 pub use config::*;

@@ -455,6 +455,7 @@ impl App {
                     height: size.height,
                 };
                 self.publish_session_snapshot(viewport);
+                needs_redraw |= self.apply_session_requests(viewport);
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
@@ -594,6 +595,33 @@ impl App {
         }
         self.last_session_state = Some(snapshot.state.clone());
         client.publish_snapshot(snapshot);
+    }
+
+    fn apply_session_requests(&mut self, viewport: Viewport) -> bool {
+        let mut changed = false;
+        for _ in 0..16 {
+            let request = self
+                .session_registration
+                .as_ref()
+                .and_then(SessionRegistrationClient::try_recv_request);
+            let Some(request) = request else {
+                break;
+            };
+            let result = crate::session::apply_session_request(
+                &mut self.review_controller,
+                &request.request_id,
+                &request.input,
+                viewport,
+            );
+            let snapshot =
+                build_snapshot(&mut self.review_controller, viewport, session_timestamp());
+            self.last_session_state = Some(snapshot.state.clone());
+            if let Some(client) = &self.session_registration {
+                let _ = client.respond(request.request_id, result, snapshot);
+            }
+            changed = true;
+        }
+        changed
     }
 
     fn draw(&mut self, frame: &mut Frame) {

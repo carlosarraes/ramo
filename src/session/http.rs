@@ -274,14 +274,20 @@ fn route_session_api(request: HttpRequest, registry: &Arc<Mutex<SessionRegistry>
             return error_response(400, "invalid-json", "Expected one JSON request body");
         }
     };
-    let Some(action) = input.get("action").and_then(Value::as_str) else {
+    let Some(action) = input
+        .get("action")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
         return error_response(400, "missing-action", "Expected a session action");
     };
-    let registry = match registry.lock() {
-        Ok(registry) => registry,
-        Err(_) => return error_response(500, "registry-poisoned", "Session registry unavailable"),
-    };
     if action == "list" {
+        let registry = match registry.lock() {
+            Ok(registry) => registry,
+            Err(_) => {
+                return error_response(500, "registry-poisoned", "Session registry unavailable");
+            }
+        };
         let sessions: Vec<_> = registry
             .list()
             .into_iter()
@@ -311,11 +317,45 @@ fn route_session_api(request: HttpRequest, registry: &Arc<Mutex<SessionRegistry>
             "Select exactly one session id, repository, or session path",
         );
     }
-    let session = match registry.select(&selector) {
-        Ok(session) => session,
-        Err(error) => return error_response(404, "session-not-found", &error),
+    let mutation = matches!(
+        action.as_str(),
+        "navigate"
+            | "reload"
+            | "comment-add"
+            | "comment-apply"
+            | "comment-list"
+            | "comment-rm"
+            | "comment-clear"
+    );
+    if mutation {
+        let timeout = if matches!(action.as_str(), "reload" | "comment-apply") {
+            Duration::from_secs(30)
+        } else {
+            Duration::from_secs(5)
+        };
+        return match super::dispatch_session_command(registry, &selector, input, timeout) {
+            Ok(outcome) => match outcome.result {
+                Ok(result) if action == "comment-list" => HttpResponse {
+                    status: 200,
+                    body: json!({"comments": result}),
+                },
+                Ok(result) => HttpResponse {
+                    status: 200,
+                    body: json!({"result": result}),
+                },
+                Err(error) => error_response(400, "command-rejected", &error),
+            },
+            Err(error) => error_response(503, "command-unavailable", &error),
+        };
+    }
+    let session = match registry.lock() {
+        Ok(registry) => match registry.select(&selector) {
+            Ok(session) => session,
+            Err(error) => return error_response(404, "session-not-found", &error),
+        },
+        Err(_) => return error_response(500, "registry-poisoned", "Session registry unavailable"),
     };
-    match action {
+    match action.as_str() {
         "get" => HttpResponse {
             status: 200,
             body: json!({"session": session.registration.descriptor}),
@@ -337,12 +377,6 @@ fn route_session_api(request: HttpRequest, registry: &Arc<Mutex<SessionRegistry>
                 )
             }),
         },
-        "navigate" | "reload" | "comment-add" | "comment-apply" | "comment-list" | "comment-rm"
-        | "comment-clear" => error_response(
-            503,
-            "session-bridge-unavailable",
-            "The selected session is not connected to its command bridge",
-        ),
         _ => error_response(
             400,
             "unsupported-action",

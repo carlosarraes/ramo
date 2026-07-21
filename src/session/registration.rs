@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::{
     ClientSessionFrame, SESSION_REGISTRATION_VERSION, SESSION_WIRE_PREFACE, ServerSessionFrame,
@@ -21,9 +21,26 @@ struct PublishedState {
 }
 
 #[derive(Debug)]
+enum RegistrationOutbound {
+    Publish,
+    Response {
+        request_id: String,
+        result: Result<serde_json::Value, String>,
+        snapshot: Box<SessionSnapshot>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionBridgeRequest {
+    pub request_id: String,
+    pub input: serde_json::Value,
+}
+
+#[derive(Debug)]
 pub struct SessionRegistrationClient {
     state: Arc<Mutex<PublishedState>>,
-    wake: SyncSender<()>,
+    outbound: SyncSender<RegistrationOutbound>,
+    requests: Mutex<mpsc::Receiver<SessionBridgeRequest>>,
     stop: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
@@ -50,7 +67,8 @@ impl SessionRegistrationClient {
             snapshot,
             session_path,
         }));
-        let (wake, receiver) = mpsc::sync_channel(1);
+        let (outbound, receiver) = mpsc::sync_channel(32);
+        let (request_sender, requests) = mpsc::sync_channel(32);
         let stop = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
         let worker_state = Arc::clone(&state);
@@ -67,6 +85,7 @@ impl SessionRegistrationClient {
                         &receiver,
                         &worker_stop,
                         &worker_connected,
+                        &request_sender,
                     ) {
                         Ok(()) if worker_stop.load(Ordering::Acquire) => break,
                         _ => {
@@ -81,7 +100,8 @@ impl SessionRegistrationClient {
             .expect("session registration thread can start");
         Ok(Self {
             state,
-            wake,
+            outbound,
+            requests: Mutex::new(requests),
             stop,
             connected,
             thread: Mutex::new(Some(thread)),
@@ -92,18 +112,40 @@ impl SessionRegistrationClient {
         if let Ok(mut state) = self.state.lock() {
             state.snapshot = snapshot;
         }
-        let _ = self.wake.try_send(());
+        let _ = self.outbound.try_send(RegistrationOutbound::Publish);
     }
 
     pub fn publish_registration(&self, registration: SessionRegistration) {
         if let Ok(mut state) = self.state.lock() {
             state.registration = registration;
         }
-        let _ = self.wake.try_send(());
+        let _ = self.outbound.try_send(RegistrationOutbound::Publish);
     }
 
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)
+    }
+
+    pub fn try_recv_request(&self) -> Option<SessionBridgeRequest> {
+        self.requests.lock().ok()?.try_recv().ok()
+    }
+
+    pub fn respond(
+        &self,
+        request_id: String,
+        result: Result<serde_json::Value, String>,
+        snapshot: SessionSnapshot,
+    ) -> Result<(), String> {
+        if let Ok(mut state) = self.state.lock() {
+            state.snapshot.clone_from(&snapshot);
+        }
+        self.outbound
+            .try_send(RegistrationOutbound::Response {
+                request_id,
+                result,
+                snapshot: Box::new(snapshot),
+            })
+            .map_err(|_| "session response queue is full or disconnected".into())
     }
 }
 
@@ -210,7 +252,7 @@ fn platform_tty_path() -> Option<String> {
 impl Drop for SessionRegistrationClient {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        let _ = self.wake.try_send(());
+        let _ = self.outbound.try_send(RegistrationOutbound::Publish);
         if let Some(thread) = self.thread.lock().ok().and_then(|mut thread| thread.take()) {
             let _ = thread.join();
         }
@@ -220,9 +262,10 @@ impl Drop for SessionRegistrationClient {
 fn run_connection(
     address: SocketAddr,
     state: &Arc<Mutex<PublishedState>>,
-    receiver: &mpsc::Receiver<()>,
+    receiver: &mpsc::Receiver<RegistrationOutbound>,
     stop: &AtomicBool,
     connected: &AtomicBool,
+    requests: &SyncSender<SessionBridgeRequest>,
 ) -> io::Result<()> {
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(500))?;
     stream.set_read_timeout(Some(Duration::from_secs(1)))?;
@@ -247,13 +290,15 @@ fn run_connection(
         _ => return Err(io::Error::other("daemon did not acknowledge registration")),
     }
     connected.store(true, Ordering::Release);
+    stream.set_read_timeout(Some(Duration::from_millis(100)))?;
+    let mut last_ping = Instant::now();
     loop {
         if stop.load(Ordering::Acquire) {
             let _ = write_session_frame(&mut stream, &ClientSessionFrame::Unregister);
             return Ok(());
         }
-        match receiver.recv_timeout(Duration::from_millis(200)) {
-            Ok(()) => {
+        match receiver.recv_timeout(Duration::from_millis(10)) {
+            Ok(RegistrationOutbound::Publish) => {
                 if stop.load(Ordering::Acquire) {
                     continue;
                 }
@@ -276,17 +321,65 @@ fn run_connection(
                     },
                 )?;
             }
-            Err(RecvTimeoutError::Timeout) => {
-                write_session_frame(&mut stream, &ClientSessionFrame::Ping)?;
-                match read_session_frame::<_, ServerSessionFrame>(&mut stream)? {
-                    ServerSessionFrame::Pong => {}
-                    ServerSessionFrame::Error { message, .. } => {
-                        return Err(io::Error::other(message));
-                    }
-                    _ => return Err(io::Error::other("unexpected daemon heartbeat response")),
+            Ok(RegistrationOutbound::Response {
+                request_id,
+                result,
+                snapshot,
+            }) => {
+                write_session_frame(
+                    &mut stream,
+                    &ClientSessionFrame::CommandResult {
+                        version: SESSION_REGISTRATION_VERSION,
+                        request_id,
+                        result,
+                        snapshot: *snapshot,
+                    },
+                )?;
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Ok(()),
+        }
+        if last_ping.elapsed() >= Duration::from_millis(500) {
+            write_session_frame(&mut stream, &ClientSessionFrame::Ping)?;
+            last_ping = Instant::now();
+        }
+        match read_session_frame::<_, ServerSessionFrame>(&mut stream) {
+            Ok(ServerSessionFrame::Command {
+                request_id, input, ..
+            }) => {
+                if requests
+                    .try_send(SessionBridgeRequest {
+                        request_id: request_id.clone(),
+                        input,
+                    })
+                    .is_err()
+                {
+                    let snapshot = state
+                        .lock()
+                        .map_err(|_| io::Error::other("session publication state is poisoned"))?
+                        .snapshot
+                        .clone();
+                    write_session_frame(
+                        &mut stream,
+                        &ClientSessionFrame::CommandResult {
+                            version: SESSION_REGISTRATION_VERSION,
+                            request_id,
+                            result: Err("TUI session command queue is full".into()),
+                            snapshot,
+                        },
+                    )?;
                 }
             }
-            Err(RecvTimeoutError::Disconnected) => return Ok(()),
+            Ok(ServerSessionFrame::Pong) | Ok(ServerSessionFrame::Registered { .. }) => {}
+            Ok(ServerSessionFrame::Error { message, .. }) => {
+                return Err(io::Error::other(message));
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) => return Err(error),
         }
     }
 }

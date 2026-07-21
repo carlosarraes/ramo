@@ -477,6 +477,122 @@ impl ReviewController {
         result
     }
 
+    pub fn remove_session_note(
+        &mut self,
+        note_id: &str,
+        viewport: Viewport,
+    ) -> Result<&'static str, String> {
+        if let Some(index) = self
+            .live_notes
+            .iter()
+            .position(|note| note.note.id.as_deref() == Some(note_id))
+        {
+            self.live_notes.remove(index);
+            self.dirty = true;
+            self.rebuild(viewport, true);
+            return Ok("agent");
+        }
+        if let Some(index) = self.human_notes.iter().position(|note| note.id == note_id) {
+            self.human_notes.remove(index);
+            self.dirty = true;
+            self.rebuild(viewport, true);
+            return Ok("user");
+        }
+        Err(format!("No live or user comment matches id {note_id}."))
+    }
+
+    pub fn validate_session_file(&self, requested: &str) -> Result<(), String> {
+        self.files
+            .iter()
+            .any(|file| {
+                file.id == requested
+                    || file.path == requested
+                    || file.previous_path.as_deref() == Some(requested)
+            })
+            .then_some(())
+            .ok_or_else(|| format!("No diff file matches {requested}."))
+    }
+
+    pub fn navigate_session_target(
+        &mut self,
+        file_path: Option<&str>,
+        hunk_index: Option<usize>,
+        side: Option<NoteAnchorSide>,
+        line: Option<u32>,
+        comment_delta: Option<i32>,
+        viewport: Viewport,
+    ) -> Result<(String, String, usize), String> {
+        let (file_id, target_hunk) = if let Some(delta) = comment_delta {
+            let targets = self
+                .annotated_hunk_targets()
+                .into_iter()
+                .filter(|target| {
+                    self.visible_indices.iter().any(|index| {
+                        self.files[*index].id == target.file_id
+                            && target.hunk_index < self.files[*index].hunks.len()
+                    })
+                })
+                .collect::<Vec<_>>();
+            if targets.is_empty() {
+                return Err("No annotated hunks found in the current review.".into());
+            }
+            let current = targets
+                .iter()
+                .position(|target| {
+                    Some(target.file_id.as_str()) == self.selected_file_id.as_deref()
+                        && Some(target.hunk_index) == self.selected_hunk_index
+                })
+                .unwrap_or_else(|| if delta < 0 { 0 } else { targets.len() - 1 });
+            let next = wrapping_index(current, targets.len(), delta)
+                .ok_or_else(|| "No annotated hunks found in the current review.".to_owned())?;
+            (targets[next].file_id.clone(), targets[next].hunk_index)
+        } else {
+            let requested = file_path.ok_or_else(|| {
+                "navigate requires --file when not using comment navigation".to_owned()
+            })?;
+            let file = self
+                .files
+                .iter()
+                .find(|file| {
+                    file.id == requested
+                        || file.path == requested
+                        || file.previous_path.as_deref() == Some(requested)
+                })
+                .ok_or_else(|| format!("No diff file matches {requested}."))?;
+            let target_hunk = if let Some(index) = hunk_index {
+                index
+            } else {
+                let (side, line) = side
+                    .zip(line)
+                    .ok_or_else(|| "navigate requires a hunk or both side and line".to_owned())?;
+                file.hunks
+                    .iter()
+                    .position(|hunk| {
+                        hunk.lines.iter().any(|candidate| match side {
+                            NoteAnchorSide::Old => candidate.old_lineno == Some(line),
+                            NoteAnchorSide::New => candidate.new_lineno == Some(line),
+                        })
+                    })
+                    .ok_or_else(|| {
+                        format!("No diff hunk in {requested} matches the requested target.")
+                    })?
+            };
+            if target_hunk >= file.hunks.len() {
+                return Err(format!(
+                    "No diff hunk in {requested} matches the requested target."
+                ));
+            }
+            (file.id.clone(), target_hunk)
+        };
+        self.select_target(file_id.clone(), target_hunk, viewport);
+        let file = self
+            .files
+            .iter()
+            .find(|file| file.id == file_id)
+            .expect("selected session file exists");
+        Ok((file.id.clone(), file.path.clone(), target_hunk))
+    }
+
     pub fn export_annotations(&self) -> Vec<Annotation> {
         self.human_notes
             .iter()

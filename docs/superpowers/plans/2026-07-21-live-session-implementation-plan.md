@@ -102,12 +102,12 @@
 - Test: `tests/session_bridge.rs`
 - Test: `tests/pty_session.rs`
 
-- [ ] Write failing controller/PTY tests for hunk, line, next/previous annotation navigation; comment add/batch/list; focus modes; markup feedback; remove; live-only clear; include-user clear; and failed target isolation.
-- [ ] Poll broker requests inside the existing 50 ms app loop and apply them only through controller/watch methods on the UI thread.
-- [ ] Generate `mcp:<request-id>` ids, validate markup at the live note content width, return bounded layout notes, and reveal/focus only when requested.
-- [ ] Keep live comments, sidecar notes, and human notes source-distinct; destructive clear requires CLI `--yes`, and user notes are included only with `--include-user`/`--all`.
-- [ ] Return one result and updated snapshot per request; timeouts and disconnected responders leave TUI state unchanged where the operation was not applied.
-- [ ] Run `cargo test --test session_bridge --test pty_session --test notes_state --test pty_notes` and commit `feat: control live reviews natively`.
+- [x] Write failing controller/PTY tests for hunk, line, next/previous annotation navigation; comment add/batch/list; focus modes; markup feedback; remove; live-only clear; include-user clear; and failed target isolation.
+- [x] Poll broker requests inside the existing 50 ms app loop and apply them only through controller/watch methods on the UI thread.
+- [x] Generate `mcp:<request-id>` ids, validate markup at the live note content width, return bounded layout notes, and reveal/focus only when requested.
+- [x] Keep live comments, sidecar notes, and human notes source-distinct; destructive clear requires CLI `--yes`, and user notes are included only with `--include-user`/`--all`.
+- [x] Return one result and updated snapshot per request; timeouts and disconnected responders leave TUI state unchanged where the operation was not applied.
+- [x] Run `cargo test --test session_bridge --test pty_session --test notes_state --test pty_notes` and commit `feat: control live reviews natively`.
 
 ## Task 6: Support session review export and arbitrary reload safely
 

@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -15,6 +16,8 @@ pub struct RegisteredSession {
     pub session_path: Option<String>,
     pub generation: u64,
     pub pending_request_ids: BTreeSet<String>,
+    route: Option<SyncSender<super::ServerSessionFrame>>,
+    pending_responses: BTreeMap<String, SyncSender<SessionCommandOutcome>>,
     last_seen: Instant,
 }
 
@@ -22,6 +25,13 @@ pub struct RegisteredSession {
 pub struct SessionRegistry {
     sessions: BTreeMap<String, RegisteredSession>,
     next_generation: u64,
+    next_request_id: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionCommandOutcome {
+    pub result: Result<serde_json::Value, String>,
+    pub snapshot: SessionSnapshot,
 }
 
 impl SessionRegistry {
@@ -30,6 +40,16 @@ impl SessionRegistry {
         registration: SessionRegistration,
         snapshot: SessionSnapshot,
         session_path: Option<String>,
+    ) -> u64 {
+        self.register_with_route(registration, snapshot, session_path, None)
+    }
+
+    fn register_with_route(
+        &mut self,
+        registration: SessionRegistration,
+        snapshot: SessionSnapshot,
+        session_path: Option<String>,
+        route: Option<SyncSender<super::ServerSessionFrame>>,
     ) -> u64 {
         self.next_generation = self.next_generation.saturating_add(1);
         let generation = self.next_generation;
@@ -42,6 +62,8 @@ impl SessionRegistry {
                 session_path,
                 generation,
                 pending_request_ids: BTreeSet::new(),
+                route,
+                pending_responses: BTreeMap::new(),
                 last_seen: Instant::now(),
             },
         );
@@ -151,6 +173,29 @@ impl SessionRegistry {
             .is_some_and(|session| session.pending_request_ids.remove(request_id))
     }
 
+    fn complete_command(
+        &mut self,
+        session_id: &str,
+        generation: u64,
+        request_id: &str,
+        outcome: SessionCommandOutcome,
+    ) -> bool {
+        let Some(session) = self
+            .sessions
+            .get_mut(session_id)
+            .filter(|session| session.generation == generation)
+        else {
+            return false;
+        };
+        session.snapshot.clone_from(&outcome.snapshot);
+        session.last_seen = Instant::now();
+        session.pending_request_ids.remove(request_id);
+        session
+            .pending_responses
+            .remove(request_id)
+            .is_some_and(|sender| sender.send(outcome).is_ok())
+    }
+
     pub fn prune_stale(&mut self, ttl: Duration) -> usize {
         let before = self.sessions.len();
         self.sessions
@@ -160,6 +205,65 @@ impl SessionRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.sessions.is_empty()
+    }
+}
+
+pub fn dispatch_session_command(
+    registry: &Arc<Mutex<SessionRegistry>>,
+    selector: &SessionSelector,
+    input: serde_json::Value,
+    timeout: Duration,
+) -> Result<SessionCommandOutcome, String> {
+    let (request_id, session_id, generation, receiver) = {
+        let mut registry = registry
+            .lock()
+            .map_err(|_| "Session registry unavailable".to_owned())?;
+        let selected = registry.select(selector)?;
+        let session_id = selected.registration.descriptor.session_id;
+        registry.next_request_id = registry.next_request_id.saturating_add(1);
+        let request_id = format!("request-{}", registry.next_request_id);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let session = registry
+            .sessions
+            .get_mut(&session_id)
+            .expect("selected session remains registered");
+        let route = session
+            .route
+            .as_ref()
+            .ok_or_else(|| {
+                "The selected session is not connected to its command bridge".to_owned()
+            })?
+            .clone();
+        session.pending_request_ids.insert(request_id.clone());
+        session.pending_responses.insert(request_id.clone(), sender);
+        if route
+            .try_send(super::ServerSessionFrame::Command {
+                version: super::SESSION_REGISTRATION_VERSION,
+                request_id: request_id.clone(),
+                input,
+            })
+            .is_err()
+        {
+            session.pending_request_ids.remove(&request_id);
+            session.pending_responses.remove(&request_id);
+            return Err("The selected session command queue is full or disconnected".into());
+        }
+        (request_id, session_id, session.generation, receiver)
+    };
+    match receiver.recv_timeout(timeout) {
+        Ok(outcome) => Ok(outcome),
+        Err(_) => {
+            if let Ok(mut registry) = registry.lock()
+                && let Some(session) = registry.sessions.get_mut(&session_id)
+                && session.generation == generation
+            {
+                session.pending_request_ids.remove(&request_id);
+                session.pending_responses.remove(&request_id);
+            }
+            Err(format!(
+                "Timed out waiting for live pdiff session {session_id} to apply the command"
+            ))
+        }
     }
 }
 
@@ -407,8 +511,11 @@ fn serve_wire_connection(
         }
     };
     let session_id = first.0.descriptor.session_id.clone();
+    let (route_sender, route_receiver) = mpsc::sync_channel(32);
     let generation = match registry.lock() {
-        Ok(mut registry) => registry.register(first.0, first.1, first.2),
+        Ok(mut registry) => {
+            registry.register_with_route(first.0, first.1, first.2, Some(route_sender.clone()))
+        }
         Err(_) => return,
     };
     if super::write_session_frame(
@@ -425,7 +532,21 @@ fn serve_wire_connection(
         }
         return;
     }
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+    let mut writer = match stream.try_clone() {
+        Ok(writer) => writer,
+        Err(_) => return,
+    };
+    let writer_thread = thread::Builder::new()
+        .name("pdiff-session-wire-writer".into())
+        .spawn(move || {
+            while let Ok(frame) = route_receiver.recv() {
+                if super::write_session_frame(&mut writer, &frame).is_err() {
+                    break;
+                }
+            }
+        })
+        .ok();
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
     while !stop.load(Ordering::Acquire) {
         match super::read_session_frame::<_, super::ClientSessionFrame>(&mut stream) {
             Ok(super::ClientSessionFrame::Snapshot { snapshot, .. }) => {
@@ -439,15 +560,30 @@ fn serve_wire_connection(
                 }
             }
             Ok(super::ClientSessionFrame::Ping) => {
-                if super::write_session_frame(&mut stream, &super::ServerSessionFrame::Pong)
+                if route_sender
+                    .try_send(super::ServerSessionFrame::Pong)
                     .is_err()
                 {
                     break;
                 }
             }
+            Ok(super::ClientSessionFrame::CommandResult {
+                request_id,
+                result,
+                snapshot,
+                ..
+            }) => {
+                if let Ok(mut registry) = registry.lock() {
+                    registry.complete_command(
+                        &session_id,
+                        generation,
+                        &request_id,
+                        SessionCommandOutcome { result, snapshot },
+                    );
+                }
+            }
             Ok(super::ClientSessionFrame::Unregister) => break,
-            Ok(super::ClientSessionFrame::CommandResult { .. })
-            | Ok(super::ClientSessionFrame::Register { .. }) => {}
+            Ok(super::ClientSessionFrame::Register { .. }) => {}
             Err(error)
                 if matches!(
                     error.kind(),
@@ -458,6 +594,10 @@ fn serve_wire_connection(
     }
     if let Ok(mut registry) = registry.lock() {
         registry.unregister_generation(&session_id, generation);
+    }
+    drop(route_sender);
+    if let Some(writer) = writer_thread {
+        let _ = writer.join();
     }
     let _ = stream.shutdown(std::net::Shutdown::Both);
 }
