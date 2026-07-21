@@ -1,21 +1,13 @@
-mod annotations;
-mod app;
-mod clipboard;
-mod diff;
-mod pi_extension;
-mod tmux;
-mod ui;
-mod vim;
-
 use std::fs;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use annotations::output;
-use app::App;
-use diff::parser::parse_unified_diff;
+use pdiff::annotations::output;
+use pdiff::app::App;
+use pdiff::diff::parser::parse_unified_diff;
+use pdiff::pi_extension;
 
 #[derive(Parser)]
 #[command(
