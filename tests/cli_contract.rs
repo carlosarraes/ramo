@@ -35,7 +35,8 @@ fn invalid_layout_fails_before_terminal_startup() {
         .args(["diff", "--mode", "columns"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("invalid value 'columns'"));
+        .stderr(predicate::str::contains("invalid value 'columns'"))
+        .stdout(predicate::str::contains("\x1b[?1049h").not());
 }
 
 #[test]
@@ -45,5 +46,6 @@ fn unsupported_integration_fails_without_terminal_output() {
         .args(["install", "vscode"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("expected pi"));
+        .stderr(predicate::str::contains("expected pi"))
+        .stdout(predicate::str::contains("\x1b[?1049h").not());
 }

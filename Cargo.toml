@@ -23,5 +23,6 @@ libc = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2"
+portable-pty = "0.9"
 predicates = "3"
 tempfile = "3"
