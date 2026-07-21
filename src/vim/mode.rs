@@ -2,7 +2,6 @@
 pub enum Mode {
     Normal,
     VisualLine { anchor: usize },
-    VisualBlock { anchor: (usize, usize) },
     CommentInsert,
     CommentNormal,
     Command,
@@ -14,7 +13,6 @@ impl Mode {
         match self {
             Mode::Normal => "NORMAL",
             Mode::VisualLine { .. } => "V-LINE",
-            Mode::VisualBlock { .. } => "V-BLOCK",
             Mode::CommentInsert => "COMMENT",
             Mode::CommentNormal => "COMMENT",
             Mode::Command => "COMMAND",
