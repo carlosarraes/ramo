@@ -13,7 +13,7 @@ fn skill_path_materializes_the_embedded_ramo_review_skill_without_a_runtime_bund
     let path = String::from_utf8(output.stdout).unwrap();
     let path = std::path::Path::new(path.trim());
     assert!(path.is_file(), "{}", path.display());
-    assert!(path.starts_with(temp.path()));
+    assert!(path.starts_with(temp.path().canonicalize().unwrap()));
     let skill = std::fs::read_to_string(path).unwrap();
     assert!(skill.contains("name: ramo-review"));
     assert!(skill.contains("ramo session"));

@@ -45,13 +45,46 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     drop(pair.slave);
     let mut writer = pair.master.take_writer().unwrap();
     let mut reader = pair.master.try_clone_reader().unwrap();
+    #[cfg(unix)]
     let drain = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let _ = reader.read_to_end(&mut bytes);
     });
+    #[cfg(windows)]
+    let (chunks, drain) = {
+        let (sender, chunks) = std::sync::mpsc::channel();
+        let drain = std::thread::spawn(move || {
+            let mut buffer = [0_u8; 4096];
+            while let Ok(count) = reader.read(&mut buffer) {
+                if count == 0 || sender.send(buffer[..count].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        (chunks, drain)
+    };
+    #[cfg(windows)]
+    let mut raw = Vec::new();
+    #[cfg(windows)]
+    let mut cursor_queries_answered = 0;
 
     let deadline = Instant::now() + Duration::from_secs(3);
     let session_id = loop {
+        #[cfg(windows)]
+        {
+            while let Ok(chunk) = chunks.try_recv() {
+                raw.extend(chunk);
+            }
+            let query_count = raw
+                .windows(b"\x1b[6n".len())
+                .filter(|bytes| *bytes == b"\x1b[6n")
+                .count();
+            while cursor_queries_answered < query_count {
+                writer.write_all(b"\x1b[1;1R").unwrap();
+                writer.flush().unwrap();
+                cursor_queries_answered += 1;
+            }
+        }
         let output = cli(binary, port, &["session", "list", "--json"]);
         if output.status.success()
             && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout)
@@ -237,6 +270,11 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     assert!(child.wait().unwrap().success());
     drop(writer);
     drop(pair.master);
+    #[cfg(windows)]
+    drop(chunks);
+    #[cfg(unix)]
     drain.join().unwrap();
+    #[cfg(windows)]
+    drop(drain);
     drop(daemon);
 }

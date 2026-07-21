@@ -2,7 +2,9 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
-use ramo::diff::model::{FileChangeKind, MovedLineKind, SourceSpec};
+use ramo::diff::model::MovedLineKind;
+#[cfg(unix)]
+use ramo::diff::model::{FileChangeKind, SourceSpec};
 use ramo::input::{LoadError, ReloadPlan, ReviewLoader, normalize_patch_text};
 
 #[test]

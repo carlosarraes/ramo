@@ -1,6 +1,8 @@
+#[cfg(unix)]
 use std::path::Path;
 
 const POWERSHELL_INSTALLER: &str = include_str!("../install.ps1");
+#[cfg(unix)]
 const UNIX_INSTALLER: &str = include_str!("../install.sh");
 
 #[test]

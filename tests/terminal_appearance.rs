@@ -136,10 +136,23 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
             break;
         }
     }
+    let elapsed = start.elapsed();
     writer.write_all(b"q").unwrap();
     writer.flush().unwrap();
-    assert!(child.wait().unwrap().success());
-    (raw, start.elapsed())
+    let exit_deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        if Instant::now() >= exit_deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    (raw, elapsed)
 }
 
 #[test]

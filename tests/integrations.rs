@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io;
 
+#[cfg(unix)]
 use ramo::process::command::SystemCommandExecutor;
 use ramo::process::command::{CommandExecutor, CommandRequest, CommandResult};
 use ramo::tmux::{PasteMode, TmuxClient};
