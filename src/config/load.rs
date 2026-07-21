@@ -24,6 +24,41 @@ const PREFERENCE_KEYS: &[&str] = &[
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
+const CUSTOM_THEME_COLOR_KEYS: &[&str] = &[
+    "background",
+    "panel",
+    "panelAlt",
+    "border",
+    "accent",
+    "accentMuted",
+    "text",
+    "muted",
+    "addedBg",
+    "removedBg",
+    "movedAddedBg",
+    "movedRemovedBg",
+    "contextBg",
+    "addedContentBg",
+    "removedContentBg",
+    "contextContentBg",
+    "addedSignColor",
+    "removedSignColor",
+    "lineNumberBg",
+    "lineNumberFg",
+    "selectedHunk",
+    "badgeAdded",
+    "badgeRemoved",
+    "badgeNeutral",
+    "fileNew",
+    "fileDeleted",
+    "fileRenamed",
+    "fileModified",
+    "fileUntracked",
+    "noteBorder",
+    "noteBackground",
+    "noteTitleBackground",
+    "noteTitleText",
+];
 
 #[derive(Debug, Clone, Default)]
 pub struct ConfigPaths {
@@ -63,6 +98,21 @@ impl ConfigResolver {
         if let Some(config) = &repo {
             resolved.apply_layer(&config.global);
         }
+        if let Some(custom_theme) = user
+            .as_ref()
+            .and_then(|config| config.custom_theme.as_ref())
+        {
+            resolved.custom_theme = Some(custom_theme.clone());
+        }
+        if let Some(custom_theme) = repo
+            .as_ref()
+            .and_then(|config| config.custom_theme.as_ref())
+        {
+            match &mut resolved.custom_theme {
+                Some(base) => base.merge(custom_theme),
+                None => resolved.custom_theme = Some(custom_theme.clone()),
+            }
+        }
         if let Some(config) = &user {
             resolved.apply_layer(command_layer(config, input.kind()));
         }
@@ -100,12 +150,25 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
         source: source.to_string(),
     })?;
     validate_keys(path, &value)?;
-    toml::from_str(&source)
-        .map(Some)
-        .map_err(|source| ConfigError::Parse {
+    let mut config =
+        toml::from_str::<ConfigFile>(&source).map_err(|source| ConfigError::Parse {
             path: path.to_path_buf(),
             source: source.to_string(),
-        })
+        })?;
+    if let Some(base) = config
+        .custom_theme
+        .as_mut()
+        .and_then(|custom| custom.base.as_mut())
+    {
+        let Some(canonical) = crate::ui::themes::normalize_builtin_theme_id(base) else {
+            return Err(ConfigError::Parse {
+                path: path.to_path_buf(),
+                source: format!("custom_theme.base is not a known built-in theme id: {base}"),
+            });
+        };
+        *base = canonical.to_owned();
+    }
+    Ok(Some(config))
 }
 
 fn validate_keys(path: &Path, value: &toml::Value) -> Result<(), ConfigError> {
@@ -136,12 +199,71 @@ fn validate_keys(path: &Path, value: &toml::Value) -> Result<(), ConfigError> {
             }
             continue;
         }
+        if key == "custom_theme" {
+            validate_custom_theme(path, value)?;
+            continue;
+        }
         return Err(ConfigError::UnknownKey {
             path: path.to_path_buf(),
             key: key.clone(),
         });
     }
     Ok(())
+}
+
+fn validate_custom_theme(path: &Path, value: &toml::Value) -> Result<(), ConfigError> {
+    let Some(table) = value.as_table() else {
+        return Err(ConfigError::Parse {
+            path: path.to_path_buf(),
+            source: "custom_theme must be a TOML table".into(),
+        });
+    };
+    for (key, value) in table {
+        if key == "base" || key == "label" {
+            if !value.is_str() {
+                return invalid_custom_value(path, &format!("custom_theme.{key}"), "a string");
+            }
+            continue;
+        }
+        if key == "syntax_scopes" {
+            let Some(scopes) = value.as_table() else {
+                return invalid_custom_value(path, "custom_theme.syntax_scopes", "a TOML table");
+            };
+            for (scope, color) in scopes {
+                validate_hex_color(path, &format!("custom_theme.syntax_scopes.{scope}"), color)?;
+            }
+            continue;
+        }
+        if CUSTOM_THEME_COLOR_KEYS.contains(&key.as_str()) {
+            validate_hex_color(path, &format!("custom_theme.{key}"), value)?;
+            continue;
+        }
+        return Err(ConfigError::UnknownKey {
+            path: path.to_path_buf(),
+            key: format!("custom_theme.{key}"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_hex_color(path: &Path, key: &str, value: &toml::Value) -> Result<(), ConfigError> {
+    let valid = value.as_str().is_some_and(|color| {
+        color.len() == 7
+            && color.starts_with('#')
+            && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+    });
+    if valid {
+        Ok(())
+    } else {
+        invalid_custom_value(path, key, "a hex color like #112233")
+    }
+}
+
+fn invalid_custom_value<T>(path: &Path, key: &str, expected: &str) -> Result<T, ConfigError> {
+    Err(ConfigError::Parse {
+        path: path.to_path_buf(),
+        source: format!("expected {key} to be {expected}"),
+    })
 }
 
 fn command_layer(config: &ConfigFile, kind: InputKind) -> &ConfigLayer {

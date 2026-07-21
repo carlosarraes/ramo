@@ -245,7 +245,7 @@ git commit -m "feat: add hunk-compatible review state"
 - Consumes: Hunk theme identifiers/order, legacy aliases, custom TOML colors, transparent-background preference, file language/path and row spans.
 - Produces: `ThemeRegistry`, semantic `AppTheme`, `resolve_theme`, theme selector items, validated custom palette, and an on-demand bounded syntax cache.
 
-- [ ] **Step 1: Write failing theme and cache tests**
+- [x] **Step 1: Write failing theme and cache tests**
 
 Cover:
 
@@ -257,25 +257,25 @@ Cover:
 6. Moved rows use moved palettes, line numbers use matching gutters, and changed spans use stronger content backgrounds.
 7. Highlighting is created only for requested visible rows, cached by file id/content/theme, and bounded so cycling through many files/themes evicts old entries.
 
-- [ ] **Step 2: Run theme/highlight tests and verify red**
+- [x] **Step 2: Run theme/highlight tests and verify red**
 
 Run: `cargo test --test themes && cargo test --test highlighting`
 
 Expected: compilation fails on the new registry and cache APIs.
 
-- [ ] **Step 3: Port semantic palettes as Rust data**
+- [x] **Step 3: Port semantic palettes as Rust data**
 
 Embed theme ids and semantic base colors as Rust constants. Do not ship JSON or execute a theme converter at runtime. Syntect supplies syntax tokenization; custom exact TextMate scopes are translated to Syntect selectors where supported and preserved in config even when a selector has no current match.
 
 Replace eager whole-review highlighting with `HighlightCache::spans(file, hunk, line, theme)`. Retain a fixed number of file/theme entries and replace stale content-sensitive keys. Geometry must never depend on the presence of highlight spans.
 
-- [ ] **Step 4: Run config, theme, and memory-shape regressions**
+- [x] **Step 4: Run config, theme, and memory-shape regressions**
 
 Run: `cargo test --test themes && cargo test --test highlighting && cargo test --test config_resolution && cargo clippy --all-targets --all-features -- -D warnings`
 
 Expected: all pass; no dynamic runtime assets are loaded.
 
-- [ ] **Step 5: Commit themes and highlighting**
+- [x] **Step 5: Commit themes and highlighting**
 
 ```bash
 git add src/ui src/config tests/themes.rs tests/highlighting.rs Cargo.toml Cargo.lock

@@ -1,6 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::diff::model::LineType;
+use crate::ui::themes::{ReviewLineStyle, ThemeRegistry};
 
 pub struct Theme {
     pub addition: Style,
@@ -22,40 +23,39 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
+        let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
         Self {
-            addition: Style::default().fg(Color::Green).bg(Color::Rgb(0, 35, 0)),
-            deletion: Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0)),
-            context: Style::default().fg(Color::DarkGray),
-            line_number: Style::default().fg(Color::DarkGray),
+            addition: theme.row_style(ReviewLineStyle::Added),
+            deletion: theme.row_style(ReviewLineStyle::Removed),
+            context: theme.row_style(ReviewLineStyle::Context),
+            line_number: Style::default().fg(theme.line_number_fg),
             hunk_header: Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
             selection: Style::default()
-                .bg(Color::DarkGray)
+                .bg(theme.selected_hunk)
                 .add_modifier(Modifier::BOLD),
-            comment_indicator: Style::default().fg(Color::Yellow),
-            status_bar: Style::default().bg(Color::DarkGray).fg(Color::White),
+            comment_indicator: Style::default().fg(theme.note_border),
+            status_bar: Style::default().bg(theme.panel_alt).fg(theme.text),
             mode_normal: Style::default()
-                .bg(Color::Blue)
-                .fg(Color::Black)
+                .bg(theme.accent)
+                .fg(theme.background)
                 .add_modifier(Modifier::BOLD),
             mode_visual: Style::default()
-                .bg(Color::Magenta)
-                .fg(Color::Black)
+                .bg(theme.file_renamed)
+                .fg(theme.background)
                 .add_modifier(Modifier::BOLD),
             mode_comment: Style::default()
-                .bg(Color::Yellow)
-                .fg(Color::Black)
+                .bg(theme.note_border)
+                .fg(theme.background)
                 .add_modifier(Modifier::BOLD),
-            file_header: Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
+            file_header: Style::default().fg(theme.text).add_modifier(Modifier::BOLD),
             file_list_active: Style::default()
-                .fg(Color::White)
-                .bg(Color::DarkGray)
+                .fg(theme.text)
+                .bg(theme.panel_alt)
                 .add_modifier(Modifier::BOLD),
-            file_list_item: Style::default().fg(Color::Gray),
-            border: Style::default().fg(Color::DarkGray),
+            file_list_item: Style::default().fg(theme.muted),
+            border: Style::default().fg(theme.border),
         }
     }
 }

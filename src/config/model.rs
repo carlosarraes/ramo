@@ -1,4 +1,32 @@
 use crate::core::input::{LayoutMode, VcsId};
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct CustomThemeConfig {
+    pub base: Option<String>,
+    pub label: Option<String>,
+    #[serde(default)]
+    pub syntax_scopes: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub colors: BTreeMap<String, String>,
+}
+
+impl CustomThemeConfig {
+    pub(crate) fn merge(&mut self, other: &Self) {
+        if other.base.is_some() {
+            self.base.clone_from(&other.base);
+        }
+        if other.label.is_some() {
+            self.label.clone_from(&other.label);
+        }
+        self.colors.extend(other.colors.clone());
+        self.syntax_scopes.extend(other.syntax_scopes.clone());
+    }
+
+    pub fn color(&self, key: &str) -> Option<&str> {
+        self.colors.get(key).map(String::as_str)
+    }
+}
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct ConfigLayer {
@@ -33,6 +61,7 @@ pub struct ConfigFile {
     pub pager: ConfigLayer,
     #[serde(default)]
     pub difftool: ConfigLayer,
+    pub custom_theme: Option<CustomThemeConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +79,7 @@ pub struct ResolvedConfig {
     pub prompt_save_view_preferences: bool,
     pub transparent_background: bool,
     pub color_moved: bool,
+    pub custom_theme: Option<CustomThemeConfig>,
 }
 
 impl Default for ResolvedConfig {
@@ -68,6 +98,7 @@ impl Default for ResolvedConfig {
             prompt_save_view_preferences: true,
             transparent_background: false,
             color_moved: true,
+            custom_theme: None,
         }
     }
 }
