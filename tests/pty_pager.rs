@@ -198,13 +198,22 @@ impl PtyProcess {
     }
 
     fn drain_output(&mut self) {
+        #[cfg(unix)]
         let deadline = Instant::now() + DEADLINE;
         loop {
+            #[cfg(unix)]
             let remaining = deadline.saturating_duration_since(Instant::now());
+            #[cfg(windows)]
+            let remaining = Duration::from_millis(100);
             match self.chunks.recv_timeout(remaining) {
                 Ok(chunk) => self.raw.extend(chunk),
                 Err(RecvTimeoutError::Disconnected) => break,
-                Err(RecvTimeoutError::Timeout) => panic!("PTY reader did not close"),
+                Err(RecvTimeoutError::Timeout) => {
+                    #[cfg(windows)]
+                    break;
+                    #[cfg(unix)]
+                    panic!("PTY reader did not close");
+                }
             }
         }
     }
