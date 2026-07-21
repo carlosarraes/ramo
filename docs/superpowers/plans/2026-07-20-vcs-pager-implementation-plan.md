@@ -63,7 +63,7 @@
 - Consumes: `ReviewInput`, `ResolvedConfig`, `Changeset`, and the existing `ReviewLoader` dispatch seam.
 - Produces: `VcsId`, `VcsOperation`, `VcsLoadContext<'a>`, `VcsPatch`, `CommandSpec`, `CommandRunner`, `SystemCommandRunner`, `LoadContext<'a>`, and `ReloadPlan::Vcs`.
 
-- [ ] **Step 1: Write failing typed-selection and context tests**
+- [x] **Step 1: Write failing typed-selection and context tests**
 
 ```rust
 // tests/vcs_contract.rs
@@ -118,13 +118,13 @@ fn vcs_config_is_typed_and_rejects_unknown_providers() {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and confirm the new API is absent**
+- [x] **Step 2: Run the focused tests and confirm the new API is absent**
 
 Run: `cargo test --test vcs_contract && cargo test --test config_resolution vcs_config_is_typed`
 
 Expected: compilation fails because `pdiff::vcs`, `VcsId`, and the typed `ResolvedConfig::vcs` do not exist.
 
-- [ ] **Step 3: Add the contracts and bounded command runner**
+- [x] **Step 3: Add the contracts and bounded command runner**
 
 ```rust
 // src/vcs/types.rs
@@ -286,13 +286,13 @@ pub enum ReloadPlan {
 
 Update runtime to resolve config once, construct `SystemCommandRunner`, build `LoadContext`, and pass it to every load. Update existing input tests with a helper returning a default config, temp cwd, and system runner.
 
-- [ ] **Step 4: Run contract, config, and existing loader tests**
+- [x] **Step 4: Run contract, config, and existing loader tests**
 
 Run: `cargo test --test vcs_contract && cargo test --test config_resolution && cargo test --test input_loading`
 
 Expected: all tests pass, including the existing patch and file-pair contracts.
 
-- [ ] **Step 5: Commit the contracts**
+- [x] **Step 5: Commit the contracts**
 
 ```bash
 git add src/lib.rs src/core/input.rs src/config/model.rs src/config/load.rs src/input/mod.rs src/runtime.rs src/vcs tests/vcs_contract.rs tests/config_resolution.rs tests/input_loading.rs
@@ -311,7 +311,7 @@ git commit -m "refactor: define native vcs loading contracts"
 - Consumes: `VcsAdapter`, `CommandSpec`, `VcsError`, and neutral `ReviewInput` variants.
 - Produces: `GitAdapter`, `build_git_diff_args`, `build_git_show_args`, `build_git_stash_args`, `select_vcs`, and actionable Git error translation.
 
-- [ ] **Step 1: Add failing Git argv, detection, and error tests**
+- [x] **Step 1: Add failing Git argv, detection, and error tests**
 
 ```rust
 #[test]
@@ -338,13 +338,13 @@ fn nearest_checkout_wins_and_same_root_prefers_jj_then_sl_then_git() {
 
 Use a `FakeRunner` implementing `CommandRunner` to return `VcsError::Exit` with `not a git repository`, `bad revision`, and `No stash entries found.`; assert the formatted messages contain, respectively, `inside a Git repository`, the supplied range/ref, and `git stash list`.
 
-- [ ] **Step 2: Run the Git contract tests and verify red**
+- [x] **Step 2: Run the Git contract tests and verify red**
 
 Run: `cargo test --test vcs_contract git_`
 
 Expected: compilation fails because `GitAdapter`, selection, and builders are absent.
 
-- [ ] **Step 3: Add exact Git builders and nearest-marker selection**
+- [x] **Step 3: Add exact Git builders and nearest-marker selection**
 
 In `src/vcs/git.rs`, define the canonical prefix constant and builders:
 
@@ -377,13 +377,13 @@ In `src/vcs/detect.rs`, walk `Path::ancestors()`, recognize `.git` as either a d
 
 Add `VcsError` to `src/vcs/mod.rs` with `Spawn`, `Exit`, `OutputTooLarge`, `UnsupportedOperation`, `NotRepository`, `InvalidRevision`, `MissingStash`, `InvalidUtf8`, and `Io` variants. Its `Display` text names `pdiff`, the native VCS, the input value, and one concrete corrective action. `GitAdapter::load` initially returns `UnsupportedOperation` after selecting the correct builder; Task 3 replaces that branch with repository loading.
 
-- [ ] **Step 4: Run the complete contract suite**
+- [x] **Step 4: Run the complete contract suite**
 
 Run: `cargo test --test vcs_contract`
 
 Expected: all selection, argv, and translated-diagnostic tests pass.
 
-- [ ] **Step 5: Commit Git contracts**
+- [x] **Step 5: Commit Git contracts**
 
 ```bash
 git add src/vcs tests/vcs_contract.rs
@@ -403,7 +403,7 @@ git commit -m "feat: add native git command contracts"
 - Consumes: Git builders, `CommandRunner`, shared patch parser, `ResolvedConfig`, and `ReviewInput`.
 - Produces: executable Git review inputs, normalized titles/source labels, untracked `DiffFile`s, and `ReloadPlan::Vcs`.
 
-- [ ] **Step 1: Write failing real-repository integration tests**
+- [x] **Step 1: Write failing real-repository integration tests**
 
 Create this fixture in `tests/git_loading.rs`; it keeps every repository operation as argv and centralizes the new load context:
 
@@ -547,13 +547,13 @@ fn invalid_repo_revision_and_empty_stash_are_actionable() {
 }
 ```
 
-- [ ] **Step 2: Run the Git loading tests and verify the unsupported seam fails**
+- [x] **Step 2: Run the Git loading tests and verify the unsupported seam fails**
 
 Run: `cargo test --test git_loading`
 
 Expected: all cases fail with the Task 2 unsupported-load error.
 
-- [ ] **Step 3: Implement Git loading and untracked synthesis**
+- [x] **Step 3: Implement Git loading and untracked synthesis**
 
 Implement `GitAdapter::load` as follows:
 
@@ -590,13 +590,13 @@ LoadedReview {
 
 Update `ReviewLoader::load` so `VcsDiff`, `Show`, and `StashShow` dispatch to this module. Remove `UnsupportedInput` expectations for those variants.
 
-- [ ] **Step 4: Run Git and regression tests**
+- [x] **Step 4: Run Git and regression tests**
 
 Run: `cargo test --test git_loading && cargo test --test input_loading && cargo test --test cli_contract`
 
 Expected: all tests pass; malformed patches remain distinct from valid empty Git diffs.
 
-- [ ] **Step 5: Commit executable Git workflows**
+- [x] **Step 5: Commit executable Git workflows**
 
 ```bash
 git add src/input src/vcs tests/git_loading.rs tests/input_loading.rs
@@ -620,7 +620,7 @@ git commit -m "feat: load native git review inputs"
 - Consumes: normalized `DiffFile`, Git review inputs, Git patch output, and file-pair paths.
 - Produces: explicit `FileStats`, `MovedLineKind`, `SourceSpec`, `SourceReader`, skipped large-file placeholders, and exact Git source endpoints.
 
-- [ ] **Step 1: Write failing stats, source, moved-line, and threshold tests**
+- [x] **Step 1: Write failing stats, source, moved-line, and threshold tests**
 
 ```rust
 #[test]
@@ -690,13 +690,13 @@ fn difftool_dev_null_side_is_an_added_or_deleted_file() {
 }
 ```
 
-- [ ] **Step 2: Run threshold and source tests to verify red**
+- [x] **Step 2: Run threshold and source tests to verify red**
 
 Run: `cargo test --test git_loading large_ && cargo test --test git_loading source_ && cargo test --test input_loading moved_`
 
 Expected: compilation fails because stats, source specs, and moved classes are absent.
 
-- [ ] **Step 3: Extend the normalized model without dynamic runtime objects**
+- [x] **Step 3: Extend the normalized model without dynamic runtime objects**
 
 Move `FileStats` into `src/diff/model.rs` and add:
 
@@ -720,7 +720,7 @@ Add `moved: Option<MovedLineKind>` to `DiffLine`, and `stats: FileStats`, `old_s
 
 Implement `SourceReader` with a `HashMap<SourceSpec, Option<String>>` cache. `File` uses a bounded `Read::take(max + 1)`; `GitBlob` runs `git show <ref>:<path>`; `GitIndex` runs `git show :<path>`; `None` returns `Ok(None)`. Exceeding 1,000,000 bytes returns `SourceError::TooLarge`; expected absent Git sides return `Ok(None)` while other failures retain diagnostics.
 
-- [ ] **Step 4: Implement Git preflight thresholds and source endpoint resolution**
+- [x] **Step 4: Implement Git preflight thresholds and source endpoint resolution**
 
 Run `git diff --no-ext-diff --find-renames --no-color --numstat -z` before the tracked patch. Parse NUL records; skip a tracked file when additions + deletions exceeds 20,000 or its current filesystem path exceeds 1,000,000 bytes. Exclude skipped paths from the patch with `:(exclude)<path>` and append placeholder files with exact stats.
 
@@ -739,13 +739,13 @@ Resolve sources exactly:
 
 Before terminal-control stripping, recognize the deterministic Git SGR configuration: magenta old lines and cyan new lines, with `dim` producing the dimmed variants. Strip all control bytes from stored content after attaching the class.
 
-- [ ] **Step 5: Run all model and Git tests**
+- [x] **Step 5: Run all model and Git tests**
 
 Run: `cargo test --lib && cargo test --test input_loading && cargo test --test git_loading`
 
 Expected: all tests pass, including exact boundary cases at 1,000,000 bytes and 20,000 lines.
 
-- [ ] **Step 6: Commit source and large-file behavior**
+- [x] **Step 6: Commit source and large-file behavior**
 
 ```bash
 git add src/core src/diff src/input src/vcs tests/git_loading.rs tests/input_loading.rs
@@ -766,7 +766,7 @@ git commit -m "feat: preserve vcs sources and large diff metadata"
 - Consumes: neutral VCS operations, the command runner, nearest-checkout selection, and shared patch normalization.
 - Produces: `JjAdapter`, Jujutsu diff/show command builders, polling-compatible reload data, and Jujutsu-specific failures.
 
-- [ ] **Step 1: Write failing Jujutsu builder and fake-executable integration tests**
+- [x] **Step 1: Write failing Jujutsu builder and fake-executable integration tests**
 
 ```rust
 #[test]
@@ -804,13 +804,13 @@ fn jj_diff_and_show_load_git_patches_from_the_native_executable() {
 
 Add cases for explicit/config-selected JJ outside a repo, missing executable, invalid revset messages (`Failed to parse revset`, `Revision not found`, `Revset expression resolved to no revisions`), a nonzero generic diagnostic, and a path containing shell metacharacters.
 
-- [ ] **Step 2: Run Jujutsu tests and verify red**
+- [x] **Step 2: Run Jujutsu tests and verify red**
 
 Run: `cargo test --test jj_loading && cargo test --test vcs_contract jj_`
 
 Expected: compilation fails because `JjAdapter` and the builders are absent.
 
-- [ ] **Step 3: Implement the Jujutsu adapter**
+- [x] **Step 3: Implement the Jujutsu adapter**
 
 ```rust
 pub fn build_jj_diff_args(range: Option<&str>, pathspecs: &[String]) -> Vec<String> {
@@ -829,13 +829,13 @@ pub fn build_jj_show_args(reference: Option<&str>, pathspecs: &[String]) -> Vec<
 
 Every command prepends `--no-pager --color never`. Resolve the repo with `jj root`. Working-tree reviews use `jj diff --git`; ranges add `-r`; shows use `jj diff --git -r <ref-or-@>`. Reject staged and stash operations before spawning. Translate missing executable, missing workspace, invalid revset, and generic exit failures into `VcsError` messages naming Jujutsu and the exact user input. Return no Git source specs because JJ does not expose the same stable index/blob endpoints through this contract.
 
-- [ ] **Step 4: Run Jujutsu, Git, and config regression tests**
+- [x] **Step 4: Run Jujutsu, Git, and config regression tests**
 
 Run: `cargo test --test jj_loading && cargo test --test vcs_contract && cargo test --test git_loading && cargo test --test config_resolution`
 
 Expected: all tests pass and explicit `vcs = "jj"` never silently falls back to Git.
 
-- [ ] **Step 5: Commit Jujutsu support**
+- [x] **Step 5: Commit Jujutsu support**
 
 ```bash
 git add src/vcs src/input/vcs.rs tests/jj_loading.rs tests/vcs_contract.rs
@@ -856,7 +856,7 @@ git commit -m "feat: add native jujutsu reviews"
 - Consumes: adapter dispatch, untracked-file synthesis and thresholds, fake native executable harness, and shared patch normalization.
 - Produces: `SaplingAdapter`, `.sl`/Sapling-`.hg` detection, diff/show loading, unknown-file inclusion, and Sapling diagnostics.
 
-- [ ] **Step 1: Add failing Sapling contracts**
+- [x] **Step 1: Add failing Sapling contracts**
 
 ```rust
 #[test]
@@ -884,13 +884,13 @@ fn upstream_mercurial_marker_is_not_misdetected_as_sapling() {
 
 Add fake-executable cases for working copy, `-r` range, `show --change`, `sl status --unknown --print0 --root-relative`, excluded untracked files, binary unknown files, 20,001-line unknown files, staged rejection, missing repo/executable, invalid revset, and generic failure.
 
-- [ ] **Step 2: Run Sapling tests and verify red**
+- [x] **Step 2: Run Sapling tests and verify red**
 
 Run: `cargo test --test sl_loading && cargo test --test vcs_contract sl_`
 
 Expected: compilation fails because the Sapling adapter/builders are absent.
 
-- [ ] **Step 3: Implement Sapling behavior**
+- [x] **Step 3: Implement Sapling behavior**
 
 All spawned commands begin `sl --noninteractive --color never`. Builders are:
 
@@ -913,13 +913,13 @@ Resolve the root with `sl root`. Reject staged and stash operations. For working
 
 Translate missing repo phrases case-insensitively, invalid revision/revset phrases, missing executable, and generic exit errors without Git fallback.
 
-- [ ] **Step 4: Run all three adapter suites**
+- [x] **Step 4: Run all three adapter suites**
 
 Run: `cargo test --test sl_loading && cargo test --test jj_loading && cargo test --test git_loading && cargo test --test vcs_contract`
 
 Expected: all tests pass, including same-root selection order and unknown-file policy.
 
-- [ ] **Step 5: Commit Sapling support**
+- [x] **Step 5: Commit Sapling support**
 
 ```bash
 git add src/vcs src/input/vcs.rs tests/sl_loading.rs tests/vcs_contract.rs
@@ -943,7 +943,7 @@ git commit -m "feat: add native sapling reviews"
 - Consumes: `ReviewInput::Pager`, stdin, patch normalization, `ResolvedConfig`, stdout terminal state, and process exit status.
 - Produces: `LoadOutcome::{Review, PlainText}`, `looks_like_patch`, `sanitize_terminal_text`, `PagerSpec`, and `page_plain_text`.
 
-- [ ] **Step 1: Write failing pager detection, sanitizer, and command-policy tests**
+- [x] **Step 1: Write failing pager detection, sanitizer, and command-policy tests**
 
 ```rust
 #[test]
@@ -976,13 +976,13 @@ fn sanitizer_removes_osc_controls_but_can_preserve_sgr_styles() {
 
 Add loader cases asserting patch-like pager stdin becomes a normal `LoadedReview`, ordinary text becomes `LoadOutcome::PlainText`, and empty ordinary text is valid plain output. Add command-resolution cases for quotes, backslashes, leading `NAME=value`, `env NAME=value`, `PDIFF_TEXT_PAGER` precedence over `PAGER`, invalid quoting, `.exe`/`.cmd` recursion checks, and strings containing `;`, `|`, `$()`, and redirects as literal argv rather than operators.
 
-- [ ] **Step 2: Run pager unit tests and verify red**
+- [x] **Step 2: Run pager unit tests and verify red**
 
 Run: `cargo test --test pager`
 
 Expected: compilation fails because pager modules and `LoadOutcome` do not exist.
 
-- [ ] **Step 3: Add the safe argv parser and pager outcome**
+- [x] **Step 3: Add the safe argv parser and pager outcome**
 
 Add `shell-words = "1"` to normal dependencies. Define:
 
@@ -1005,7 +1005,7 @@ pub struct PagerSpec {
 
 `sanitize_terminal_text(text, preserve_sgr)` normalizes CRLF, removes OSC sequences, all non-SGR CSI, C0 controls except newline/tab, and DEL. When `preserve_sgr` is true, retain only CSI sequences ending in `m` whose parameters contain digits and semicolons.
 
-- [ ] **Step 4: Execute plain text with inherited terminal ownership**
+- [x] **Step 4: Execute plain text with inherited terminal ownership**
 
 ```rust
 pub fn page_plain_text(
@@ -1029,13 +1029,13 @@ pub fn page_plain_text(
 
 On Unix, `exit_code_from_status` maps signals to `128 + signal`; otherwise it uses the child code or 1. Runtime branches on `LoadOutcome` before TTY replacement or Ratatui initialization. Pager failures become `AppError::Pager` with exit code 1; a pager child nonzero/signal status is returned unchanged.
 
-- [ ] **Step 5: Run pager and runtime regressions**
+- [x] **Step 5: Run pager and runtime regressions**
 
 Run: `cargo test --test pager && cargo test --test runtime_resolution && cargo test --all-targets`
 
 Expected: all tests pass and plain text never emits an alternate-screen control sequence.
 
-- [ ] **Step 6: Commit pager fallback**
+- [x] **Step 6: Commit pager fallback**
 
 ```bash
 git add Cargo.toml Cargo.lock src/input src/pager.rs src/lib.rs src/runtime.rs src/error.rs tests/pager.rs
@@ -1055,7 +1055,7 @@ git commit -m "feat: add safe diff-aware pager fallback"
 - Consumes: the compiled `pdiff` executable, native temporary Git fixtures, and pager child dispatch.
 - Produces: end-to-end proof that failures occur before terminal startup, diff pager launches Ratatui, text pager owns the terminal, and exit codes propagate.
 
-- [ ] **Step 1: Add failing CLI and PTY tests**
+- [x] **Step 1: Add failing CLI and PTY tests**
 
 Add `portable-pty = "0.9"` to dev-dependencies. In `tests/cli_vcs.rs`, add:
 
@@ -1145,13 +1145,13 @@ fn ctrl_c_terminated_pager_maps_to_130() {
 }
 ```
 
-- [ ] **Step 2: Run black-box tests and confirm missing PTY coverage**
+- [x] **Step 2: Run black-box tests and confirm missing PTY coverage**
 
 Run: `cargo test --test cli_vcs && cargo test --test pty_pager -- --nocapture`
 
 Expected: compilation fails until the PTY harness and portable-pty dev dependency are added.
 
-- [ ] **Step 3: Implement deterministic PTY helpers and close runtime gaps**
+- [x] **Step 3: Implement deterministic PTY helpers and close runtime gaps**
 
 The PTY helper must use this concrete shape:
 
@@ -1215,13 +1215,13 @@ Use a reader thread plus `recv_timeout(Duration::from_secs(5))`; do not sleep. S
 
 Fix only behavior exposed by these tests: no Ratatui initialization on CLI/VCS/pager errors, exactly one terminal restoration sequence after diff-pager quit, inherited child stdout/stderr, and propagated status.
 
-- [ ] **Step 4: Run black-box and full regression suites**
+- [x] **Step 4: Run black-box and full regression suites**
 
 Run: `cargo test --test cli_vcs && cargo test --test pty_pager -- --nocapture && cargo test --all-targets`
 
 Expected: all tests pass with no timeout and no orphaned pager process.
 
-- [ ] **Step 5: Commit black-box coverage**
+- [x] **Step 5: Commit black-box coverage**
 
 ```bash
 git add Cargo.toml Cargo.lock src tests/cli_vcs.rs tests/pty_pager.rs tests/cli_contract.rs
@@ -1239,7 +1239,7 @@ git commit -m "test: verify vcs and pager process contracts"
 - Consumes: all slice-2 tests, release artifact, Hunk reference behavior, and parity ledger status definitions.
 - Produces: truthful user documentation and one evidence-backed checkpoint for the next delivery slice.
 
-- [ ] **Step 1: Audit every slice-2 ledger row before changing status**
+- [x] **Step 1: Audit every slice-2 ledger row before changing status**
 
 Run:
 
@@ -1249,7 +1249,7 @@ rg -n "Git working|Git staged|Git untracked|Git show|Git moved|Jujutsu|Sapling|s
 
 Expected: the slice-2 rows are still `missing` or `implemented`; record each exact test that will justify `verified`.
 
-- [ ] **Step 2: Update documentation with only verified commands**
+- [x] **Step 2: Update documentation with only verified commands**
 
 Document these command examples after their tests pass:
 
@@ -1267,7 +1267,7 @@ Explain automatic nearest-repository detection, `vcs = "git"|"jj"|"sl"` override
 
 In `docs/parity/hunk.md`, mark a row `verified` only when the evidence column names a passing test. Split combined rows when one sub-behavior lacks evidence. Keep watcher execution `missing`; mark only `ReloadPlan::Vcs` as implemented because observation is slice 4.
 
-- [ ] **Step 3: Run the complete quality and release gate**
+- [x] **Step 3: Run the complete quality and release gate**
 
 Run: `cargo fmt --all -- --check`
 
@@ -1291,13 +1291,15 @@ Run on macOS instead: `file target/release/pdiff && otool -L target/release/pdif
 
 Expected: one native executable; no Node, Bun, JavaScript engine, or Hunk runtime dependency is listed.
 
-- [ ] **Step 4: Perform real-tool smoke checks**
+- [x] **Step 4: Perform real-tool smoke checks**
 
 Run `target/release/pdiff diff` in this worktree inside a PTY, wait for the status line, send `q`, and assert exit 0. Run `target/release/pdiff show HEAD`, `target/release/pdiff diff --staged`, and pipe `printf 'plain text\n'` through `PDIFF_TEXT_PAGER='less -FRX' target/release/pdiff pager`. If `jj` or `sl` is installed, smoke its matching fixture; their deterministic fake-executable integration tests remain the portability authority when absent.
 
 Expected: each available native path exits normally, owns/restores the terminal once, and shows no TypeScript/runtime process.
 
-- [ ] **Step 5: Commit the slice-2 evidence**
+Verification record (2026-07-20): the complete format, strict Clippy, all-target test, and release build gate passed. The 4,346,576-byte Linux artifact was identified as one x86-64 ELF and `ldd` listed only `libgcc_s`, `libm`, `libc`, and the platform loader. Release-binary PTY smoke checks for `diff` and `show HEAD`, the staged-empty path, and `PDIFF_TEXT_PAGER='less -FRX'` plain-text paging all exited 0. Neither `jj` nor `sl` was installed; their passing scripted-runner integration suites remain the portable native-command evidence.
+
+- [x] **Step 5: Commit the slice-2 evidence**
 
 ```bash
 git add README.md docs/parity/hunk.md docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md

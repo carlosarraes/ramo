@@ -42,7 +42,30 @@ pdiff --input review.patch --output pdiff-review.md
 pdiff --input review.patch --stdout
 ```
 
-The Hunk-shaped Git, Jujutsu, Sapling, pager, watch, agent-note, and session commands are being implemented in the staged parity program. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+Native repository reviews are also verified:
+
+```bash
+pdiff diff
+pdiff diff --staged
+pdiff diff main...HEAD -- src
+pdiff show HEAD~1
+pdiff stash show 'stash@{0}'
+```
+
+`pdiff` selects the nearest Git, Jujutsu, or Sapling checkout. Set `vcs = "git"`, `vcs = "jj"`, or `vcs = "sl"` in user or `.pdiff/config.toml` configuration when a checkout contains more than one marker. Jujutsu and Sapling support working-copy and show reviews, and reject staged and stash operations with an explicit diagnostic instead of silently changing semantics.
+
+Working-copy reviews include untracked files by default; use `--exclude-untracked` to omit them. Tracked and untracked files over 1,000,000 bytes or 20,000 lines become bounded placeholders so a review cannot consume unbounded memory. Git source endpoints are retained for later context expansion without embedding another runtime.
+
+Use `pager` when a command may produce either a diff or ordinary text:
+
+```bash
+git diff --no-color | pdiff pager
+PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
+```
+
+Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `pdiff pager` settings fall back safely.
+
+Watch execution, the Hunk-compatible UI replacement, notes, STML, sessions, and final release parity remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
 
 ## Current controls
 
@@ -102,3 +125,4 @@ The approved architecture and execution plan are in:
 
 - [`docs/superpowers/specs/2026-07-20-hunk-feature-parity-design.md`](docs/superpowers/specs/2026-07-20-hunk-feature-parity-design.md)
 - [`docs/superpowers/plans/2026-07-20-foundation-cli-implementation-plan.md`](docs/superpowers/plans/2026-07-20-foundation-cli-implementation-plan.md)
+- [`docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md`](docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md)
