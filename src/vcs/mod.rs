@@ -1,6 +1,7 @@
 mod command;
 pub mod detect;
 pub mod git;
+pub mod jj;
 pub mod source;
 mod types;
 
