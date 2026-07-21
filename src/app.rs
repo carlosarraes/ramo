@@ -1,5 +1,6 @@
 use std::io;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
@@ -25,6 +26,7 @@ use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, map_key_event, map_mouse_event};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
+use crate::watch::{WatchRuntime, WatchUpdate};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FlatLine {
@@ -111,6 +113,7 @@ pub struct App {
     pub tmux_last_target: Option<(String, crate::tmux::PasteMode)>,
     pub tmux_pending_text: String,
     pub tmux_save_annotation_on_send: bool,
+    reload_requested: bool,
 }
 
 impl App {
@@ -225,6 +228,7 @@ impl App {
             tmux_last_target: None,
             tmux_pending_text: String::new(),
             tmux_save_annotation_on_send: false,
+            reload_requested: false,
         }
     }
 
@@ -313,23 +317,49 @@ impl App {
         }
     }
 
-    pub fn run(mut self, terminal: &mut DefaultTerminal) -> io::Result<Vec<Annotation>> {
+    pub fn run(self, terminal: &mut DefaultTerminal) -> io::Result<Vec<Annotation>> {
+        self.run_with_watch(terminal, None)
+    }
+
+    pub fn run_with_watch(
+        mut self,
+        terminal: &mut DefaultTerminal,
+        mut watch: Option<&mut WatchRuntime>,
+    ) -> io::Result<Vec<Annotation>> {
         execute!(io::stdout(), EnableMouseCapture)?;
         let run_result = (|| -> io::Result<()> {
+            let mut needs_redraw = true;
             while !self.should_quit {
-                terminal.draw(|frame| self.draw(frame))?;
+                if needs_redraw {
+                    terminal.draw(|frame| self.draw(frame))?;
+                    needs_redraw = false;
+                }
                 let size = terminal.size()?;
                 let viewport = Viewport {
                     width: size.width,
                     height: size.height,
                 };
-                match event::read()? {
-                    Event::Key(key) => self.handle_key(key, viewport),
-                    Event::Mouse(mouse) => self.handle_mouse(mouse, viewport),
-                    Event::FocusGained
-                    | Event::FocusLost
-                    | Event::Paste(_)
-                    | Event::Resize(_, _) => {}
+                if event::poll(Duration::from_millis(50))? {
+                    match event::read()? {
+                        Event::Key(key) => self.handle_key(key, viewport),
+                        Event::Mouse(mouse) => self.handle_mouse(mouse, viewport),
+                        Event::FocusGained
+                        | Event::FocusLost
+                        | Event::Paste(_)
+                        | Event::Resize(_, _) => {}
+                    }
+                    needs_redraw = true;
+                }
+                if std::mem::take(&mut self.reload_requested) {
+                    if let Some(runtime) = watch.as_deref_mut() {
+                        runtime.manual_reload(Instant::now());
+                    } else {
+                        self.toast = Some("This input cannot be reloaded".into());
+                        needs_redraw = true;
+                    }
+                }
+                if let Some(runtime) = watch.as_deref_mut() {
+                    needs_redraw |= self.apply_watch_update(runtime.poll(Instant::now()), viewport);
                 }
             }
             Ok(())
@@ -338,6 +368,33 @@ impl App {
         run_result?;
         disable_result?;
         Ok(self.annotations)
+    }
+
+    fn apply_watch_update(&mut self, update: WatchUpdate, viewport: Viewport) -> bool {
+        match update {
+            WatchUpdate::Unchanged => false,
+            WatchUpdate::Replaced { files, .. } => {
+                self.files.clone_from(&files);
+                self.flat_lines = build_flat_lines(&self.files);
+                self.file_starts = build_file_starts(&self.flat_lines);
+                self.line_counts = self.files.iter().map(DiffFile::line_counts).collect();
+                self.clamp_cursor();
+                self.review_selection = None;
+                self.review_keyboard_anchor = None;
+                self.context_loader.invalidate();
+                self.review_controller.replace_files(files, viewport);
+                self.toast = Some("Reloaded".into());
+                true
+            }
+            WatchUpdate::Empty { .. } => {
+                self.toast = Some("No changes; press r to check again".into());
+                true
+            }
+            WatchUpdate::Error { message } => {
+                self.toast = Some(format!("Reload failed: {message}"));
+                true
+            }
+        }
     }
 
     fn draw(&mut self, frame: &mut Frame) {
@@ -654,7 +711,7 @@ impl App {
                     None => format!("Open {path}"),
                 });
             }
-            ReviewEffect::Reload => self.toast = Some("Reload requested".into()),
+            ReviewEffect::Reload => self.reload_requested = true,
             ReviewEffect::Quit => self.request_quit(viewport),
             ReviewEffect::None | ReviewEffect::Redraw => {}
         }

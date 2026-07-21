@@ -191,6 +191,8 @@ pub fn expand_gap_lines(
 
 pub trait ContextSourceLoader: Send {
     fn load(&mut self, spec: &SourceSpec) -> Result<Option<String>, SourceFailure>;
+
+    fn invalidate(&mut self) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,6 +264,10 @@ impl<R: CommandRunner> ContextSourceLoader for NativeContextSourceLoader<R> {
         };
         self.cache.insert(spec.clone(), result.clone());
         result
+    }
+
+    fn invalidate(&mut self) {
+        self.cache.clear();
     }
 }
 

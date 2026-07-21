@@ -191,6 +191,21 @@ fn native_loader_caches_each_spec_and_none_never_spawns() {
     );
 }
 
+#[test]
+fn native_loader_invalidation_reads_reloaded_file_contents() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("source.rs");
+    std::fs::write(&path, "first\n").unwrap();
+    let spec = SourceSpec::File(path.clone());
+    let mut loader = NativeContextSourceLoader::default();
+    assert_eq!(loader.load(&spec).unwrap().as_deref(), Some("first\n"));
+
+    std::fs::write(path, "second\n").unwrap();
+    assert_eq!(loader.load(&spec).unwrap().as_deref(), Some("first\n"));
+    loader.invalidate();
+    assert_eq!(loader.load(&spec).unwrap().as_deref(), Some("second\n"));
+}
+
 struct FakeLoader {
     calls: usize,
     text: Result<Option<String>, SourceFailure>,

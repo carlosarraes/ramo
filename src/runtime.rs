@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Instant;
 
 use crate::annotations::{model::Annotation, output};
 use crate::app::App;
@@ -14,6 +15,7 @@ use crate::pager::{page_plain_text, resolve_text_pager};
 use crate::pi_extension;
 use crate::review::NativeContextSourceLoader;
 use crate::vcs::SystemCommandRunner;
+use crate::watch::WatchRuntime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupAction {
@@ -83,6 +85,20 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         return Ok(ExitCode::SUCCESS);
     }
 
+    let reloadable = !matches!(loaded.reload_plan, crate::input::ReloadPlan::None);
+    if resolved_config.watch && !reloadable {
+        return Err(crate::input::LoadError::NotReloadable.into());
+    }
+    let mut watch_runtime = reloadable.then(|| {
+        WatchRuntime::new(
+            &loaded,
+            cwd.clone(),
+            resolved_config.clone(),
+            resolved_config.watch,
+            Instant::now(),
+        )
+    });
+
     replace_stdin_with_tty()?;
     let pager_mode =
         input.kind() == crate::core::input::InputKind::Pager || input.options().pager == Some(true);
@@ -94,7 +110,7 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         config_paths.user,
     );
     let mut terminal = ratatui::init();
-    let app_result = app.run(&mut terminal);
+    let app_result = app.run_with_watch(&mut terminal, watch_runtime.as_mut());
     ratatui::restore();
     let annotations = app_result?;
     finish_annotations(annotations, review_output)?;
