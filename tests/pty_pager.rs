@@ -2,6 +2,8 @@ mod support;
 
 use std::io::{Read, Write};
 use std::path::Path;
+#[cfg(windows)]
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
@@ -30,8 +32,19 @@ impl PtyProcess {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
+        let ramo_binary = assert_cmd::cargo::cargo_bin("ramo");
+        #[cfg(unix)]
+        let mut command = CommandBuilder::new(ramo_binary);
+        #[cfg(windows)]
+        let mut command = {
+            assert_eq!(args, ["pager"]);
+            let mut command = CommandBuilder::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "windows_pager_pipe_bridge", "--nocapture"]);
+            command.env("RAMO_TEST_PAGER_BINARY", ramo_binary);
+            command
+        };
         command.cwd(cwd);
+        #[cfg(unix)]
         for argument in args {
             command.arg(argument);
         }
@@ -71,11 +84,19 @@ impl PtyProcess {
         writer.flush().unwrap();
     }
 
+    #[cfg(unix)]
     fn send_eof(&mut self) {
-        #[cfg(unix)]
         self.send("\u{4}");
+    }
+
+    fn send_pager_input(&mut self, input: &str) {
+        #[cfg(unix)]
+        {
+            self.send(input);
+            self.send_eof();
+        }
         #[cfg(windows)]
-        self.send("\u{1a}\r\n");
+        let _ = input;
     }
 
     fn raw(&self) -> &[u8] {
@@ -181,8 +202,7 @@ fn write_helper(directory: &Path, name: &str, source: &str) -> std::path::PathBu
 fn patch_pager_enters_review_ui_and_quits_cleanly() {
     let cwd = std::env::current_dir().unwrap();
     let mut process = PtyProcess::spawn(&cwd, &["pager"], &[]);
-    process.send(include_str!("fixtures/simple.patch"));
-    process.send_eof();
+    process.send_pager_input(include_str!("fixtures/simple.patch"));
     process.read_until_raw(b"\x1b[?1049h");
     let rendered = process.read_until("println!");
     assert!(rendered.contains("fn main"));
@@ -244,13 +264,32 @@ fn patch_pager_suppresses_application_startup_notices() {
         &["pager"],
         &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
     );
-    process.send(include_str!("fixtures/simple.patch"));
-    process.send_eof();
+    process.send_pager_input(include_str!("fixtures/simple.patch"));
 
     let rendered = process.read_until("println!");
     assert!(!rendered.contains("Deprecated [custom_theme.syntax]"));
     process.send("q");
     assert_eq!(process.wait(), 0);
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_pager_pipe_bridge() {
+    let Some(binary) = std::env::var_os("RAMO_TEST_PAGER_BINARY") else {
+        return;
+    };
+    let mut child = Command::new(binary)
+        .arg("pager")
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(include_bytes!("fixtures/simple.patch"))
+        .unwrap();
+    assert!(child.wait().unwrap().success());
 }
 
 #[cfg(unix)]
