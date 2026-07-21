@@ -174,6 +174,7 @@ impl PtyProcess {
     }
 
     fn wait(&mut self) -> u32 {
+        #[cfg(unix)]
         self.writer.take();
         let mut child = self.child.take().expect("PTY child is running");
         let mut killer = child.clone_killer();
@@ -193,6 +194,8 @@ impl PtyProcess {
                 panic!("PTY child exit deadline: {error}; output: {clean:?}");
             }
         };
+        #[cfg(windows)]
+        self.writer.take();
         self.drain_output();
         exit
     }
