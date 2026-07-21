@@ -580,7 +580,7 @@ git commit -m "feat: persist native review preferences"
 - Consumes: release binary, multi-file fixtures, every UI action, resize/mouse sequences, docs ledger.
 - Produces: black-box proof, truthful documentation, and the checkpoint for watch/process work.
 
-- [ ] **Step 1: Add bounded PTY scenarios**
+- [x] **Step 1: Add bounded PTY scenarios**
 
 Reuse the five-second reader-thread harness and add cases for:
 
@@ -594,7 +594,7 @@ Reuse the five-second reader-thread harness and add cases for:
 8. Pager diff mode uses minimal chrome but retains pager navigation/wrap/sidebar behavior.
 9. Every normal quit restores the alternate screen exactly once and no test leaves a child alive.
 
-- [ ] **Step 2: Run the complete UI and regression gate**
+- [x] **Step 2: Run the complete UI and regression gate**
 
 Run:
 
@@ -609,15 +609,15 @@ cargo build --release
 
 Expected: all pass with no ignored slice-3 tests.
 
-- [ ] **Step 3: Audit the parity ledger conservatively**
+- [x] **Step 3: Audit the parity ledger conservatively**
 
 Mark only test-backed UI rows `verified`. Keep these staged for later slices even if a placeholder seam exists: watcher execution, editor/job control, normalized external agent notes, STML, session broker/CLI, panic restoration and final cross-platform/release closure. The top menu/dropdown exclusion remains verified by both source inspection and PTY absence checks.
 
-- [ ] **Step 4: Update user documentation**
+- [x] **Step 4: Update user documentation**
 
 Document responsive thresholds, direct controls, filtering, collapsed context, theme selection/custom themes, mouse behavior and preference saving. State explicitly that there is no top menu bar or dropdown UI and no TypeScript runtime.
 
-- [ ] **Step 5: Commit slice-3 evidence**
+- [x] **Step 5: Commit slice-3 evidence**
 
 ```bash
 git add README.md docs/parity/hunk.md docs/superpowers/plans/2026-07-20-review-ui-implementation-plan.md tests/pty_ui.rs tests/pty_pager.rs

@@ -51,24 +51,24 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 
 | Capability | Status | Rust evidence | Verification evidence |
 |---|---|---|---|
-| `--mode auto|split|stack` | implemented | `src/cli/args.rs::LayoutArg`, `src/config/model.rs` | parse/precedence: `tests/cli_parse.rs::diff_supports_range_flags_and_pathspecs`, `tests/config_resolution.rs::builtin_user_repo_command_and_cli_layers_merge_in_order`; UI wiring missing |
+| `--mode auto|split|stack` | verified | `src/cli/args.rs::LayoutArg`, `ReviewController` | config precedence, `tests/review_state.rs`, `tests/pty_ui.rs` |
 | `--watch` | implemented | normalized `CommonOptions::watch` | parsing: `tests/cli_parse.rs::difftool_preserves_display_path_and_watch`; watcher missing |
-| `--theme` | implemented | normalized/configured theme id | config resolution tests; theme registry and UI wiring missing |
+| `--theme` | verified | normalized config plus `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs`, `tests/pty_ui.rs` |
 | `--agent-context` | implemented | normalized path | CLI parser coverage; loader and notes missing |
-| `--pager` | implemented | normalized pager flag and pager config layer | `tests/config_resolution.rs::pager_section_overrides_command_section_for_pager_chrome`; pager UI missing |
-| `--line-numbers` / `--no-line-numbers` | implemented | normalized/configured boolean | `tests/cli_parse.rs::cached_alias_and_boolean_overrides_are_normalized`; UI wiring missing |
-| `--wrap` / `--no-wrap` | implemented | normalized/configured boolean | CLI/config tests; UI wiring missing |
-| `--hunk-headers` / `--no-hunk-headers` | implemented | normalized/configured boolean | CLI/config tests; UI wiring missing |
+| `--pager` | verified | normalized pager flag and pager config layer | config resolution and `tests/pty_pager.rs` |
+| `--line-numbers` / `--no-line-numbers` | verified | normalized config plus shared row geometry | CLI/config, state, and render tests |
+| `--wrap` / `--no-wrap` | verified | normalized config plus shared row geometry | `tests/review_state.rs`, `review::geometry` tests |
+| `--hunk-headers` / `--no-hunk-headers` | verified | normalized config and zero-row header planning | `tests/ui_render.rs`, `tests/ui_input.rs` |
 | `--agent-notes` / `--no-agent-notes` | implemented | normalized/configured boolean | CLI/config tests; note UI missing |
-| `--transparent-bg` / `--no-transparent-bg` | implemented | normalized/configured boolean | CLI/config tests; theme wiring missing |
+| `--transparent-bg` / `--no-transparent-bg` | verified | normalized config and semantic theme resolution | `tests/themes.rs::fallback_auto_and_transparent_surfaces_are_predictable` |
 | `--exclude-untracked` / inverse | verified | normalized/configured boolean, native Git/Sapling loaders | `tests/git_loading.rs::exclude_untracked_removes_only_synthetic_files`, `tests/sl_loading.rs::sl_exclude_untracked_skips_the_status_command` |
 | Built-in/user/repo/command/pager/CLI precedence | verified | `src/config/load.rs::ConfigResolver` | seven cases in `tests/config_resolution.rs` |
 | Platform user config path and nearest `.pdiff/config.toml` | verified | `src/config/load.rs::ConfigPaths::discover` | `tests/config_resolution.rs::discovery_chooses_the_nearest_repository_config` |
 | Unknown/malformed config diagnostics | verified | `src/config/load.rs::validate_keys` | `tests/config_resolution.rs::malformed_and_unknown_config_errors_name_the_file_and_key` |
-| Save changed view preferences on quit | missing | — | — |
-| Built-in and custom theme definitions | missing | — | — |
+| Save changed view preferences on quit | verified | `src/config/save.rs`, `App::request_quit` | `tests/config_persistence.rs`, `tests/pty_ui.rs` |
+| Built-in and custom theme definitions | verified | `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs` |
 | Terminal background auto-detection | missing | — | — |
-| Legacy Hunk theme aliases/syntax translation | missing | — | — |
+| Legacy Hunk theme aliases/syntax translation | verified | `ThemeRegistry` alias normalization and scope mapping | `tests/themes.rs` |
 
 ## Input and normalized model
 
@@ -99,69 +99,69 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 
 | Capability | Status | Rust evidence | Verification evidence |
 |---|---|---|---|
-| Continuous multi-file review stream | implemented | legacy `src/app.rs`, `src/ui/side_by_side.rs` | PTY parity test missing |
-| Sidebar navigates rather than filters stream | implemented | legacy file list | Hunk-compatible behavior test missing |
-| File filter and focus handling | missing | — | — |
-| Responsive `auto` split/stack | missing | — | — |
-| Explicit split layout | implemented | legacy side-by-side renderer | Hunk geometry/PTY test missing |
-| Explicit stack layout | implemented | legacy unified renderer | Hunk geometry/PTY test missing |
-| Resize anchor preservation | missing | — | — |
-| Row/file windowing and adaptive overscan | missing | — | — |
-| Syntax highlighting | implemented | `src/ui/highlight.rs` | render-model test missing |
-| Character-level changed-content emphasis | missing | — | — |
-| Line numbers and change markers | implemented | legacy renderer | PTY toggle test missing |
-| Moved-line colors | missing | — | — |
-| Optional hunk headers | implemented | legacy renderer | Hunk shortcut/config wiring missing |
-| Wrapping and horizontal scroll | missing | — | — |
-| Collapsed context and per-hunk expansion | missing | — | — |
-| Binary/large/untracked/rename file UI | implemented | normalized metadata and legacy rename header | complete render tests missing |
+| Continuous multi-file review stream | verified | `ReviewController`, `ReviewWidget` | `tests/review_state.rs`, `tests/ui_render.rs`, `tests/pty_ui.rs::resize_thresholds_keep_the_selected_file_anchor` |
+| Sidebar navigates rather than filters stream | verified | controller sidebar entries and shared hit regions | state and mouse tests |
+| File filter and focus handling | verified | typed filter input and derived visible files | `tests/review_state.rs`, `tests/ui_input.rs`, `tests/pty_ui.rs::filter_owns_literal_keys_and_tab_returns_to_help_and_review` |
+| Responsive `auto` split/stack | verified | `resolve_responsive_layout` | geometry tests and 220→160→159 PTY resize test |
+| Explicit split layout | verified | shared split row plan/geometry | row, state, render, and PTY tests |
+| Explicit stack layout | verified | shared stack row plan/geometry | row, state, render, and PTY tests |
+| Resize anchor preservation | verified | `review::anchor` transactions | anchor tests and resize PTY test |
+| Row/file windowing and adaptive overscan | verified | `ReviewGeometry::visible_window` | geometry 100,000-row test and bounded render highlight test |
+| Syntax highlighting | verified | bounded `HighlightCache` | `tests/highlighting.rs`, `tests/ui_render.rs::renderer_highlights_only_the_bounded_visible_window` |
+| Character-level changed-content emphasis | verified | `review::emphasis` | emphasis unit tests and semantic render test |
+| Line numbers and change markers | verified | semantic review cells and shared columns | row/render/state tests |
+| Moved-line colors | verified | moved classes and semantic palettes | input, theme, and render tests |
+| Optional hunk headers | verified | zero-row header plan | `tests/ui_render.rs::hunk_headers_can_occupy_zero_rows_and_file_states_render` |
+| Wrapping and horizontal scroll | verified | shared cell-width geometry and typed actions | geometry, state, input, and mouse tests |
+| Collapsed context and per-hunk expansion | verified | `src/review/context.rs` and owned native loader | `tests/context_expansion.rs`, `tests/pty_ui.rs::direct_controls_and_context_expansion_remain_native_across_layout_changes` |
+| Binary/large/untracked/rename file UI | verified | typed placeholders and sidebar statuses | state and render tests |
 | Inline AI/agent/user note cards | missing | legacy human comments are not parity note cards | — |
-| Wide-character selection/copy correctness | missing | — | — |
-| Restrained contextual bottom status | missing | legacy status always visible | — |
-| No top menu bar/dropdowns | verified | intentional product exclusion; no menu components | source inspection and design spec |
-| Help dialog | missing | — | — |
-| Theme selector dialog | missing | — | — |
-| Save-preferences confirmation | missing | — | — |
+| Wide-character selection/copy correctness | verified | `review::selection` terminal-cell projection | `tests/review_selection.rs`, `tests/ui_render.rs::stable_selection_projection_is_painted_on_the_selected_terminal_cells` |
+| Restrained contextual bottom status | implemented | status renders only for filter/toast feedback | save-error app test; dedicated PTY styling assertion remains staged |
+| No top menu bar/dropdowns | verified | intentional product exclusion; no menu components | source inspection plus pager/UI PTY absence assertions |
+| Help dialog | verified | `DialogOverlay::Help` | dialog/input tests and filter/help PTY test |
+| Theme selector dialog | verified | `DialogOverlay::Theme` | theme/dialog tests and save PTY test |
+| Save-preferences confirmation | verified | `DialogOverlay::Save`, targeted config writer | config persistence and PTY tests |
 | Agent-skill dialog | missing | — | — |
 
 ### Keyboard actions
 
 | Action | Status | Evidence |
 |---|---|---|
-| Arrow step scrolling | implemented | legacy `App::handle_nav_key`; Hunk PTY test missing |
-| Space/`f` page down, `b` page up, Shift-Space | missing | — |
-| `d`/`u` half-page scrolling | implemented | legacy Ctrl-d/Ctrl-u differs from Hunk |
-| `g`/`G`, Home/End bounds | implemented | legacy partial bindings; parity tests missing |
-| `[`/`]` hunk navigation | implemented | legacy functions; PTY tests missing |
-| `,`/`.` file navigation | missing | legacy uses `H`/`L` |
-| `{`/`}` annotated-hunk navigation | missing | — |
-| `1`/`2`/`0` layout selection | missing | legacy uses Tab |
-| `s` sidebar | missing | legacy uses `e` |
-| `t` theme selector | missing | legacy tmux conflict must be remapped |
-| `a` agent notes | missing | — |
-| `z` unchanged context | missing | — |
-| `l` line numbers | missing | legacy side focus conflict must be remapped |
-| `w` wrapping | missing | — |
-| `m` hunk metadata | missing | — |
-| `e` editor | missing | — |
-| `r` reload | missing | — |
-| `/` file filter | missing | legacy text search is additive and must be remapped |
+| Arrow step scrolling | verified | typed key map plus controller clamp tests |
+| Space/`f` page down, `b` page up, Shift-Space | verified | `tests/ui_input.rs`, `tests/review_state.rs` |
+| `d`/`u` half-page scrolling | verified | `tests/ui_input.rs`, `tests/review_state.rs` |
+| `g`/`G`, Home/End bounds | verified | input and controller navigation tests |
+| `[`/`]` hunk navigation | verified | input and wrapping navigation tests |
+| `,`/`.` file navigation | verified | input, state, and multi-file PTY tests |
+| `{`/`}` annotated-hunk navigation | verified | `tests/review_state.rs::annotated_navigation_respects_filter_and_empty_filters_are_safe` |
+| `1`/`2`/`0` layout selection | verified | input/state tests and PTY controls test |
+| `s` sidebar | verified | input/state/mouse tests |
+| `t` theme selector | verified | input/dialog and PTY tests |
+| `a` agent notes | implemented | view preference toggles; normalized note cards remain slice 5 |
+| `z` unchanged context | verified | context controller/app and PTY tests |
+| `l` line numbers | verified | input/state/render tests |
+| `w` wrapping | verified | input/state/geometry tests |
+| `m` hunk metadata | verified | input/state/render tests |
+| `e` editor | implemented | typed `EditFile` effect; process/job-control execution remains staged |
+| `r` reload | implemented | typed reload effect; watcher/reload execution remains staged |
+| `/` file filter | verified | state/input and literal-key PTY tests |
 | `c` create review note | implemented | legacy human comment; inline parity behavior missing |
-| Tab focus toggle | missing | legacy layout toggle must be remapped |
-| `?` help | missing | — |
-| `q` quit | verified | `src/app.rs` key handling | `tests/pty_pager.rs::patch_pager_enters_review_ui_and_quits_cleanly` |
-| Existing Vim selection/yank/tmux actions on new bindings | implemented | legacy model/functions; rebinding and tests missing |
+| Tab focus toggle | verified | filter-aware typed input and PTY test |
+| `?` help | verified | input/dialog and PTY tests |
+| `q` quit | verified | typed quit/save reduction | pager/UI PTY restoration tests |
+| Existing Vim selection/yank/tmux actions on new bindings | implemented | stable review selection projection plus OSC 52/tmux routing | selection/input/render tests; live tmux integration remains staged |
 
 ### Mouse actions
 
 | Action | Status | Evidence |
 |---|---|---|
-| Wheel vertical scrolling | missing | — |
-| Shift-wheel horizontal scrolling | missing | — |
-| Sidebar selection | missing | — |
-| Scrollbar interaction | missing | — |
-| Context expansion | missing | — |
-| Text selection/copy | missing | — |
+| Wheel vertical scrolling | verified | `map_mouse_event` and controller scrolling | `tests/ui_mouse.rs` |
+| Shift-wheel horizontal scrolling | verified | typed horizontal mouse action | `tests/ui_mouse.rs` |
+| Sidebar selection | verified | shared sidebar hit region | `tests/ui_mouse.rs` |
+| Scrollbar interaction | verified | total-geometry scrollbar mapping | `tests/ui_mouse.rs` |
+| Context expansion | verified | collapsed-row gap hit | `tests/ui_mouse.rs` |
+| Text selection/copy | verified | shared cell projection and OSC 52 path | selection, mouse, and render tests |
 
 ## Watch, process, and integrations
 
@@ -176,12 +176,12 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Manual `r` reload | missing | — | — |
 | Error display retains last valid review | missing | — | — |
 | TTY replacement after piped input | verified | `src/runtime.rs::replace_stdin_with_tty` | `tests/runtime_resolution.rs::only_piped_stdin_needs_a_tty_replacement`, `tests/pty_pager.rs::patch_pager_enters_review_ui_and_quits_cleanly` |
-| Terminal restoration on normal app error | implemented | `src/runtime.rs::run_review` | PTY test missing |
+| Terminal restoration on normal app error | implemented | `src/runtime.rs::run_review` restores before propagating | normal-return restoration is PTY-verified; injected app-error coverage remains staged |
 | Panic restoration, suspend/resume, editor job control | missing | — | — |
 | `$EDITOR` file/line launch | missing | — | — |
 | Pi integration | implemented | `src/pi_extension.rs` | filesystem integration test missing |
-| tmux pane discovery/send | implemented | `src/tmux.rs` | integration tests and new key mapping missing |
-| OSC 52 clipboard | implemented | `src/clipboard.rs` | output test missing |
+| tmux pane discovery/send | implemented | `src/tmux.rs`, stable selection routing | new key mapping is tested; live tmux integration remains staged |
+| OSC 52 clipboard | verified | `src/clipboard.rs`, shared selection projection | CJK mouse-selection PTY test asserts exact OSC 52 payload |
 | Linux support | implemented | native build/test | cross-platform CI evidence incomplete |
 | macOS support | implemented | Unix paths present | CI evidence incomplete |
 | Windows support | missing | piped interactive review explicitly returns unsupported | — |
@@ -210,12 +210,12 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Lazy syntax/full-source loading | missing | — |
-| Bounded highlight/geometry caches | missing | — |
-| Shared geometry for rendering/interaction | missing | — |
+| Lazy syntax/full-source loading | verified | visible-window `HighlightCache`, cached `NativeContextSourceLoader` | highlighting, context, and render tests |
+| Bounded highlight/geometry caches | verified | bounded highlight LRU and active shared geometry | highlighting and 100,000-row geometry tests |
+| Shared geometry for rendering/interaction | verified | `ReviewGeometry`, shared row columns and hit tests | geometry, selection, mouse, and render tests |
 | Large patch/many-file/non-ASCII benchmarks | missing | — |
 | Navigation/resize/watch memory checks | missing | — |
 | Cross-platform CLI/unit CI | missing | — |
-| Unix PTY integration suite | verified | `tests/pty_pager.rs` bounded portable-PTY harness | five pager/UI/process cases in `tests/pty_pager.rs` |
+| Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs` and `tests/pty_ui.rs` |
 | Single-binary install/release documentation | implemented | `README.md`, `install.sh` | release artifact verified locally in slice 2; distributable install smoke remains staged |
 | Every in-scope row verified | missing | this ledger intentionally records remaining work | final audit pending |

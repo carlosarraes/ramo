@@ -338,6 +338,10 @@ fn dialog_modes_exclusively_own_their_documented_keys() {
         ),
         Some(AppAction::Confirm)
     );
+    assert_eq!(
+        map_key_event(key(KeyCode::Tab), InputMode::Filter, false),
+        Some(AppAction::ToggleFocus)
+    );
 }
 
 fn review_file() -> DiffFile {

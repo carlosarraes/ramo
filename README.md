@@ -54,7 +54,7 @@ pdiff stash show 'stash@{0}'
 
 `pdiff` selects the nearest Git, Jujutsu, or Sapling checkout. Set `vcs = "git"`, `vcs = "jj"`, or `vcs = "sl"` in user or `.pdiff/config.toml` configuration when a checkout contains more than one marker. Jujutsu and Sapling support working-copy and show reviews, and reject staged and stash operations with an explicit diagnostic instead of silently changing semantics.
 
-Working-copy reviews include untracked files by default; use `--exclude-untracked` to omit them. Tracked and untracked files over 1,000,000 bytes or 20,000 lines become bounded placeholders so a review cannot consume unbounded memory. Git source endpoints are retained for later context expansion without embedding another runtime.
+Working-copy reviews include untracked files by default; use `--exclude-untracked` to omit them. Tracked and untracked files over 1,000,000 bytes or 20,000 lines become bounded placeholders so a review cannot consume unbounded memory. Press `z` to expand collapsed unchanged context from bounded native old/new source readers.
 
 Use `pager` when a command may produce either a diff or ordinary text:
 
@@ -65,31 +65,53 @@ PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
 
 Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `pdiff pager` settings fall back safely.
 
-Watch execution, the Hunk-compatible UI replacement, notes, STML, sessions, and final release parity remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+Watch execution, normalized agent notes, STML, live sessions, editor job control, and final cross-platform release closure remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
 
 ## Current controls
 
-These are the retained `pdiff` controls during the UI migration:
+The review UI is a continuous file stream. `auto` uses split layout at 160 columns and stack layout below 160; the responsive sidebar appears at 220 columns. There is deliberately no top menu bar or dropdown UI.
 
 | Key | Action |
 |---|---|
-| `j` / `k`, arrows | Navigate lines |
-| `h` / `l` | Switch old/new focus |
-| `gg` / `G` | Jump to top/bottom |
-| `Ctrl-d` / `Ctrl-u` | Half-page scroll |
-| `]` / `[` | Next/previous hunk |
-| `H` / `L` | Previous/next file |
-| `V` | Visual-line selection |
-| `y` | Copy the current line or selection |
-| `c` | Create or edit a comment |
-| `/`, `n`, `N` | Search and navigate matches |
-| `e` | Toggle file list |
-| `E` | Toggle expanded comments |
-| `F` | Focus one side at full width |
-| `Tab` | Toggle current layout |
+| `j` / `k`, arrows | Scroll one row |
+| `Space` / `f`, `b` | Page down/up |
+| `d` / `u` | Half-page down/up |
+| `g` / `G`, Home/End | Jump to top/bottom |
+| `[` / `]` | Previous/next hunk |
+| `,` / `.` | Previous/next file |
+| `{` / `}` | Previous/next annotated hunk |
+| `1` / `2` / `0` | Split/stack/auto layout |
+| `s`, `l`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
+| `z` | Expand/collapse unchanged context |
+| `/` | Focus the file filter; `Tab` returns to review |
+| `t`, `?` | Theme selector and controls help |
+| `V`, `y` | Select lines and copy through OSC 52 |
+| `Ctrl-t`, `Ctrl-Shift-t` | Send selection to tmux / choose a new target |
+| `c` | Create a review note |
+| `e`, `r` | Request editor open / reload |
 | `q` | Quit |
 
-The Hunk-compatible keyboard map will replace conflicting bindings during the review-UI slice. Existing actions will move to documented non-conflicting bindings rather than disappear.
+The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel events scroll code horizontally. Left-click selects sidebar files or collapsed context. The scrollbar and sidebar divider are draggable. Dragged text uses terminal-cell-aware selection, including full-width Unicode characters, and copies through the same OSC 52 path as `V`/`y`.
+
+## View configuration
+
+User preferences live at the platform config path (for example `~/.config/pdiff/config.toml` on Linux); repository overrides live in the nearest `.pdiff/config.toml`:
+
+```toml
+mode = "auto"
+theme = "github-dark-default"
+show_sidebar = true
+line_numbers = true
+wrap_lines = false
+hunk_headers = true
+agent_notes = false
+transparent_background = false
+prompt_save_view_preferences = true
+```
+
+Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.
+
+All of this ships in the same Rust executable. `pdiff` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
 
 ## Comment output
 

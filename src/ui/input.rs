@@ -168,6 +168,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
 
 fn map_text(event: KeyEvent, mode: InputMode) -> Option<AppAction> {
     match event.code {
+        KeyCode::Tab if mode == InputMode::Filter => Some(AppAction::ToggleFocus),
         KeyCode::Esc => Some(AppAction::Cancel),
         KeyCode::Backspace => Some(AppAction::Backspace),
         KeyCode::Char('s')
