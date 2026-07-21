@@ -416,7 +416,7 @@ git commit -m "feat: add hunk keyboard controls and dialogs"
 - Consumes: hunk ranges, `SourceSpec`, selected hunk, `SourceReader`, source-size bounds and layout.
 - Produces: stable `GapKey`, collapsed rows, `ContextSourceLoader`, cached load/error state and expanded context rows.
 
-- [ ] **Step 1: Write failing context tests**
+- [x] **Step 1: Write failing context tests**
 
 Cover:
 
@@ -428,25 +428,25 @@ Cover:
 6. Repeated toggles and layout changes reuse the cached source; fake runner invocation count stays one per `SourceSpec`.
 7. Files with `SourceSpec::None` report unavailable context without spawning.
 
-- [ ] **Step 2: Run context tests and verify red**
+- [x] **Step 2: Run context tests and verify red**
 
 Run: `cargo test --test context_expansion`
 
 Expected: compilation fails because gap/source controller APIs do not exist.
 
-- [ ] **Step 3: Implement an owned context loader boundary**
+- [x] **Step 3: Implement an owned context loader boundary**
 
 Keep the existing borrowed `SourceReader` public contract. Add a UI-facing `ContextSourceLoader` trait and native owned implementation that owns `SystemCommandRunner`, executable name, size limit and a `HashMap<SourceSpec, Result<Option<String>, SourceFailure>>`. Runtime passes it to `App`; unit tests pass a fake loader. Do not store closures or runtime objects in `DiffFile`.
 
 Context loading may be synchronous in this slice because bounded preflight prevents unbounded reads; return terminal ownership/process async improvements to slice 4. Wrap every geometry change in viewport-anchor capture/restore.
 
-- [ ] **Step 4: Run source/context/full regressions**
+- [x] **Step 4: Run source/context/full regressions**
 
 Run: `cargo test --test context_expansion && cargo test --test git_loading source_ && cargo test --all-targets`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit context expansion**
+- [x] **Step 5: Commit context expansion**
 
 ```bash
 git add src/review src/vcs/source.rs src/app.rs src/runtime.rs tests/context_expansion.rs

@@ -244,6 +244,16 @@ fn render_row(
                 Style::default().fg(theme.muted).bg(theme.context_bg),
             );
         }
+        ReviewRow::Collapsed { text, .. } => {
+            fill_line(area, y, buffer, theme.context_bg);
+            buffer.set_stringn(
+                area.x + 1,
+                y,
+                format!("⋯ {text}"),
+                area.width.saturating_sub(2) as usize,
+                Style::default().fg(theme.muted).bg(theme.context_bg),
+            );
+        }
         ReviewRow::Stack { cell, .. } => {
             let gutter = if snapshot.line_numbers {
                 digits.saturating_mul(2).saturating_add(5)

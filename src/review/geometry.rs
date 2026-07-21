@@ -277,7 +277,9 @@ fn measure_row_height(row: &ReviewRow, line_digits: usize, options: GeometryOpti
         return 1;
     }
     match row {
-        ReviewRow::HunkHeader { .. } | ReviewRow::Placeholder { .. } => 1,
+        ReviewRow::HunkHeader { .. }
+        | ReviewRow::Collapsed { .. }
+        | ReviewRow::Placeholder { .. } => 1,
         ReviewRow::Stack { cell, .. } => {
             wrapped_height(cell, stack_code_width(options, line_digits))
         }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use unicode_width::UnicodeWidthStr;
 
 use crate::core::input::LayoutMode;
@@ -5,11 +7,15 @@ use crate::diff::model::DiffFile;
 use crate::input::sanitize_terminal_text;
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
+use super::context::{
+    ContextSourceLoader, FileContextState, LoadedContextSource, SourceFailure,
+    derive_collapsed_gaps, select_gap_for_toggle, source_for_context,
+};
 use super::geometry::{
     GeometryOptions, PlannedFile, ReviewGeometry, build_review_geometry, resolve_responsive_layout,
 };
 use super::navigation::{signed_offset, wrapping_index};
-use super::row::{EffectiveLayout, ReviewRowKey, build_row_plan};
+use super::row::{EffectiveLayout, ReviewRowKey, build_row_plan_with_context};
 
 const SIDEBAR_WIDTH: u16 = 34;
 const SIDEBAR_DIVIDER_WIDTH: u16 = 1;
@@ -194,6 +200,7 @@ pub struct ReviewController {
     last_viewport: Option<Viewport>,
     dirty: bool,
     snapshot: ReviewSnapshot,
+    contexts: HashMap<String, FileContextState>,
 }
 
 pub(crate) struct ReviewRenderView<'a> {
@@ -225,6 +232,7 @@ impl ReviewController {
             last_viewport: None,
             dirty: true,
             snapshot: empty_snapshot(),
+            contexts: HashMap::new(),
         }
     }
 
@@ -245,6 +253,86 @@ impl ReviewController {
                 .expect("geometry exists after ensure_geometry"),
             snapshot: &self.snapshot,
         }
+    }
+
+    pub fn toggle_context(
+        &mut self,
+        loader: &mut dyn ContextSourceLoader,
+        viewport: Viewport,
+    ) -> Result<bool, SourceFailure> {
+        self.ensure_geometry(viewport);
+        let file_id = self
+            .selected_file_id
+            .clone()
+            .ok_or(SourceFailure::Unavailable)?;
+        let file = self
+            .files
+            .iter()
+            .find(|file| file.id == file_id)
+            .cloned()
+            .ok_or(SourceFailure::Unavailable)?;
+        let selected_hunk = self.selected_hunk_index.unwrap_or(0);
+        let initial_gaps = self.contexts.get(&file_id).map_or_else(
+            || derive_collapsed_gaps(&file, None),
+            |context| context.gaps(&file),
+        );
+        let mut target = select_gap_for_toggle(&initial_gaps, selected_hunk).cloned();
+
+        if let Some(target) = &target
+            && self
+                .contexts
+                .get(&file_id)
+                .is_some_and(|context| context.expanded.contains(target))
+        {
+            self.contexts
+                .entry(file_id)
+                .or_default()
+                .expanded
+                .remove(target);
+            self.dirty = true;
+            self.rebuild(viewport, true);
+            return Ok(false);
+        }
+
+        let needs_source = self
+            .contexts
+            .get(&file_id)
+            .is_none_or(|context| context.source.is_none());
+        if needs_source {
+            let (side, spec) = source_for_context(&file);
+            let result = if *spec == crate::diff::model::SourceSpec::None {
+                Err(SourceFailure::Unavailable)
+            } else {
+                loader
+                    .load(spec)
+                    .and_then(|text| text.ok_or(SourceFailure::Missing))
+            };
+            self.contexts.entry(file_id.clone()).or_default().source =
+                Some(result.map(|text| LoadedContextSource { side, text }));
+        }
+
+        let context = self.contexts.entry(file_id.clone()).or_default();
+        if target.is_none() {
+            let gaps = context.gaps(&file);
+            target = select_gap_for_toggle(&gaps, selected_hunk).cloned();
+        }
+        let Some(target) = target else {
+            return context
+                .source
+                .as_ref()
+                .and_then(|source| source.as_ref().err())
+                .cloned()
+                .map_or(Ok(false), Err);
+        };
+        context.expanded.insert(target);
+        let failure = context
+            .source
+            .as_ref()
+            .and_then(|source| source.as_ref().err())
+            .cloned();
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        failure.map_or(Ok(true), Err)
     }
 
     pub fn apply(&mut self, action: ReviewAction, viewport: Viewport) -> ReviewEffect {
@@ -414,7 +502,12 @@ impl ReviewController {
                 let file = &self.files[*index];
                 PlannedFile::new(
                     file.id.clone(),
-                    build_row_plan(file, self.effective_layout, self.options.hunk_headers),
+                    build_row_plan_with_context(
+                        file,
+                        self.effective_layout,
+                        self.options.hunk_headers,
+                        self.contexts.get(&file.id),
+                    ),
                 )
             })
             .collect();

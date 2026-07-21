@@ -4,7 +4,9 @@ use pdiff::core::input::LayoutMode;
 use pdiff::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, MovedLineKind, SourceSpec,
 };
-use pdiff::review::{ReviewController, ReviewOptions};
+use pdiff::review::{
+    ContextSourceLoader, ReviewController, ReviewOptions, SourceFailure, Viewport,
+};
 use pdiff::ui::highlight::{HighlightCache, HighlightCacheStats};
 use pdiff::ui::review::ReviewWidget;
 use pdiff::ui::themes::ThemeRegistry;
@@ -84,6 +86,22 @@ fn text(buffer: &Buffer) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_controller(width: u16, height: u16, controller: &mut ReviewController) -> Buffer {
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let mut highlights = HighlightCache::with_capacity(4);
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                ReviewWidget::new(controller, &theme, &mut highlights),
+                frame.area(),
+            );
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
 }
 
 #[test]
@@ -186,4 +204,49 @@ fn moved_rows_keep_moved_paint_while_changed_characters_use_stronger_backgrounds
         buffer[((start + "let item0".len()) as u16, y as u16)].bg,
         theme.removed_content_bg
     );
+}
+
+struct FailingLoader(Result<Option<String>, SourceFailure>);
+
+impl ContextSourceLoader for FailingLoader {
+    fn load(&mut self, _spec: &SourceSpec) -> Result<Option<String>, SourceFailure> {
+        self.0.clone()
+    }
+}
+
+#[test]
+fn context_source_failures_render_distinct_single_row_states_without_geometry_jumps() {
+    let cases = [
+        (Ok(None), "Source missing"),
+        (Err(SourceFailure::NonUtf8), "Non-UTF-8 source"),
+        (
+            Err(SourceFailure::TooLarge { limit: 1024 }),
+            "Source too large",
+        ),
+        (
+            Err(SourceFailure::Command("git failed".into())),
+            "Source command failed",
+        ),
+    ];
+    let viewport = Viewport {
+        width: 80,
+        height: 20,
+    };
+
+    for (result, expected) in cases {
+        let mut source_file = file("src/context.rs", FileChangeKind::Modified, 2);
+        source_file.hunks[0].old_start = 4;
+        source_file.hunks[0].new_start = 4;
+        let mut controller = ReviewController::new(vec![source_file], ReviewOptions::default());
+        let before = controller.snapshot(viewport).total_height;
+        let mut loader = FailingLoader(result);
+
+        assert!(controller.toggle_context(&mut loader, viewport).is_err());
+        assert_eq!(controller.snapshot(viewport).total_height, before);
+        let frame = text(&render_controller(80, 20, &mut controller));
+        assert!(
+            frame.contains(expected),
+            "expected {expected:?} in:\n{frame}"
+        );
+    }
 }

@@ -1,6 +1,10 @@
 use crate::diff::model::{DiffFile, DiffLine, LineType, MovedLineKind};
 use crate::input::sanitize_terminal_text;
 
+use super::context::{
+    CollapsedGap, FileContextState, GapPosition, SourceFailure, derive_collapsed_gaps,
+    expand_gap_lines,
+};
 use super::emphasis::{ChangedSpan, emphasize_pair};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +17,8 @@ pub(crate) enum EffectiveLayout {
 pub(crate) enum ReviewRowKind {
     HunkHeader,
     DiffLine,
+    Collapsed,
+    ExpandedContext,
     Placeholder,
 }
 
@@ -76,6 +82,11 @@ pub(crate) enum ReviewRow {
         kind: PlaceholderKind,
         text: String,
     },
+    Collapsed {
+        key: ReviewRowKey,
+        gap: CollapsedGap,
+        text: String,
+    },
 }
 
 impl ReviewRow {
@@ -84,6 +95,7 @@ impl ReviewRow {
             Self::HunkHeader { key, .. }
             | Self::Split { key, .. }
             | Self::Stack { key, .. }
+            | Self::Collapsed { key, .. }
             | Self::Placeholder { key, .. } => key,
         }
     }
@@ -96,10 +108,20 @@ pub(crate) struct RowPlan {
     pub line_number_digits: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn build_row_plan(
     file: &DiffFile,
     layout: EffectiveLayout,
     show_hunk_headers: bool,
+) -> RowPlan {
+    build_row_plan_with_context(file, layout, show_hunk_headers, None)
+}
+
+pub(crate) fn build_row_plan_with_context(
+    file: &DiffFile,
+    layout: EffectiveLayout,
+    show_hunk_headers: bool,
+    context: Option<&FileContextState>,
 ) -> RowPlan {
     if file.hunks.is_empty() {
         return placeholder_plan(file);
@@ -107,7 +129,17 @@ pub(crate) fn build_row_plan(
 
     let mut rows = Vec::new();
     let mut hunk_anchor_keys = Vec::with_capacity(file.hunks.len());
+    let gaps = context.map_or_else(
+        || derive_collapsed_gaps(file, None),
+        |context| context.gaps(file),
+    );
     for (hunk_index, hunk) in file.hunks.iter().enumerate() {
+        if let Some(gap) = gaps
+            .iter()
+            .find(|gap| gap.key.position == GapPosition::Before && gap.key.hunk_index == hunk_index)
+        {
+            append_gap_rows(file, layout, context, gap, &mut rows);
+        }
         let hunk_start = rows.len();
         if show_hunk_headers {
             rows.push(ReviewRow::HunkHeader {
@@ -131,11 +163,124 @@ pub(crate) fn build_row_plan(
             hunk_anchor_keys.push(anchor);
         }
     }
+    if let Some(gap) = gaps
+        .iter()
+        .find(|gap| gap.key.position == GapPosition::Trailing)
+    {
+        append_gap_rows(file, layout, context, gap, &mut rows);
+    }
 
     RowPlan {
         line_number_digits: max_line_number_digits(file),
         rows,
         hunk_anchor_keys,
+    }
+}
+
+fn append_gap_rows(
+    file: &DiffFile,
+    layout: EffectiveLayout,
+    context: Option<&FileContextState>,
+    gap: &CollapsedGap,
+    rows: &mut Vec<ReviewRow>,
+) {
+    let expanded = context.is_some_and(|context| context.expanded.contains(&gap.key));
+    let side = context
+        .and_then(|context| context.source.as_ref())
+        .and_then(|source| source.as_ref().ok())
+        .map_or(super::context::SourceSide::New, |source| source.side);
+    let count = gap.line_count(side);
+    let mut label = format!(
+        "{count} unchanged {}",
+        if count == 1 { "line" } else { "lines" }
+    );
+    let expanded_lines = if expanded {
+        match context.and_then(|context| context.source.as_ref()) {
+            Some(Ok(source)) => match expand_gap_lines(gap, &source.text, source.side) {
+                Ok(lines) => {
+                    label = format!(
+                        "Hide {count} unchanged {}",
+                        if count == 1 { "line" } else { "lines" }
+                    );
+                    Some(lines)
+                }
+                Err(failure) => {
+                    label = context_failure_label(count, &failure);
+                    None
+                }
+            },
+            Some(Err(failure)) => {
+                label = context_failure_label(count, failure);
+                None
+            }
+            None => {
+                label = format!(
+                    "Loading {count} unchanged {}…",
+                    if count == 1 { "line" } else { "lines" }
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    rows.push(ReviewRow::Collapsed {
+        key: row_key(
+            file,
+            Some(gap.key.hunk_index),
+            ReviewRowKind::Collapsed,
+            Some(*gap.old_range.start()),
+            Some(*gap.new_range.start()),
+        ),
+        gap: gap.clone(),
+        text: label,
+    });
+    if let Some(lines) = expanded_lines {
+        for line in lines {
+            let cell = ReviewCell {
+                kind: CellKind::Context,
+                sign: ' ',
+                old_line: Some(line.old_line),
+                new_line: Some(line.new_line),
+                moved: None,
+                spans: (!line.text.is_empty())
+                    .then(|| ChangedSpan::plain(line.text))
+                    .into_iter()
+                    .collect(),
+            };
+            let key = row_key(
+                file,
+                Some(gap.key.hunk_index),
+                ReviewRowKind::ExpandedContext,
+                cell.old_line,
+                cell.new_line,
+            );
+            match layout {
+                EffectiveLayout::Split => rows.push(ReviewRow::Split {
+                    key,
+                    left: cell.clone(),
+                    right: cell,
+                }),
+                EffectiveLayout::Stack => rows.push(ReviewRow::Stack { key, cell }),
+            }
+        }
+    }
+}
+
+fn context_failure_label(count: usize, failure: &SourceFailure) -> String {
+    let lines = if count == 1 { "line" } else { "lines" };
+    match failure {
+        SourceFailure::Unavailable => format!("Context unavailable for {count} unchanged {lines}"),
+        SourceFailure::Missing => format!("Source missing for {count} unchanged {lines}"),
+        SourceFailure::TooLarge { .. } => {
+            format!("Source too large to expand {count} unchanged {lines}")
+        }
+        SourceFailure::NonUtf8 => {
+            format!("Non-UTF-8 source cannot expand {count} unchanged {lines}")
+        }
+        SourceFailure::Io(_) => format!("Could not read {count} unchanged {lines}"),
+        SourceFailure::Command(_) => format!("Source command failed for {count} unchanged {lines}"),
+        SourceFailure::ShortSource => format!("Source too short for {count} unchanged {lines}"),
     }
 }
 
@@ -401,8 +546,11 @@ mod tests {
         DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, MovedLineKind, SourceSpec,
     };
 
+    use crate::review::context::{FileContextState, derive_collapsed_gaps};
+
     use super::{
         CellKind, EffectiveLayout, PlaceholderKind, ReviewRow, ReviewRowKind, build_row_plan,
+        build_row_plan_with_context,
     };
 
     fn line(kind: LineType, content: &str, old: Option<u32>, new: Option<u32>) -> DiffLine {
@@ -587,5 +735,29 @@ mod tests {
         assert_eq!(cell.text(), "  new link");
         assert!(!cell.text().contains("https://bad"));
         assert_eq!(key.kind, ReviewRowKind::DiffLine);
+    }
+
+    #[test]
+    fn expanded_gap_without_a_loaded_source_has_one_loading_row() {
+        let mut sample = file(vec![line(LineType::Context, "changed", Some(4), Some(4))]);
+        sample.hunks[0].old_start = 4;
+        sample.hunks[0].new_start = 4;
+        let gap = derive_collapsed_gaps(&sample, None).remove(0);
+        let mut context = FileContextState::default();
+        context.expanded.insert(gap.key);
+
+        let plan =
+            build_row_plan_with_context(&sample, EffectiveLayout::Stack, true, Some(&context));
+        assert_eq!(
+            plan.rows
+                .iter()
+                .filter(|row| matches!(row, ReviewRow::Collapsed { .. }))
+                .count(),
+            1
+        );
+        assert!(matches!(
+            &plan.rows[0],
+            ReviewRow::Collapsed { text, .. } if text == "Loading 3 unchanged lines…"
+        ));
     }
 }

@@ -9,8 +9,10 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::annotations::model::Annotation;
 use crate::config::ResolvedConfig;
 use crate::diff::model::{DiffFile, DiffLine, LineType};
-use crate::review::{ReviewAction, ReviewEffect, Viewport};
-use crate::review::{ReviewController, ReviewOptions};
+use crate::review::{
+    ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
+    ReviewOptions, Viewport,
+};
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, map_key_event};
@@ -49,6 +51,7 @@ pub struct App {
     pub review_controller: ReviewController,
     pub review_theme: AppTheme,
     pub review_highlights: HighlightCache,
+    context_loader: Box<dyn ContextSourceLoader>,
     input_mode: InputMode,
     filter_buffer: String,
     theme_registry: ThemeRegistry,
@@ -84,6 +87,20 @@ impl App {
         config: &ResolvedConfig,
         pager_mode: bool,
     ) -> Self {
+        Self::new_with_context_loader(
+            files,
+            config,
+            pager_mode,
+            Box::new(NativeContextSourceLoader::default()),
+        )
+    }
+
+    pub fn new_with_context_loader(
+        files: Vec<DiffFile>,
+        config: &ResolvedConfig,
+        pager_mode: bool,
+        context_loader: Box<dyn ContextSourceLoader>,
+    ) -> Self {
         let flat_lines = build_flat_lines(&files);
         let file_starts = build_file_starts(&flat_lines);
         let line_counts = files.iter().map(|f| f.line_counts()).collect();
@@ -118,6 +135,7 @@ impl App {
             review_controller,
             review_theme,
             review_highlights: HighlightCache::default(),
+            context_loader,
             input_mode: InputMode::Normal,
             filter_buffer: String::new(),
             theme_registry,
@@ -376,7 +394,11 @@ impl App {
                 };
             }
             AppAction::ToggleContext => {
-                self.toast = Some("Context expansion is unavailable for this source".into());
+                self.toast = self
+                    .review_controller
+                    .toggle_context(self.context_loader.as_mut(), viewport)
+                    .err()
+                    .map(|failure| failure.to_string());
             }
             AppAction::DisableSavePrompt | AppAction::Discard => {
                 self.input_mode = InputMode::Normal;

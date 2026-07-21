@@ -12,6 +12,7 @@ use crate::error::AppError;
 use crate::input::{LoadContext, LoadOutcome, ReviewLoader};
 use crate::pager::{page_plain_text, resolve_text_pager};
 use crate::pi_extension;
+use crate::review::NativeContextSourceLoader;
 use crate::vcs::SystemCommandRunner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +85,12 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     replace_stdin_with_tty()?;
     let pager_mode =
         input.kind() == crate::core::input::InputKind::Pager || input.options().pager == Some(true);
-    let app = App::new_with_config(loaded.changeset.files, &resolved_config, pager_mode);
+    let app = App::new_with_context_loader(
+        loaded.changeset.files,
+        &resolved_config,
+        pager_mode,
+        Box::new(NativeContextSourceLoader::default()),
+    );
     let mut terminal = ratatui::init();
     let app_result = app.run(&mut terminal);
     ratatui::restore();
