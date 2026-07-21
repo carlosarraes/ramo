@@ -54,7 +54,9 @@ impl NativeObserver {
 
     fn matches(&self, path: &std::path::Path) -> bool {
         self.targets.iter().any(|target| match target {
-            WatchTarget::Entries { entries, .. } => entries.iter().any(|entry| entry == path),
+            WatchTarget::Entries { directory, entries } => {
+                path == directory || entries.iter().any(|entry| entry == path)
+            }
             WatchTarget::Tree { directory } => path.starts_with(directory),
         })
     }
