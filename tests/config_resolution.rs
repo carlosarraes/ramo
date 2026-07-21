@@ -1,5 +1,5 @@
 use pdiff::config::{ConfigPaths, ConfigResolver};
-use pdiff::core::input::{CommonOptions, LayoutMode, ReviewInput};
+use pdiff::core::input::{CommonOptions, LayoutMode, ReviewInput, VcsId};
 
 #[test]
 fn builtin_user_repo_command_and_cli_layers_merge_in_order() {
@@ -152,4 +152,28 @@ fn pager_section_overrides_command_section_for_pager_chrome() {
     .resolve(&input)
     .unwrap();
     assert!(resolved.wrap_lines);
+}
+
+#[test]
+fn vcs_config_is_typed_and_rejects_unknown_providers() {
+    let temp = tempfile::tempdir().unwrap();
+    let valid = temp.path().join("valid.toml");
+    std::fs::write(&valid, "vcs = \"jj\"\n").unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(valid),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+    assert_eq!(resolved.vcs, Some(VcsId::Jj));
+
+    let invalid = temp.path().join("invalid.toml");
+    std::fs::write(&invalid, "vcs = \"mercurial\"\n").unwrap();
+    let error = ConfigResolver::new(ConfigPaths {
+        user: Some(invalid),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap_err();
+    assert!(error.to_string().contains("unknown variant `mercurial`"));
 }

@@ -19,6 +19,24 @@ pub enum InputKind {
     Difftool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsId {
+    Git,
+    Jj,
+    Sl,
+}
+
+impl VcsId {
+    pub fn executable(self) -> &'static str {
+        match self {
+            Self::Git => "git",
+            Self::Jj => "jj",
+            Self::Sl => "sl",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommonOptions {
     pub mode: Option<LayoutMode>,

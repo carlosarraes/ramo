@@ -1,9 +1,9 @@
-use crate::core::input::LayoutMode;
+use crate::core::input::{LayoutMode, VcsId};
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct ConfigLayer {
     pub mode: Option<LayoutMode>,
-    pub vcs: Option<String>,
+    pub vcs: Option<VcsId>,
     pub theme: Option<String>,
     pub watch: Option<bool>,
     pub exclude_untracked: Option<bool>,
@@ -38,7 +38,7 @@ pub struct ConfigFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedConfig {
     pub mode: LayoutMode,
-    pub vcs: Option<String>,
+    pub vcs: Option<VcsId>,
     pub theme: String,
     pub watch: bool,
     pub exclude_untracked: bool,
@@ -77,8 +77,8 @@ impl ResolvedConfig {
         if let Some(value) = layer.mode {
             self.mode = value;
         }
-        if let Some(value) = &layer.vcs {
-            self.vcs = Some(value.clone());
+        if let Some(value) = layer.vcs {
+            self.vcs = Some(value);
         }
         if let Some(value) = &layer.theme {
             self.theme = value.clone();

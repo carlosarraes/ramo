@@ -11,4 +11,5 @@ pub mod pi_extension;
 pub mod runtime;
 pub mod tmux;
 pub mod ui;
+pub mod vcs;
 pub mod vim;

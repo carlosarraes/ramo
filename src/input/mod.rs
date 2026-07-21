@@ -6,15 +6,24 @@ use std::fmt;
 use std::io::Read;
 use std::path::PathBuf;
 
+use crate::config::ResolvedConfig;
 use crate::core::changeset::Changeset;
 use crate::core::input::{InputKind, ReviewInput};
+use crate::vcs::{CommandRunner, SystemCommandRunner};
 
 pub use patch::normalize_patch_text;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReloadPlan {
     None,
-    Files { left: PathBuf, right: PathBuf },
+    Files {
+        left: PathBuf,
+        right: PathBuf,
+    },
+    Vcs {
+        input: ReviewInput,
+        repo_root: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -26,11 +35,40 @@ pub struct LoadedReview {
 #[derive(Debug, Default)]
 pub struct ReviewLoader;
 
+pub struct LoadContext<'a> {
+    pub cwd: &'a std::path::Path,
+    pub config: &'a ResolvedConfig,
+    pub runner: &'a dyn CommandRunner,
+}
+
 impl ReviewLoader {
     pub fn load(
         &self,
         input: &ReviewInput,
         stdin: &mut dyn Read,
+    ) -> Result<LoadedReview, LoadError> {
+        let cwd = std::env::current_dir().map_err(|source| LoadError::Io {
+            path: PathBuf::from("."),
+            source,
+        })?;
+        let config = ResolvedConfig::default();
+        let runner = SystemCommandRunner;
+        self.load_with_context(
+            input,
+            stdin,
+            &LoadContext {
+                cwd: &cwd,
+                config: &config,
+                runner: &runner,
+            },
+        )
+    }
+
+    pub fn load_with_context(
+        &self,
+        input: &ReviewInput,
+        stdin: &mut dyn Read,
+        _context: &LoadContext<'_>,
     ) -> Result<LoadedReview, LoadError> {
         match input {
             ReviewInput::Patch { source, .. } => patch::load(source, stdin),
