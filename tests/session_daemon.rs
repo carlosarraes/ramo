@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ramo::core::input::LayoutMode;
 use ramo::diff::parser::parse_unified_diff;
@@ -312,12 +312,17 @@ fn cli_replaces_a_stale_compatible_ramo_daemon_with_the_same_binary() {
         serve_json(shutdown, 200, serde_json::json!({"ok":true}));
     });
     let binary = assert_cmd::cargo::cargo_bin!("ramo");
+    let started = Instant::now();
     let output = Command::new(binary)
         .args(["session", "list", "--json"])
         .env("RAMO_SESSION_HOST", "127.0.0.1")
         .env("RAMO_SESSION_PORT", port.to_string())
         .output()
         .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "session command waited for the detached replacement daemon"
+    );
     stale.join().unwrap();
     assert!(
         output.status.success(),

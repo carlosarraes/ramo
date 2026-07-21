@@ -147,7 +147,13 @@ fn detach_daemon(command: &mut Command) {
 }
 
 #[cfg(windows)]
-fn detach_daemon(_command: &mut Command) {}
+fn detach_daemon(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+}
 
 fn command_output(command: &SessionCommand) -> SessionOutput {
     match command {
