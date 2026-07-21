@@ -5,12 +5,16 @@ use std::path::PathBuf;
 const REVIEW_SKILL: &str = include_str!("ramo-review-SKILL.md");
 
 pub fn review_skill_path() -> io::Result<PathBuf> {
-    let base = dirs::data_dir().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "platform data directory is unavailable",
-        )
-    })?;
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "platform data directory is unavailable",
+            )
+        })?;
     Ok(base.join("ramo/skills/ramo-review/SKILL.md"))
 }
 
