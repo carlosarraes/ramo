@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -12,7 +11,7 @@ use syntect::parsing::SyntaxSet;
 
 use crate::diff::model::DiffFile;
 
-use super::themes::{AppTheme, TerminalAppearance, ThemeRegistry};
+use super::themes::{AppTheme, TerminalAppearance};
 
 const DEFAULT_FILE_THEME_CAPACITY: usize = 16;
 
@@ -261,35 +260,4 @@ fn syntect_to_ratatui_style(style: highlighting::Style) -> Style {
         result = result.add_modifier(Modifier::UNDERLINED);
     }
     result
-}
-
-/// Temporary adapter for the legacy renderer. It is lazy and bounded; Task 5
-/// removes its index-based surface when the continuous-stream widget lands.
-pub struct Highlighter {
-    files: Vec<DiffFile>,
-    cache: RefCell<HighlightCache>,
-    theme: AppTheme,
-}
-
-impl Highlighter {
-    pub fn new(files: &[DiffFile]) -> Self {
-        Self {
-            files: files.to_vec(),
-            cache: RefCell::new(HighlightCache::default()),
-            theme: ThemeRegistry::default().resolve("github-dark-default", None, false),
-        }
-    }
-
-    pub fn get_spans(
-        &self,
-        file_index: usize,
-        hunk_index: usize,
-        line_index: usize,
-    ) -> Vec<Span<'static>> {
-        self.files.get(file_index).map_or_else(Vec::new, |file| {
-            self.cache
-                .borrow_mut()
-                .spans(file, hunk_index, line_index, &self.theme)
-        })
-    }
 }

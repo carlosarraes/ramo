@@ -1,0 +1,381 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use pdiff::app::App;
+use pdiff::config::ResolvedConfig;
+use pdiff::core::input::LayoutMode;
+use pdiff::diff::model::{
+    DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
+};
+use pdiff::review::{ReviewAction, ScrollUnit, Viewport};
+use pdiff::ui::input::{AppAction, InputMode, map_key_event};
+use std::path::PathBuf;
+
+fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn shifted(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::SHIFT)
+}
+
+#[test]
+fn direct_hunk_keymap_has_no_menu_binding() {
+    let cases = [
+        (
+            key(KeyCode::Down),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: 1,
+                unit: ScrollUnit::Step,
+            }),
+        ),
+        (
+            key(KeyCode::Char('j')),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: 1,
+                unit: ScrollUnit::Step,
+            }),
+        ),
+        (
+            key(KeyCode::Up),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: -1,
+                unit: ScrollUnit::Step,
+            }),
+        ),
+        (
+            key(KeyCode::Left),
+            AppAction::Review(ReviewAction::ScrollHorizontal(-1)),
+        ),
+        (
+            shifted(KeyCode::Right),
+            AppAction::Review(ReviewAction::ScrollHorizontal(8)),
+        ),
+        (
+            key(KeyCode::Char(' ')),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: 1,
+                unit: ScrollUnit::Page,
+            }),
+        ),
+        (
+            key(KeyCode::Char('b')),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: -1,
+                unit: ScrollUnit::Page,
+            }),
+        ),
+        (
+            key(KeyCode::Char('d')),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: 1,
+                unit: ScrollUnit::HalfPage,
+            }),
+        ),
+        (
+            key(KeyCode::Char('u')),
+            AppAction::Review(ReviewAction::Scroll {
+                delta: -1,
+                unit: ScrollUnit::HalfPage,
+            }),
+        ),
+        (
+            key(KeyCode::Char('g')),
+            AppAction::Review(ReviewAction::JumpTop),
+        ),
+        (
+            key(KeyCode::Char('G')),
+            AppAction::Review(ReviewAction::JumpBottom),
+        ),
+        (
+            key(KeyCode::Char('[')),
+            AppAction::Review(ReviewAction::MoveHunk(-1)),
+        ),
+        (
+            key(KeyCode::Char(']')),
+            AppAction::Review(ReviewAction::MoveHunk(1)),
+        ),
+        (
+            key(KeyCode::Char(',')),
+            AppAction::Review(ReviewAction::MoveFile(-1)),
+        ),
+        (
+            key(KeyCode::Char('.')),
+            AppAction::Review(ReviewAction::MoveFile(1)),
+        ),
+        (
+            key(KeyCode::Char('{')),
+            AppAction::Review(ReviewAction::MoveAnnotatedHunk(-1)),
+        ),
+        (
+            key(KeyCode::Char('}')),
+            AppAction::Review(ReviewAction::MoveAnnotatedHunk(1)),
+        ),
+        (
+            key(KeyCode::Char('1')),
+            AppAction::Review(ReviewAction::SetLayout(LayoutMode::Split)),
+        ),
+        (
+            key(KeyCode::Char('2')),
+            AppAction::Review(ReviewAction::SetLayout(LayoutMode::Stack)),
+        ),
+        (
+            key(KeyCode::Char('0')),
+            AppAction::Review(ReviewAction::SetLayout(LayoutMode::Auto)),
+        ),
+        (
+            key(KeyCode::Char('s')),
+            AppAction::Review(ReviewAction::ToggleSidebar),
+        ),
+        (
+            key(KeyCode::Char('t')),
+            AppAction::Review(ReviewAction::OpenThemeSelector),
+        ),
+        (
+            key(KeyCode::Char('/')),
+            AppAction::Review(ReviewAction::FocusFilter),
+        ),
+        (
+            key(KeyCode::Char('?')),
+            AppAction::Review(ReviewAction::OpenHelp),
+        ),
+        (
+            key(KeyCode::Char('q')),
+            AppAction::Review(ReviewAction::Quit),
+        ),
+    ];
+    for (event, expected) in cases {
+        assert_eq!(
+            map_key_event(event, InputMode::Normal, false),
+            Some(expected)
+        );
+    }
+    assert_eq!(
+        map_key_event(key(KeyCode::F(10)), InputMode::Normal, false),
+        None
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('M')), InputMode::Normal, false),
+        None
+    );
+}
+
+#[test]
+fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
+    let review = |action| Some(AppAction::Review(action));
+    for (event, expected) in [
+        (
+            key(KeyCode::Right),
+            review(ReviewAction::ScrollHorizontal(1)),
+        ),
+        (
+            shifted(KeyCode::Left),
+            review(ReviewAction::ScrollHorizontal(-8)),
+        ),
+        (
+            key(KeyCode::PageDown),
+            review(ReviewAction::Scroll {
+                delta: 1,
+                unit: ScrollUnit::Page,
+            }),
+        ),
+        (
+            key(KeyCode::PageUp),
+            review(ReviewAction::Scroll {
+                delta: -1,
+                unit: ScrollUnit::Page,
+            }),
+        ),
+        (
+            shifted(KeyCode::Char(' ')),
+            review(ReviewAction::Scroll {
+                delta: -1,
+                unit: ScrollUnit::Page,
+            }),
+        ),
+        (key(KeyCode::Home), review(ReviewAction::JumpTop)),
+        (key(KeyCode::End), review(ReviewAction::JumpBottom)),
+        (
+            key(KeyCode::Char('a')),
+            review(ReviewAction::ToggleAgentNotes),
+        ),
+        (
+            key(KeyCode::Char('l')),
+            review(ReviewAction::ToggleLineNumbers),
+        ),
+        (key(KeyCode::Char('w')), review(ReviewAction::ToggleWrap)),
+        (
+            key(KeyCode::Char('m')),
+            review(ReviewAction::ToggleHunkHeaders),
+        ),
+        (
+            key(KeyCode::Char('e')),
+            review(ReviewAction::EditSelectedFile),
+        ),
+        (key(KeyCode::Char('r')), review(ReviewAction::Reload)),
+        (key(KeyCode::Char('c')), review(ReviewAction::StartNote)),
+        (key(KeyCode::Tab), Some(AppAction::ToggleFocus)),
+        (key(KeyCode::Char('z')), Some(AppAction::ToggleContext)),
+    ] {
+        assert_eq!(map_key_event(event, InputMode::Normal, false), expected);
+    }
+    assert_eq!(
+        map_key_event(
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+            false,
+        ),
+        None
+    );
+    assert_eq!(
+        map_key_event(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+            false,
+        ),
+        None
+    );
+}
+
+#[test]
+fn focused_text_and_pager_precedence_suppress_global_actions() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('q')), InputMode::Filter, false),
+        Some(AppAction::Insert('q'))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('t')), InputMode::Note, false),
+        Some(AppAction::Insert('t'))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('t')), InputMode::Normal, true),
+        None
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('w')), InputMode::Normal, true),
+        Some(AppAction::Review(ReviewAction::ToggleWrap))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('q')), InputMode::Normal, true),
+        Some(AppAction::Review(ReviewAction::Quit))
+    );
+}
+
+#[test]
+fn dialog_modes_exclusively_own_their_documented_keys() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Down), InputMode::Theme, false),
+        Some(AppAction::MoveChoice(1))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::BackTab), InputMode::Theme, false),
+        Some(AppAction::MoveChoice(-1))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::Theme, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('q')), InputMode::Theme, false),
+        None
+    );
+    for code in [KeyCode::Esc, KeyCode::Char('?'), KeyCode::Char('q')] {
+        assert_eq!(
+            map_key_event(key(code), InputMode::Help, false),
+            Some(AppAction::Cancel)
+        );
+    }
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('s')), InputMode::Help, false),
+        None
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::SavePrompt, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('s')), InputMode::SavePrompt, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('q')), InputMode::SavePrompt, false),
+        Some(AppAction::Discard)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('n')), InputMode::SavePrompt, false),
+        Some(AppAction::DisableSavePrompt)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Esc), InputMode::SavePrompt, false),
+        Some(AppAction::Cancel)
+    );
+    assert_eq!(
+        map_key_event(
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            InputMode::Note,
+            false,
+        ),
+        Some(AppAction::Confirm)
+    );
+}
+
+fn review_file() -> DiffFile {
+    DiffFile {
+        id: "file:src/lib.rs".into(),
+        path: "src/lib.rs".into(),
+        previous_path: None,
+        summary: None,
+        patch: String::new(),
+        hunks: vec![Hunk {
+            old_start: 1,
+            new_start: 1,
+            header: "@@ -1,30 +1,30 @@".into(),
+            lines: (1..=30)
+                .map(|line| DiffLine {
+                    kind: LineType::Context,
+                    content: format!("line {line}"),
+                    old_lineno: Some(line),
+                    new_lineno: Some(line),
+                    moved: None,
+                })
+                .collect(),
+        }],
+        change_kind: FileChangeKind::Modified,
+        is_binary: false,
+        is_untracked: false,
+        is_too_large: false,
+        stats_truncated: false,
+        language: Some("rs".into()),
+        stats: FileStats {
+            additions: 0,
+            deletions: 0,
+        },
+        old_source: SourceSpec::File(PathBuf::from("old")),
+        new_source: SourceSpec::File(PathBuf::from("new")),
+    }
+}
+
+#[test]
+fn app_keys_mutate_the_rendering_controller_and_dialog_modes_own_closing_keys() {
+    let mut app = App::new_with_config(vec![review_file()], &ResolvedConfig::default(), false);
+    let view = Viewport {
+        width: 80,
+        height: 8,
+    };
+    app.handle_ui_key(key(KeyCode::Char('j')), view);
+    assert_eq!(app.review_controller.snapshot(view).scroll_top, 1);
+
+    app.handle_ui_key(key(KeyCode::Char('?')), view);
+    assert_eq!(app.input_mode(), InputMode::Help);
+    app.handle_ui_key(key(KeyCode::Char('q')), view);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+    assert!(!app.should_quit);
+
+    app.handle_ui_key(key(KeyCode::Char('/')), view);
+    app.handle_ui_key(key(KeyCode::Char('q')), view);
+    assert_eq!(app.input_mode(), InputMode::Filter);
+    assert_eq!(app.review_controller.snapshot(view).filter, "q");
+    app.handle_ui_key(key(KeyCode::Esc), view);
+    assert_eq!(app.review_controller.snapshot(view).filter, "");
+    assert_eq!(app.input_mode(), InputMode::Filter);
+    app.handle_ui_key(key(KeyCode::Esc), view);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+}

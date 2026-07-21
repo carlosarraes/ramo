@@ -355,7 +355,7 @@ git commit -m "feat: render continuous native review stream"
 - Consumes: Crossterm key events, current focus/dialog mode, controller actions and retained Vim/comment/tmux operations.
 - Produces: precedence-safe `map_key_event`, help/theme/save dialogs and direct no-menu actions.
 
-- [ ] **Step 1: Write failing key-policy tests**
+- [x] **Step 1: Write failing key-policy tests**
 
 Assert the direct map:
 
@@ -376,23 +376,23 @@ Mode precedence tests:
 5. Note editing owns text; Escape cancels and Ctrl-S saves.
 6. Pager mode accepts only navigation, wrap, sidebar and quit.
 
-- [ ] **Step 2: Run input/dialog tests and verify red**
+- [x] **Step 2: Run input/dialog tests and verify red**
 
 Run: `cargo test --test ui_input && cargo test --test ui_dialogs`
 
 Expected: compilation fails on typed focus/dialog/input APIs.
 
-- [ ] **Step 3: Implement action mapping and centered overlays**
+- [x] **Step 3: Implement action mapping and centered overlays**
 
 `map_key_event` is pure and returns `Option<AppAction>`. `App` applies it after mode precedence. Help content lists only real pdiff bindings and explicitly contains no menu instructions. Theme selection previews without persistence until Enter. Dialog bounds use saturating centered rectangles and remain usable on small terminals.
 
-- [ ] **Step 4: Run all controller/render/input tests**
+- [x] **Step 4: Run all controller/render/input tests**
 
 Run: `cargo test --test ui_input && cargo test --test ui_dialogs && cargo test --test review_state && cargo test --test ui_render`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit interaction mapping**
+- [x] **Step 5: Commit interaction mapping**
 
 ```bash
 git add src/app.rs src/ui tests/ui_input.rs tests/ui_dialogs.rs

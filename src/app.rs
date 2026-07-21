@@ -1,14 +1,19 @@
 use std::io;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::Style;
+use ratatui::widgets::Paragraph;
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::annotations::model::Annotation;
 use crate::config::ResolvedConfig;
 use crate::diff::model::{DiffFile, DiffLine, LineType};
+use crate::review::{ReviewAction, ReviewEffect, Viewport};
 use crate::review::{ReviewController, ReviewOptions};
-use crate::ui::highlight::{HighlightCache, Highlighter};
-use crate::ui::theme::Theme;
+use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
+use crate::ui::highlight::HighlightCache;
+use crate::ui::input::{AppAction, InputMode, map_key_event};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 
@@ -41,11 +46,16 @@ pub struct App {
     pub focus_side: Side,
     pub annotations: Vec<Annotation>,
     pub layout: ViewLayout,
-    pub theme: Theme,
-    pub highlighter: Highlighter,
     pub review_controller: ReviewController,
     pub review_theme: AppTheme,
     pub review_highlights: HighlightCache,
+    input_mode: InputMode,
+    filter_buffer: String,
+    theme_registry: ThemeRegistry,
+    theme_selection: Option<ThemeSelection>,
+    active_theme_id: String,
+    transparent_background: bool,
+    pager_mode: bool,
     pub should_quit: bool,
     pub comment_buf: String,
     pub search_query: String,
@@ -77,7 +87,6 @@ impl App {
         let flat_lines = build_flat_lines(&files);
         let file_starts = build_file_starts(&flat_lines);
         let line_counts = files.iter().map(|f| f.line_counts()).collect();
-        let highlighter = Highlighter::new(&files);
         let review_controller = ReviewController::new(
             files.clone(),
             ReviewOptions {
@@ -91,11 +100,10 @@ impl App {
                 annotated_hunks: Vec::new(),
             },
         );
-        let review_theme = ThemeRegistry::new(config.custom_theme.clone()).resolve(
-            &config.theme,
-            None,
-            config.transparent_background,
-        );
+        let theme_registry = ThemeRegistry::new(config.custom_theme.clone());
+        let review_theme =
+            theme_registry.resolve(&config.theme, None, config.transparent_background);
+        let active_theme_id = review_theme.id.clone();
         Self {
             files,
             flat_lines,
@@ -107,11 +115,16 @@ impl App {
             focus_side: Side::Right,
             annotations: Vec::new(),
             layout: ViewLayout::SideBySide,
-            theme: Theme::default(),
-            highlighter,
             review_controller,
             review_theme,
             review_highlights: HighlightCache::default(),
+            input_mode: InputMode::Normal,
+            filter_buffer: String::new(),
+            theme_registry,
+            theme_selection: None,
+            active_theme_id,
+            transparent_background: config.transparent_background,
+            pager_mode,
             should_quit: false,
             comment_buf: String::new(),
             search_query: String::new(),
@@ -220,7 +233,14 @@ impl App {
         while !self.should_quit {
             terminal.draw(|frame| self.draw(frame))?;
             if let Event::Key(key) = event::read()? {
-                self.handle_key(key, terminal.size()?.height as usize);
+                let size = terminal.size()?;
+                self.handle_key(
+                    key,
+                    Viewport {
+                        width: size.width,
+                        height: size.height,
+                    },
+                );
             }
         }
         Ok(self.annotations)
@@ -236,17 +256,229 @@ impl App {
             ),
             area,
         );
+        if self.input_mode == InputMode::Filter || !self.filter_buffer.is_empty() {
+            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+            frame.render_widget(
+                Paragraph::new(format!(" Filter: {}", self.filter_buffer)).style(
+                    Style::default()
+                        .fg(self.review_theme.text)
+                        .bg(self.review_theme.panel_alt),
+                ),
+                status,
+            );
+        }
+        match self.input_mode {
+            InputMode::Help => {
+                frame.render_widget(DialogOverlay::help(&self.review_theme, true), area);
+            }
+            InputMode::Theme => {
+                if let Some(selection) = &self.theme_selection {
+                    frame.render_widget(
+                        DialogOverlay::theme(
+                            &self.review_theme,
+                            selection.ids(),
+                            selection.selected(),
+                        ),
+                        area,
+                    );
+                }
+            }
+            InputMode::Note => {
+                frame.render_widget(
+                    DialogOverlay::note(&self.review_theme, &self.comment_buf),
+                    area,
+                );
+            }
+            InputMode::SavePrompt => {
+                frame.render_widget(DialogOverlay::save(&self.review_theme), area);
+            }
+            InputMode::Normal | InputMode::Filter => {}
+        }
     }
 
-    fn handle_key(&mut self, key: KeyEvent, viewport_height: usize) {
-        let content_height = viewport_height.saturating_sub(2);
-
+    fn handle_key(&mut self, key: KeyEvent, viewport: Viewport) {
+        if self.input_mode != InputMode::Normal {
+            self.handle_ui_key(key, viewport);
+            return;
+        }
         match &self.mode {
             Mode::CommentInsert => self.handle_comment_insert_key(key),
             Mode::CommentNormal => self.handle_comment_normal_key(key),
             Mode::Command => self.handle_command_key(key),
             Mode::TmuxPanePick => self.handle_tmux_pick_key(key),
-            _ => self.handle_nav_key(key, content_height),
+            _ => {
+                if map_key_event(key, InputMode::Normal, self.pager_mode).is_some() {
+                    self.handle_ui_key(key, viewport);
+                } else {
+                    self.handle_nav_key(key, usize::from(viewport.height));
+                }
+            }
+        }
+    }
+
+    pub fn input_mode(&self) -> InputMode {
+        self.input_mode
+    }
+
+    pub fn handle_ui_key(&mut self, key: KeyEvent, viewport: Viewport) {
+        if let Some(action) = map_key_event(key, self.input_mode, self.pager_mode) {
+            self.apply_app_action(action, viewport);
+        }
+    }
+
+    fn apply_app_action(&mut self, action: AppAction, viewport: Viewport) {
+        match action {
+            AppAction::Review(action) => {
+                let effect = self.review_controller.apply(action, viewport);
+                self.apply_review_effect(effect);
+            }
+            AppAction::Insert(character) => match self.input_mode {
+                InputMode::Filter => {
+                    self.filter_buffer.push(character);
+                    self.review_controller.apply(
+                        ReviewAction::SetFilter(self.filter_buffer.clone()),
+                        viewport,
+                    );
+                }
+                InputMode::Note => self.comment_buf.push(character),
+                _ => {}
+            },
+            AppAction::Backspace => match self.input_mode {
+                InputMode::Filter => {
+                    self.filter_buffer.pop();
+                    self.review_controller.apply(
+                        ReviewAction::SetFilter(self.filter_buffer.clone()),
+                        viewport,
+                    );
+                }
+                InputMode::Note => {
+                    self.comment_buf.pop();
+                }
+                _ => {}
+            },
+            AppAction::Cancel => self.cancel_input(viewport),
+            AppAction::Confirm => self.confirm_input(viewport),
+            AppAction::MoveChoice(delta) => {
+                if let Some(selection) = &mut self.theme_selection {
+                    selection.move_by(delta);
+                    self.review_theme = self.theme_registry.resolve(
+                        selection.preview_id(),
+                        None,
+                        self.transparent_background,
+                    );
+                }
+            }
+            AppAction::ToggleFocus => {
+                self.input_mode = if self.input_mode == InputMode::Filter {
+                    InputMode::Normal
+                } else {
+                    InputMode::Filter
+                };
+            }
+            AppAction::ToggleContext => {
+                self.toast = Some("Context expansion is unavailable for this source".into());
+            }
+            AppAction::DisableSavePrompt | AppAction::Discard => {
+                self.input_mode = InputMode::Normal;
+                self.should_quit = true;
+            }
+        }
+    }
+
+    fn apply_review_effect(&mut self, effect: ReviewEffect) {
+        match effect {
+            ReviewEffect::FocusFilter => self.input_mode = InputMode::Filter,
+            ReviewEffect::OpenHelp => self.input_mode = InputMode::Help,
+            ReviewEffect::OpenThemeSelector => {
+                self.theme_selection = Some(ThemeSelection::new(
+                    self.theme_registry.selector_items(),
+                    &self.active_theme_id,
+                ));
+                self.input_mode = InputMode::Theme;
+            }
+            ReviewEffect::StartNote => {
+                self.comment_buf.clear();
+                self.input_mode = InputMode::Note;
+            }
+            ReviewEffect::EditFile { path, line } => {
+                self.toast = Some(match line {
+                    Some(line) => format!("Open {path}:{line}"),
+                    None => format!("Open {path}"),
+                });
+            }
+            ReviewEffect::Reload => self.toast = Some("Reload requested".into()),
+            ReviewEffect::Quit => self.should_quit = true,
+            ReviewEffect::None | ReviewEffect::Redraw => {}
+        }
+    }
+
+    fn cancel_input(&mut self, viewport: Viewport) {
+        match self.input_mode {
+            InputMode::Filter if !self.filter_buffer.is_empty() => {
+                self.filter_buffer.clear();
+                self.review_controller
+                    .apply(ReviewAction::SetFilter(String::new()), viewport);
+            }
+            InputMode::Theme => {
+                if let Some(selection) = &self.theme_selection {
+                    self.review_theme = self.theme_registry.resolve(
+                        selection.cancel_id(),
+                        None,
+                        self.transparent_background,
+                    );
+                }
+                self.theme_selection = None;
+                self.input_mode = InputMode::Normal;
+            }
+            InputMode::Note => {
+                self.comment_buf.clear();
+                self.input_mode = InputMode::Normal;
+            }
+            InputMode::Help | InputMode::Filter | InputMode::SavePrompt => {
+                self.input_mode = InputMode::Normal;
+            }
+            InputMode::Normal => {}
+        }
+    }
+
+    fn confirm_input(&mut self, viewport: Viewport) {
+        match self.input_mode {
+            InputMode::Theme => {
+                if let Some(selection) = &self.theme_selection {
+                    self.active_theme_id = selection.confirm_id().to_owned();
+                }
+                self.theme_selection = None;
+                self.input_mode = InputMode::Normal;
+            }
+            InputMode::Note => {
+                if !self.comment_buf.trim().is_empty() {
+                    let snapshot = self.review_controller.snapshot(viewport).clone();
+                    let file = snapshot
+                        .selected_file_id
+                        .as_deref()
+                        .and_then(|id| snapshot.visible_files.iter().find(|file| file.id == id));
+                    let line = snapshot
+                        .selected_position
+                        .as_ref()
+                        .and_then(|position| position.new_line.or(position.old_line));
+                    self.annotations.push(Annotation {
+                        file: file.map_or_else(|| "unknown".into(), |file| file.path.clone()),
+                        flat_start: 0,
+                        flat_end: 0,
+                        display_range: line
+                            .map_or_else(|| "file".into(), |line| format!("line {line}")),
+                        diff_context: String::new(),
+                        comment: self.comment_buf.trim().to_owned(),
+                    });
+                }
+                self.comment_buf.clear();
+                self.input_mode = InputMode::Normal;
+            }
+            InputMode::SavePrompt => {
+                self.should_quit = true;
+                self.input_mode = InputMode::Normal;
+            }
+            _ => {}
         }
     }
 
