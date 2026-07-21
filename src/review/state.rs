@@ -7,7 +7,9 @@ use crate::core::input::LayoutMode;
 use crate::diff::model::DiffFile;
 use crate::input::sanitize_terminal_text;
 use crate::notes::{
-    HumanNote, HumanNoteDraft, LineRange, NoteTarget, annotated_hunks, resolve_ranges_target,
+    ClearedSessionNotes, HumanNote, HumanNoteDraft, LineRange, LiveNote, LiveNoteInput,
+    NoteAnchorSide, NoteConfidence, NoteSource, NoteTarget, ReviewNote, annotated_hunks,
+    note_box_layout, resolve_ranges_target,
 };
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
@@ -247,6 +249,7 @@ pub struct ReviewController {
     snapshot: ReviewSnapshot,
     contexts: HashMap<String, FileContextState>,
     human_notes: Vec<HumanNote>,
+    live_notes: Vec<LiveNote>,
     human_note_draft: Option<HumanNoteDraft>,
     next_human_note_id: u64,
 }
@@ -283,6 +286,7 @@ impl ReviewController {
             snapshot: empty_snapshot(),
             contexts: HashMap::new(),
             human_notes: Vec::new(),
+            live_notes: Vec::new(),
             human_note_draft: None,
             next_human_note_id: 1,
         }
@@ -290,6 +294,187 @@ impl ReviewController {
 
     pub fn human_notes(&self) -> &[HumanNote] {
         &self.human_notes
+    }
+
+    pub fn live_notes(&self) -> &[LiveNote] {
+        &self.live_notes
+    }
+
+    pub fn files(&self) -> &[DiffFile] {
+        &self.files
+    }
+
+    pub fn toggle_agent_notes(&mut self, visible: bool, viewport: Viewport) {
+        if self.options.agent_notes != visible {
+            self.options.agent_notes = visible;
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+    }
+
+    pub fn note_markup_width(&mut self, viewport: Viewport, side: NoteAnchorSide) -> u16 {
+        self.ensure_geometry(viewport);
+        note_box_layout(
+            self.snapshot.layout,
+            Some(side),
+            self.content_width(viewport),
+        )
+        .content_width
+    }
+
+    pub fn add_live_note(
+        &mut self,
+        input: LiveNoteInput,
+        viewport: Viewport,
+    ) -> Result<LiveNote, String> {
+        const MAX_FIELD_BYTES: usize = 64 * 1024;
+        if input.line == 0 {
+            return Err("live note lines are positive and 1-based".into());
+        }
+        if self
+            .live_notes
+            .iter()
+            .any(|note| note.note.id.as_deref() == Some(&input.id))
+        {
+            return Err(format!("live note id {} already exists", input.id));
+        }
+        let summary = sanitize_terminal_text(&input.summary, false)
+            .trim()
+            .to_owned();
+        if summary.is_empty() {
+            return Err("live note summary cannot be empty".into());
+        }
+        if summary.len() > MAX_FIELD_BYTES
+            || input
+                .rationale
+                .as_ref()
+                .is_some_and(|value| value.len() > MAX_FIELD_BYTES)
+            || input
+                .markup
+                .as_ref()
+                .is_some_and(|value| value.len() > MAX_FIELD_BYTES)
+        {
+            return Err(format!(
+                "live note fields cannot exceed {MAX_FIELD_BYTES} bytes"
+            ));
+        }
+        let target = {
+            let file = self
+                .files
+                .iter()
+                .find(|file| {
+                    file.id == input.file_path
+                        || file.path == input.file_path
+                        || file.previous_path.as_deref() == Some(input.file_path.as_str())
+                })
+                .ok_or_else(|| format!("file {} is not part of this review", input.file_path))?;
+            let matching_hunk = file.hunks.iter().enumerate().find(|(index, hunk)| {
+                input.hunk_index.is_none_or(|requested| requested == *index)
+                    && hunk.lines.iter().any(|line| match input.side {
+                        NoteAnchorSide::Old => line.old_lineno == Some(input.line),
+                        NoteAnchorSide::New => line.new_lineno == Some(input.line),
+                    })
+            });
+            let (hunk_index, _) = matching_hunk.ok_or_else(|| {
+                format!(
+                    "line {} ({}) is not part of {}{}",
+                    input.line,
+                    match input.side {
+                        NoteAnchorSide::Old => "old",
+                        NoteAnchorSide::New => "new",
+                    },
+                    file.path,
+                    input
+                        .hunk_index
+                        .map_or_else(String::new, |index| format!(" hunk {}", index + 1))
+                )
+            })?;
+            let range = LineRange {
+                start: input.line,
+                end: input.line,
+            };
+            let mut target = resolve_ranges_target(
+                file,
+                (input.side == NoteAnchorSide::Old).then_some(range),
+                (input.side == NoteAnchorSide::New).then_some(range),
+            );
+            target.hunk_index = Some(hunk_index);
+            target
+        };
+        let rationale = input
+            .rationale
+            .map(|value| sanitize_terminal_text(&value, false));
+        let markup = input
+            .markup
+            .map(|value| sanitize_terminal_text(&value, false));
+        let markup_width = self.note_markup_width(viewport, input.side);
+        let markup_notes = markup.as_deref().map_or_else(Vec::new, |markup| {
+            crate::markup::layout_stml(markup, markup_width).errors
+        });
+        let note = ReviewNote {
+            id: Some(input.id),
+            old_range: target.old_range,
+            new_range: target.new_range,
+            summary,
+            rationale,
+            markup,
+            tags: vec!["session".into()],
+            confidence: None::<NoteConfidence>,
+            source: NoteSource::Agent,
+            title: None,
+            author: input
+                .author
+                .map(|value| sanitize_terminal_text(&value, false)),
+            created_at: Some(input.created_at),
+            updated_at: None,
+            editable: false,
+        };
+        let live = LiveNote {
+            target,
+            note,
+            markup_width,
+            markup_notes,
+        };
+        self.live_notes.push(live.clone());
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        Ok(live)
+    }
+
+    pub fn clear_session_notes(
+        &mut self,
+        file: Option<&str>,
+        include_user: bool,
+        viewport: Viewport,
+    ) -> ClearedSessionNotes {
+        let files = &self.files;
+        let matches_file = |file_id: &str| {
+            file.is_none_or(|requested| {
+                files.iter().any(|candidate| {
+                    candidate.id == file_id
+                        && (candidate.id == requested
+                            || candidate.path == requested
+                            || candidate.previous_path.as_deref() == Some(requested))
+                })
+            })
+        };
+        let before_live = self.live_notes.len();
+        self.live_notes
+            .retain(|note| !matches_file(&note.target.file_id));
+        let before_user = self.human_notes.len();
+        if include_user {
+            self.human_notes
+                .retain(|note| !matches_file(&note.target.file_id));
+        }
+        let result = ClearedSessionNotes {
+            removed_live: before_live.saturating_sub(self.live_notes.len()),
+            removed_user: before_user.saturating_sub(self.human_notes.len()),
+        };
+        if result.removed_live > 0 || result.removed_user > 0 {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+        result
     }
 
     pub fn export_annotations(&self) -> Vec<Annotation> {
@@ -827,6 +1012,8 @@ impl ReviewController {
         self.files = files;
         self.human_notes
             .retain(|note| self.files.iter().any(|file| file.id == note.target.file_id));
+        self.live_notes
+            .retain(|note| self.files.iter().any(|file| file.id == note.target.file_id));
         if self.human_note_draft.as_ref().is_some_and(|draft| {
             !self
                 .files
@@ -1034,6 +1221,7 @@ impl ReviewController {
                         self.contexts.get(&file.id),
                         NotePlanOptions {
                             human_notes: &self.human_notes,
+                            live_notes: &self.live_notes,
                             draft: self.human_note_draft.as_ref(),
                             show_agent_notes: self.options.agent_notes,
                             content_width,
@@ -1205,6 +1393,11 @@ impl ReviewController {
             );
         }
         targets.extend(self.human_notes.iter().filter_map(|note| {
+            note.target
+                .hunk_index
+                .map(|hunk| HunkTarget::new(&note.target.file_id, hunk))
+        }));
+        targets.extend(self.live_notes.iter().filter_map(|note| {
             note.target
                 .hunk_index
                 .map(|hunk| HunkTarget::new(&note.target.file_id, hunk))

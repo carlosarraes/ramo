@@ -1,7 +1,7 @@
 use crate::diff::model::{DiffFile, DiffLine, LineType, MovedLineKind};
 use crate::input::sanitize_terminal_text;
 use crate::notes::{
-    HumanNote, HumanNoteDraft, NoteBoxLayout, NoteSource, NoteTarget, ReviewNote,
+    HumanNote, HumanNoteDraft, LiveNote, NoteBoxLayout, NoteSource, NoteTarget, ReviewNote,
     annotation_range_label, note_box_layout, note_source, resolve_note_target, stable_note_id,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -149,6 +149,7 @@ pub(crate) struct RowPlan {
 
 pub(crate) struct NotePlanOptions<'a> {
     pub human_notes: &'a [HumanNote],
+    pub live_notes: &'a [LiveNote],
     pub draft: Option<&'a HumanNoteDraft>,
     pub show_agent_notes: bool,
     pub content_width: u16,
@@ -254,6 +255,26 @@ pub(crate) fn build_row_plan_with_notes(
                     note,
                     target,
                     source,
+                    layout_mode,
+                    options.content_width,
+                ),
+            ));
+        }
+    }
+    if options.show_agent_notes {
+        for live in options
+            .live_notes
+            .iter()
+            .filter(|note| note.target.file_id == file.id)
+        {
+            let anchor = note_anchor_index(&plan.rows, &live.target);
+            placements.push((
+                anchor,
+                external_card(
+                    file,
+                    &live.note,
+                    live.target.clone(),
+                    NoteSource::Agent,
                     layout_mode,
                     options.content_width,
                 ),

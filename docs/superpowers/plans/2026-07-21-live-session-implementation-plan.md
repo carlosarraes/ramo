@@ -27,12 +27,12 @@
 - Modify: `src/review/row.rs`
 - Test: `tests/session_projection.rs`
 
-- [ ] Write failing serialization, selector, projection, and live-note mutation tests.
-- [ ] Define explicit API/daemon/registration versions, capability actions, selectors, registration, snapshot, file/hunk projections, command inputs/results, and response envelopes with serde.
-- [ ] Add controller-owned live agent notes, distinct from human and file-sidecar notes, and route them through the canonical note rows/geometry.
-- [ ] Project selected file/hunk, note markup width, file patches, all note sources, and stable live comment ids without duplicating review state.
-- [ ] Validate target file/hunk/side/line ownership before mutations; add/list/remove/clear operations must not cross session or file boundaries.
-- [ ] Run `cargo test --test session_projection --test notes_state --test review_state --test ui_render` and commit `feat: add native session projections`.
+- [x] Write failing serialization, selector, projection, and live-note mutation tests.
+- [x] Define explicit API/daemon/registration versions, capability actions, selectors, registration, snapshot, file/hunk projections, command inputs/results, and response envelopes with serde.
+- [x] Add controller-owned live agent notes, distinct from human and file-sidecar notes, and route them through the canonical note rows/geometry.
+- [x] Project selected file/hunk, note markup width, file patches, all note sources, and stable live comment ids without duplicating review state.
+- [x] Validate target file/hunk/side/line ownership before mutations; add/list/remove/clear operations must not cross session or file boundaries.
+- [x] Run `cargo test --test session_projection --test notes_state --test review_state --test ui_render` and commit `feat: add native session projections`.
 
 ## Task 2: Add the complete session, daemon, MCP-alias, and skill CLI model
 

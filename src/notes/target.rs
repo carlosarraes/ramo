@@ -38,6 +38,57 @@ pub struct HumanNoteDraft {
     pub editing: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveNoteInput {
+    pub id: String,
+    pub file_path: String,
+    pub hunk_index: Option<usize>,
+    pub side: NoteAnchorSide,
+    pub line: u32,
+    pub summary: String,
+    pub rationale: Option<String>,
+    pub markup: Option<String>,
+    pub author: Option<String>,
+    pub created_at: String,
+}
+
+impl LiveNoteInput {
+    pub fn minimal(
+        id: impl Into<String>,
+        file_path: impl Into<String>,
+        side: NoteAnchorSide,
+        line: u32,
+        summary: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            file_path: file_path.into(),
+            hunk_index: None,
+            side,
+            line,
+            summary: summary.into(),
+            rationale: None,
+            markup: None,
+            author: None,
+            created_at: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveNote {
+    pub target: NoteTarget,
+    pub note: ReviewNote,
+    pub markup_width: u16,
+    pub markup_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClearedSessionNotes {
+    pub removed_live: usize,
+    pub removed_user: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteBoxLayout {
     pub box_width: u16,
