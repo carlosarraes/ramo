@@ -103,9 +103,7 @@ fn upstream_mercurial_marker_is_not_misdetected_as_sapling() {
     );
     std::fs::write(temp.path().join(".hg/requires"), "revlogv1\ntreestate\n").unwrap();
     assert_eq!(
-        ramo::vcs::detect::select_vcs(temp.path(), None)
-            .unwrap()
-            .id,
+        ramo::vcs::detect::select_vcs(temp.path(), None).unwrap().id,
         VcsId::Sl
     );
 }

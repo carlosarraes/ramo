@@ -377,11 +377,7 @@ fn route_session_api(request: HttpRequest, registry: &Arc<Mutex<SessionRegistry>
                 )
             }),
         },
-        _ => error_response(
-            400,
-            "unsupported-action",
-            "Unsupported ramo session action",
-        ),
+        _ => error_response(400, "unsupported-action", "Unsupported ramo session action"),
     }
 }
 

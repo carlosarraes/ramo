@@ -91,9 +91,7 @@ pub fn validate_request_authority(
             .strip_prefix("http://")
             .or_else(|| origin.strip_prefix("https://"))
             .ok_or_else(|| {
-                SessionConfigError(
-                    "Origin is not allowed for the local ramo session broker".into(),
-                )
+                SessionConfigError("Origin is not allowed for the local ramo session broker".into())
             })?;
         let authority = authority.split('/').next().unwrap_or_default();
         if authority.contains('@') || validate_authority(authority, expected_port).is_err() {

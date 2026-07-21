@@ -120,10 +120,8 @@ impl PtyProcess {
                 while let Ok(chunk) = self.chunks.try_recv() {
                     self.raw.extend(chunk);
                 }
-                let clean = ramo::input::sanitize_terminal_text(
-                    &String::from_utf8_lossy(&self.raw),
-                    false,
-                );
+                let clean =
+                    ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
                 panic!("PTY child exit deadline: {error}; output: {clean:?}");
             }
         };

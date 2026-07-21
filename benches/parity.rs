@@ -18,10 +18,8 @@ impl BenchDir {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("system clock after Unix epoch")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "ramo-parity-bench-{}-{unique}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("ramo-parity-bench-{}-{unique}", std::process::id()));
         std::fs::create_dir(&path).expect("create temporary benchmark directory");
         Self(path)
     }

@@ -1,6 +1,7 @@
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use ramo::core::input::LayoutMode;
 use ramo::diff::parser::parse_unified_diff;
 use ramo::review::{ReviewController, ReviewOptions, Viewport};
@@ -9,7 +10,6 @@ use ramo::session::{
     SessionDaemonOptions, SessionDescriptor, SessionRegistrationClient, build_registration,
     build_snapshot, read_session_frame, spawn_session_daemon, write_session_frame,
 };
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 const PATCH: &str = "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-old\n+new\n";
 

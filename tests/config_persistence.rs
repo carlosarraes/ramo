@@ -2,9 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ramo::app::App;
-use ramo::config::{
-    ResolvedConfig, ViewPreferenceChanges, ViewPreferences, save_view_preferences,
-};
+use ramo::config::{ResolvedConfig, ViewPreferenceChanges, ViewPreferences, save_view_preferences};
 use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,

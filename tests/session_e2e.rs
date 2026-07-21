@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use ramo::session::{SessionAddress, SessionClient, SessionDaemonOptions, spawn_session_daemon};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use ramo::session::{SessionAddress, SessionClient, SessionDaemonOptions, spawn_session_daemon};
 use serde_json::{Value, json};
 
 const PATCH_ONE: &str = "diff --git a/src/one.rs b/src/one.rs\n--- a/src/one.rs\n+++ b/src/one.rs\n@@ -1 +1 @@\n-old one\n+new one\n@@ -10 +10 @@\n-old ten\n+new ten\n";

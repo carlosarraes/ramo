@@ -5,13 +5,13 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 #[cfg(unix)]
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use ramo::ui::appearance::{
     RgbColor, appearance_for_background, appearance_from_colorfgbg, parse_osc11_background,
 };
 use ramo::ui::themes::TerminalAppearance;
 use ramo::ui::themes::ThemeRegistry;
-#[cfg(unix)]
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 #[test]
 fn osc11_parsing_classification_and_environment_fallback_match_hunk() {

@@ -10,8 +10,7 @@ fn copied_skill_refresh_notice_is_local_one_time_and_failure_tolerant() {
     assert_eq!(
         resolve_skill_refresh_notice(&state, "0.0.6", false),
         Some(
-            "ramo 0.0.6 installed • If your agent copied ramo's skill, run ramo skill path"
-                .into()
+            "ramo 0.0.6 installed • If your agent copied ramo's skill, run ramo skill path".into()
         )
     );
     assert_eq!(resolve_skill_refresh_notice(&state, "0.0.6", false), None);
