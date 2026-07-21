@@ -21,11 +21,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
         with:
           toolchain: stable
-      - name: Test portable Rust
-        if: runner.os != 'macOS'
+      - name: Test portable Rust on Linux
+        if: runner.os == 'Linux'
         run: cargo test --locked
-      - name: Test portable Rust serially on macOS
-        if: runner.os == 'macOS'
+      - name: Test portable Rust serially on macOS and Windows
+        if: runner.os != 'Linux'
         run: cargo test --locked -- --test-threads=1
       - name: PowerShell installer selection
         if: runner.os == 'Windows'

@@ -18,15 +18,18 @@ fn every_pinned_rust_toolchain_step_selects_stable_explicitly() {
 }
 
 #[test]
-fn macos_pty_tests_run_serially() {
-    assert_eq!(
-        CI_WORKFLOW.matches("runner.os == 'macOS'").count(),
-        2,
-        "portable and native PTY jobs must select their macOS test commands explicitly"
+fn non_linux_pty_tests_run_serially() {
+    assert!(
+        CI_WORKFLOW.contains("if: runner.os != 'Linux'"),
+        "portable macOS and Windows PTY tests must use the serial test command"
+    );
+    assert!(
+        CI_WORKFLOW.contains("if: runner.os == 'macOS'"),
+        "the native macOS PTY job must select its serial test command explicitly"
     );
     assert_eq!(
         CI_WORKFLOW.matches("--test-threads=1").count(),
         2,
-        "portable and native PTY jobs must serialize macOS PTY tests"
+        "portable non-Linux and native macOS PTY jobs must serialize tests"
     );
 }
