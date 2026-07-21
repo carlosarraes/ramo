@@ -121,6 +121,8 @@ fn probe_terminal_background() -> Option<TerminalAppearance> {
     unsafe {
         libc::cfmakeraw(&mut raw);
     }
+    raw.c_cc[libc::VMIN] = 0;
+    raw.c_cc[libc::VTIME] = 0;
     if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw) } != 0 {
         return None;
     }
@@ -148,7 +150,7 @@ fn probe_terminal_background() -> Option<TerminalAppearance> {
             }
             return None;
         }
-        if ready == 0 {
+        if ready == 0 || descriptor.revents & libc::POLLIN == 0 {
             return None;
         }
         let mut chunk = [0_u8; 64];
