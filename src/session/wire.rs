@@ -142,7 +142,7 @@ pub fn write_session_frame<W: Write, F: SessionWireFrame>(
 
 pub fn read_session_frame<R: Read, F: SessionWireFrame>(reader: &mut R) -> io::Result<F> {
     let mut length = [0_u8; 4];
-    reader.read_exact(&mut length)?;
+    read_frame_part(reader, &mut length, false)?;
     let length = u32::from_be_bytes(length) as usize;
     if length == 0 || length > MAX_SESSION_FRAME_BYTES {
         return Err(io::Error::new(
@@ -151,9 +151,38 @@ pub fn read_session_frame<R: Read, F: SessionWireFrame>(reader: &mut R) -> io::R
         ));
     }
     let mut payload = vec![0_u8; length];
-    reader.read_exact(&mut payload)?;
+    read_frame_part(reader, &mut payload, true)?;
     let frame: F = serde_json::from_slice(&payload)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     frame.validate_version()?;
     Ok(frame)
+}
+
+fn read_frame_part<R: Read>(
+    reader: &mut R,
+    buffer: &mut [u8],
+    frame_already_started: bool,
+) -> io::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut offset = 0;
+    while offset < buffer.len() {
+        match reader.read(&mut buffer[offset..]) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "ramo session frame ended early",
+                ));
+            }
+            Ok(count) => offset += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) && (frame_already_started || offset > 0)
+                    && Instant::now() < deadline => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }

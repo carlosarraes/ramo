@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{self, Cursor, Read};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -77,6 +77,41 @@ fn frames_are_versioned_big_endian_json_and_strictly_bounded() {
     bytes.extend_from_slice(&(incompatible.len() as u32).to_be_bytes());
     bytes.extend_from_slice(&incompatible);
     assert!(read_session_frame::<_, ServerSessionFrame>(&mut Cursor::new(bytes)).is_err());
+}
+
+#[test]
+fn fragmented_frames_survive_a_transient_read_timeout() {
+    struct TimeoutAfterPartialRead {
+        bytes: Cursor<Vec<u8>>,
+        calls: usize,
+        timeout_call: usize,
+    }
+
+    impl Read for TimeoutAfterPartialRead {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.calls += 1;
+            if self.calls == self.timeout_call {
+                return Err(io::Error::new(io::ErrorKind::TimedOut, "transient"));
+            }
+            let limit = buffer.len().min(2);
+            self.bytes.read(&mut buffer[..limit])
+        }
+    }
+
+    let frame = ServerSessionFrame::Pong;
+    let mut bytes = Vec::new();
+    write_session_frame(&mut bytes, &frame).unwrap();
+    for timeout_call in [2, 3] {
+        let mut reader = TimeoutAfterPartialRead {
+            bytes: Cursor::new(bytes.clone()),
+            calls: 0,
+            timeout_call,
+        };
+        assert_eq!(
+            read_session_frame::<_, ServerSessionFrame>(&mut reader).unwrap(),
+            frame
+        );
+    }
 }
 
 #[test]
