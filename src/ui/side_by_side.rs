@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 
 use crate::app::{App, Side};
 use crate::diff::model::LineType;
@@ -19,7 +19,10 @@ use crate::vim::mode::Mode;
 // Ideas: `"─".repeat(N)`, a centered "── file N ──" banner, or a blank line.
 // Returns exactly ONE rendered row (row counting in scroll math assumes this).
 fn file_separator_line<'a>(_app: &'a App) -> Line<'a> {
-    Line::from(Span::styled("─".repeat(120), Style::default().fg(Color::DarkGray)))
+    Line::from(Span::styled(
+        "─".repeat(120),
+        Style::default().fg(Color::DarkGray),
+    ))
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -92,25 +95,44 @@ fn render_file_list(frame: &mut Frame, area: Rect, app: &App, width: u16) {
     let total_dels: usize = counts.iter().map(|(_, d)| d).sum();
     lines.push(Line::from(vec![
         Span::styled(format!("{} files ", app.files.len()), app.theme.file_header),
-        Span::styled(format!("+{}", total_adds), app.theme.line_style(&LineType::Addition)),
+        Span::styled(
+            format!("+{}", total_adds),
+            app.theme.line_style(&LineType::Addition),
+        ),
         Span::styled(" ", Style::default()),
-        Span::styled(format!("-{}", total_dels), app.theme.line_style(&LineType::Deletion)),
+        Span::styled(
+            format!("-{}", total_dels),
+            app.theme.line_style(&LineType::Deletion),
+        ),
     ]));
     lines.push(Line::default());
 
     for (i, file) in app.files.iter().enumerate() {
         let is_active = active_file == Some(i);
         let (adds, dels) = counts[i];
-        let style = if is_active { app.theme.file_list_active } else { app.theme.file_list_item };
+        let style = if is_active {
+            app.theme.file_list_active
+        } else {
+            app.theme.file_list_item
+        };
         let display_name = short_filename(&file.path, max_w.saturating_sub(8));
         let marker = if is_active { "▶ " } else { "  " };
 
-        let mut spans = vec![Span::styled(marker, style), Span::styled(display_name, style)];
+        let mut spans = vec![
+            Span::styled(marker, style),
+            Span::styled(display_name, style),
+        ];
         if adds > 0 {
-            spans.push(Span::styled(format!(" +{}", adds), app.theme.line_style(&LineType::Addition)));
+            spans.push(Span::styled(
+                format!(" +{}", adds),
+                app.theme.line_style(&LineType::Addition),
+            ));
         }
         if dels > 0 {
-            spans.push(Span::styled(format!(" -{}", dels), app.theme.line_style(&LineType::Deletion)));
+            spans.push(Span::styled(
+                format!(" -{}", dels),
+                app.theme.line_style(&LineType::Deletion),
+            ));
         }
         lines.push(Line::from(spans));
     }
@@ -149,13 +171,17 @@ fn build_diff_lines<'a>(app: &'a App, viewport_height: usize) -> Vec<Line<'a>> {
 
         if last_file != Some(fl.file_idx) {
             if last_file.is_some() {
-                if rows >= viewport_height { break; }
+                if rows >= viewport_height {
+                    break;
+                }
                 lines.push(file_separator_line(app));
                 rows += 1;
             }
-            if rows >= viewport_height { break; }
+            if rows >= viewport_height {
+                break;
+            }
             let file = &app.files[fl.file_idx];
-            let header = match &file.old_path {
+            let header = match &file.previous_path {
                 Some(old) => format!(" {} → {}", old, file.path),
                 None => format!(" {}", file.path),
             };
@@ -166,14 +192,21 @@ fn build_diff_lines<'a>(app: &'a App, viewport_height: usize) -> Vec<Line<'a>> {
         }
 
         if last_hunk != Some((fl.file_idx, fl.hunk_idx)) && fl.line_idx == 0 {
-            if rows >= viewport_height { break; }
+            if rows >= viewport_height {
+                break;
+            }
             let hunk = &app.files[fl.file_idx].hunks[fl.hunk_idx];
-            lines.push(Line::from(Span::styled(hunk.header.clone(), app.theme.hunk_header)));
+            lines.push(Line::from(Span::styled(
+                hunk.header.clone(),
+                app.theme.hunk_header,
+            )));
             rows += 1;
             last_hunk = Some((fl.file_idx, fl.hunk_idx));
         }
 
-        if rows >= viewport_height { break; }
+        if rows >= viewport_height {
+            break;
+        }
 
         // In focus mode, skip lines that don't belong to the focused side
         if app.line_hidden_on_side(diff_line) {
@@ -183,9 +216,16 @@ fn build_diff_lines<'a>(app: &'a App, viewport_height: usize) -> Vec<Line<'a>> {
 
         let line_style = app.theme.line_style(&diff_line.kind);
         let lineno_style = app.theme.lineno_style(&diff_line.kind);
-        let lineno = if is_left { diff_line.old_lineno } else { diff_line.new_lineno };
+        let lineno = if is_left {
+            diff_line.old_lineno
+        } else {
+            diff_line.new_lineno
+        };
 
-        let annotation = app.annotations.iter().find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end);
+        let annotation = app
+            .annotations
+            .iter()
+            .find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end);
         let (marker, marker_style) = if annotation.is_some() {
             ("● ", app.theme.comment_indicator)
         } else {
@@ -193,8 +233,15 @@ fn build_diff_lines<'a>(app: &'a App, viewport_height: usize) -> Vec<Line<'a>> {
         };
 
         let content = build_content_spans(
-            &diff_line.content, fl.file_idx, fl.hunk_idx, fl.line_idx,
-            line_style, is_cursor, is_selected, &app.theme, &app.highlighter,
+            &diff_line.content,
+            fl.file_idx,
+            fl.hunk_idx,
+            fl.line_idx,
+            line_style,
+            is_cursor,
+            is_selected,
+            &app.theme,
+            &app.highlighter,
         );
 
         let mut spans = vec![
@@ -208,7 +255,9 @@ fn build_diff_lines<'a>(app: &'a App, viewport_height: usize) -> Vec<Line<'a>> {
         if let Some(ann) = annotation {
             if app.show_comments && flat_idx == ann.flat_end {
                 for cl in ann.comment.lines() {
-                    if rows >= viewport_height { break; }
+                    if rows >= viewport_height {
+                        break;
+                    }
                     lines.push(Line::from(vec![
                         Span::styled("     ", Style::default()),
                         Span::styled(format!("# {}", cl), app.theme.comment_indicator),
@@ -254,18 +303,25 @@ fn render_split_panels(
 
         if last_file != Some(fl.file_idx) {
             if last_file.is_some() {
-                if rows >= viewport_height { break; }
+                if rows >= viewport_height {
+                    break;
+                }
                 left_lines.push(file_separator_line(app));
                 right_lines.push(file_separator_line(app));
                 rows += 1;
             }
-            if rows >= viewport_height { break; }
+            if rows >= viewport_height {
+                break;
+            }
             let file = &app.files[fl.file_idx];
-            let header = match &file.old_path {
+            let header = match &file.previous_path {
                 Some(old) => format!(" {} → {}", old, file.path),
                 None => format!(" {}", file.path),
             };
-            left_lines.push(Line::from(Span::styled(header.clone(), app.theme.file_header)));
+            left_lines.push(Line::from(Span::styled(
+                header.clone(),
+                app.theme.file_header,
+            )));
             right_lines.push(Line::from(Span::styled(header, app.theme.file_header)));
             rows += 1;
             last_file = Some(fl.file_idx);
@@ -273,20 +329,33 @@ fn render_split_panels(
         }
 
         if last_hunk != Some((fl.file_idx, fl.hunk_idx)) && fl.line_idx == 0 {
-            if rows >= viewport_height { break; }
+            if rows >= viewport_height {
+                break;
+            }
             let hunk = &app.files[fl.file_idx].hunks[fl.hunk_idx];
-            left_lines.push(Line::from(Span::styled(hunk.header.clone(), app.theme.hunk_header)));
-            right_lines.push(Line::from(Span::styled(hunk.header.clone(), app.theme.hunk_header)));
+            left_lines.push(Line::from(Span::styled(
+                hunk.header.clone(),
+                app.theme.hunk_header,
+            )));
+            right_lines.push(Line::from(Span::styled(
+                hunk.header.clone(),
+                app.theme.hunk_header,
+            )));
             rows += 1;
             last_hunk = Some((fl.file_idx, fl.hunk_idx));
         }
 
-        if rows >= viewport_height { break; }
+        if rows >= viewport_height {
+            break;
+        }
 
         let line_style = app.theme.line_style(&diff_line.kind);
         let lineno_style = app.theme.lineno_style(&diff_line.kind);
 
-        let annotation = app.annotations.iter().find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end);
+        let annotation = app
+            .annotations
+            .iter()
+            .find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end);
         let (marker, marker_style) = if annotation.is_some() {
             ("● ", app.theme.comment_indicator)
         } else {
@@ -299,27 +368,70 @@ fn render_split_panels(
         // Only build content twice when cursor is on this line (different styling per side)
         if is_cursor {
             let left_content = build_content_spans(
-                &diff_line.content, fl.file_idx, fl.hunk_idx, fl.line_idx,
-                line_style, left_is_cursor, is_selected, &app.theme, &app.highlighter,
+                &diff_line.content,
+                fl.file_idx,
+                fl.hunk_idx,
+                fl.line_idx,
+                line_style,
+                left_is_cursor,
+                is_selected,
+                &app.theme,
+                &app.highlighter,
             );
             let right_content = build_content_spans(
-                &diff_line.content, fl.file_idx, fl.hunk_idx, fl.line_idx,
-                line_style, right_is_cursor, is_selected, &app.theme, &app.highlighter,
+                &diff_line.content,
+                fl.file_idx,
+                fl.hunk_idx,
+                fl.line_idx,
+                line_style,
+                right_is_cursor,
+                is_selected,
+                &app.theme,
+                &app.highlighter,
             );
-            push_diff_line(&diff_line.kind, diff_line, lineno_style, marker, marker_style, left_content, right_content, &mut left_lines, &mut right_lines);
+            push_diff_line(
+                &diff_line.kind,
+                diff_line,
+                lineno_style,
+                marker,
+                marker_style,
+                left_content,
+                right_content,
+                &mut left_lines,
+                &mut right_lines,
+            );
         } else {
             let content = build_content_spans(
-                &diff_line.content, fl.file_idx, fl.hunk_idx, fl.line_idx,
-                line_style, false, is_selected, &app.theme, &app.highlighter,
+                &diff_line.content,
+                fl.file_idx,
+                fl.hunk_idx,
+                fl.line_idx,
+                line_style,
+                false,
+                is_selected,
+                &app.theme,
+                &app.highlighter,
             );
-            push_diff_line(&diff_line.kind, diff_line, lineno_style, marker, marker_style, content.clone(), content, &mut left_lines, &mut right_lines);
+            push_diff_line(
+                &diff_line.kind,
+                diff_line,
+                lineno_style,
+                marker,
+                marker_style,
+                content.clone(),
+                content,
+                &mut left_lines,
+                &mut right_lines,
+            );
         }
         rows += 1;
 
         if let Some(ann) = annotation {
             if app.show_comments && flat_idx == ann.flat_end {
                 for cl in ann.comment.lines() {
-                    if rows >= viewport_height { break; }
+                    if rows >= viewport_height {
+                        break;
+                    }
                     let comment_span = Line::from(vec![
                         Span::styled("     ", Style::default()),
                         Span::styled(format!("# {}", cl), app.theme.comment_indicator),
@@ -344,12 +456,24 @@ fn render_split_panels(
 
     let lw = left_area.width;
     let rw = right_area.width;
-    let left_t: Vec<Line> = left_lines.into_iter().map(|l| truncate_line(l, lw)).collect();
-    let right_t: Vec<Line> = right_lines.into_iter().map(|l| truncate_line(l, rw)).collect();
+    let left_t: Vec<Line> = left_lines
+        .into_iter()
+        .map(|l| truncate_line(l, lw))
+        .collect();
+    let right_t: Vec<Line> = right_lines
+        .into_iter()
+        .map(|l| truncate_line(l, rw))
+        .collect();
 
-    frame.render_widget(Paragraph::new(left_t).block(Block::default().borders(Borders::NONE)), left_area);
+    frame.render_widget(
+        Paragraph::new(left_t).block(Block::default().borders(Borders::NONE)),
+        left_area,
+    );
     render_separator(frame, sep_area, app);
-    frame.render_widget(Paragraph::new(right_t).block(Block::default().borders(Borders::NONE)), right_area);
+    frame.render_widget(
+        Paragraph::new(right_t).block(Block::default().borders(Borders::NONE)),
+        right_area,
+    );
 }
 
 fn push_diff_line<'a>(
@@ -367,16 +491,25 @@ fn push_diff_line<'a>(
         LineType::Context => {
             let old_no = format_lineno(diff_line.old_lineno);
             let new_no = format_lineno(diff_line.new_lineno);
-            let mut ls = vec![Span::styled(old_no, lineno_style), Span::styled(marker, marker_style)];
+            let mut ls = vec![
+                Span::styled(old_no, lineno_style),
+                Span::styled(marker, marker_style),
+            ];
             ls.extend(left_content);
             left_lines.push(Line::from(ls));
-            let mut rs = vec![Span::styled(new_no, lineno_style), Span::styled("  ", Style::default())];
+            let mut rs = vec![
+                Span::styled(new_no, lineno_style),
+                Span::styled("  ", Style::default()),
+            ];
             rs.extend(right_content);
             right_lines.push(Line::from(rs));
         }
         LineType::Deletion => {
             let old_no = format_lineno(diff_line.old_lineno);
-            let mut ls = vec![Span::styled(old_no, lineno_style), Span::styled(marker, marker_style)];
+            let mut ls = vec![
+                Span::styled(old_no, lineno_style),
+                Span::styled(marker, marker_style),
+            ];
             ls.extend(left_content);
             left_lines.push(Line::from(ls));
             right_lines.push(Line::default());
@@ -384,7 +517,10 @@ fn push_diff_line<'a>(
         LineType::Addition => {
             let new_no = format_lineno(diff_line.new_lineno);
             left_lines.push(Line::default());
-            let mut rs = vec![Span::styled(new_no, lineno_style), Span::styled(marker, marker_style)];
+            let mut rs = vec![
+                Span::styled(new_no, lineno_style),
+                Span::styled(marker, marker_style),
+            ];
             rs.extend(right_content);
             right_lines.push(Line::from(rs));
         }
@@ -440,7 +576,10 @@ fn render_tmux_pane_picker(frame: &mut Frame, diff_area: Rect, app: &App) {
         .border_style(Style::default().fg(Color::Magenta))
         .title(Span::styled(
             " TMUX ",
-            Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
         ));
 
     let inner = block.inner(popup_rect);
@@ -453,7 +592,10 @@ fn render_tmux_pane_picker(frame: &mut Frame, diff_area: Rect, app: &App) {
         let row = format!("{}{}", prefix, pane.label);
         let truncated: String = row.chars().take(inner_width).collect();
         let style = if selected {
-            Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
@@ -518,7 +660,11 @@ fn render_comment_popup(frame: &mut Frame, diff_area: Rect, app: &App) {
     );
 
     let (mode_label, cursor_char, hint) = match &app.mode {
-        Mode::CommentInsert => (" INSERT ", "█", "Enter:submit  ^T:send+save to tmux  Esc:normal"),
+        Mode::CommentInsert => (
+            " INSERT ",
+            "█",
+            "Enter:submit  ^T:send+save to tmux  Esc:normal",
+        ),
         Mode::CommentNormal => (" NORMAL ", "▋", "a/i:insert  Enter/c:submit  Esc:cancel"),
         _ => ("", "", ""),
     };
@@ -526,7 +672,13 @@ fn render_comment_popup(frame: &mut Frame, diff_area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow))
-        .title(Span::styled(mode_label, Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            mode_label,
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
 
     let inner = block.inner(popup_rect);
 
@@ -540,12 +692,18 @@ fn render_comment_popup(frame: &mut Frame, diff_area: Rect, app: &App) {
     for (i, part) in parts.iter().enumerate() {
         let mut spans = vec![Span::raw(part.to_string())];
         if i + 1 == parts.len() {
-            spans.push(Span::styled(cursor_char, Style::default().fg(Color::Yellow)));
+            spans.push(Span::styled(
+                cursor_char,
+                Style::default().fg(Color::Yellow),
+            ));
         }
         content_lines.push(Line::from(spans));
     }
     content_lines.push(Line::default());
-    content_lines.push(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray))));
+    content_lines.push(Line::from(Span::styled(
+        hint,
+        Style::default().fg(Color::DarkGray),
+    )));
 
     let content = Paragraph::new(content_lines).wrap(Wrap { trim: false });
 
@@ -575,7 +733,9 @@ fn short_filename(path: &str, max_width: usize) -> String {
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let mode_style = app.theme.mode_style(&app.mode);
 
-    let file_info = app.flat_lines.get(app.cursor)
+    let file_info = app
+        .flat_lines
+        .get(app.cursor)
         .map(|fl| app.files[fl.file_idx].path.as_str())
         .unwrap_or("");
 
@@ -594,21 +754,41 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     let search_info = if !app.search_query.is_empty() && !app.search_matches.is_empty() {
         let pos = app.search_matches.partition_point(|&m| m <= app.cursor);
-        format!(" /{} ({}/{})", app.search_query, pos, app.search_matches.len())
+        format!(
+            " /{} ({}/{})",
+            app.search_query,
+            pos,
+            app.search_matches.len()
+        )
     } else {
         String::new()
     };
 
-    let toast = app.toast.as_deref().map(|t| format!(" {} ", t)).unwrap_or_default();
+    let toast = app
+        .toast
+        .as_deref()
+        .map(|t| format!(" {} ", t))
+        .unwrap_or_default();
 
     let bar = Line::from(vec![
         Span::styled(format!(" {} ", app.mode.label()), mode_style),
-        Span::styled(format!(" {} ", side_label), Style::default().fg(Color::Cyan)),
+        Span::styled(
+            format!(" {} ", side_label),
+            Style::default().fg(Color::Cyan),
+        ),
         Span::styled(format!(" {} ", file_info), app.theme.status_bar),
         Span::styled(annotations_count, app.theme.comment_indicator),
         Span::styled(search_info, app.theme.status_bar),
-        Span::styled(toast, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::styled(format!(" {}/{} ", app.cursor + 1, app.flat_lines.len()), app.theme.status_bar),
+        Span::styled(
+            toast,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" {}/{} ", app.cursor + 1, app.flat_lines.len()),
+            app.theme.status_bar,
+        ),
     ]);
 
     frame.render_widget(Paragraph::new(bar), area);
@@ -623,7 +803,9 @@ fn render_command_line(frame: &mut Frame, area: Rect, app: &App) {
         ]),
         _ => {
             let hints = match &app.mode {
-                Mode::Normal => "q:quit  V:visual  yy:yank  ^T:tmux  c:comment  /:search  ]/[:hunk  H/L:file  h/l:side  e:filelist  E:comments  F:focus",
+                Mode::Normal => {
+                    "q:quit  V:visual  yy:yank  ^T:tmux  c:comment  /:search  ]/[:hunk  H/L:file  h/l:side  e:filelist  E:comments  F:focus"
+                }
                 Mode::VisualLine { .. } => "y:yank  ^T:tmux  c:comment  Esc:cancel  j/k:extend",
                 Mode::TmuxPanePick => "j/k:move  Enter:send  Esc:cancel",
                 _ => "",
@@ -636,13 +818,20 @@ fn render_command_line(frame: &mut Frame, area: Rect, app: &App) {
 
 fn build_content_spans(
     content: &str,
-    file_idx: usize, hunk_idx: usize, line_idx: usize,
-    line_style: Style, is_cursor: bool, is_selected: bool,
+    file_idx: usize,
+    hunk_idx: usize,
+    line_idx: usize,
+    line_style: Style,
+    is_cursor: bool,
+    is_selected: bool,
     theme: &crate::ui::theme::Theme,
     highlighter: &crate::ui::highlight::Highlighter,
 ) -> Vec<Span<'static>> {
     if is_cursor {
-        vec![Span::styled(content.to_string(), line_style.add_modifier(Modifier::REVERSED))]
+        vec![Span::styled(
+            content.to_string(),
+            line_style.add_modifier(Modifier::REVERSED),
+        )]
     } else if is_selected {
         vec![Span::styled(content.to_string(), theme.selection)]
     } else {
@@ -650,11 +839,16 @@ fn build_content_spans(
         if hl_spans.is_empty() {
             vec![Span::styled(content.to_string(), line_style)]
         } else {
-            hl_spans.into_iter().map(|span| {
-                let mut style = span.style;
-                if let Some(bg) = line_style.bg { style = style.bg(bg); }
-                Span::styled(span.content.into_owned(), style)
-            }).collect()
+            hl_spans
+                .into_iter()
+                .map(|span| {
+                    let mut style = span.style;
+                    if let Some(bg) = line_style.bg {
+                        style = style.bg(bg);
+                    }
+                    Span::styled(span.content.into_owned(), style)
+                })
+                .collect()
         }
     }
 }

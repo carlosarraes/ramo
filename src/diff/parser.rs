@@ -1,4 +1,6 @@
-use super::model::{DiffFile, DiffLine, Hunk, LineType};
+use crate::core::changeset::stable_file_id;
+
+use super::model::{DiffFile, DiffLine, FileChangeKind, Hunk, LineType};
 
 fn strip_ansi(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -40,6 +42,12 @@ pub fn parse_unified_diff(input: &str) -> Vec<DiffFile> {
 }
 
 fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
+    let file_len = lines
+        .iter()
+        .skip(1)
+        .position(|line| line.starts_with("diff --git "))
+        .map_or(lines.len(), |index| index + 1);
+    let lines = &lines[..file_len];
     let mut i = 0;
     let diff_line = lines[i];
     i += 1;
@@ -49,6 +57,8 @@ fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
 
     let mut is_new = false;
     let mut is_deleted = false;
+    let mut is_renamed = false;
+    let mut is_copied = false;
     let mut is_binary = false;
     let mut actual_old_path = old_path.clone();
     let mut actual_new_path = new_path.clone();
@@ -65,24 +75,39 @@ fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
         } else if line.starts_with("Binary files") || line.starts_with("GIT binary patch") {
             is_binary = true;
         } else if line.starts_with("rename from ") {
+            is_renamed = true;
             actual_old_path = unquote_git_path(line.strip_prefix("rename from ").unwrap());
         } else if line.starts_with("rename to ") {
+            is_renamed = true;
             actual_new_path = unquote_git_path(line.strip_prefix("rename to ").unwrap());
+        } else if line.starts_with("copy from ") {
+            is_copied = true;
+            actual_old_path = unquote_git_path(line.strip_prefix("copy from ").unwrap());
+        } else if line.starts_with("copy to ") {
+            is_copied = true;
+            actual_new_path = unquote_git_path(line.strip_prefix("copy to ").unwrap());
         }
         i += 1;
     }
 
     if is_binary {
+        let previous_path = (actual_old_path != actual_new_path).then_some(actual_old_path);
+        let change_kind = resolve_change_kind(is_new, is_deleted, is_renamed, is_copied);
         return (
             Some(DiffFile {
+                id: stable_file_id(&actual_new_path, previous_path.as_deref()),
                 path: actual_new_path,
-                old_path: Some(actual_old_path),
+                previous_path,
+                patch: format_patch(lines),
                 hunks: Vec::new(),
-                is_new,
-                is_deleted,
+                change_kind,
                 is_binary: true,
+                is_untracked: false,
+                is_too_large: false,
+                stats_truncated: false,
+                language: None,
             }),
-            i,
+            file_len,
         );
     }
 
@@ -115,22 +140,49 @@ fn parse_file(lines: &[&str]) -> (Option<DiffFile>, usize) {
         }
     }
 
-    let renamed = actual_old_path != actual_new_path;
+    let previous_path = (actual_old_path != actual_new_path).then_some(actual_old_path);
+    let change_kind = resolve_change_kind(is_new, is_deleted, is_renamed, is_copied);
     (
         Some(DiffFile {
+            id: stable_file_id(&actual_new_path, previous_path.as_deref()),
             path: actual_new_path,
-            old_path: if renamed {
-                Some(actual_old_path)
-            } else {
-                None
-            },
+            previous_path,
+            patch: format_patch(lines),
             hunks,
-            is_new,
-            is_deleted,
+            change_kind,
             is_binary,
+            is_untracked: false,
+            is_too_large: false,
+            stats_truncated: false,
+            language: None,
         }),
-        i,
+        file_len,
     )
+}
+
+fn resolve_change_kind(
+    is_new: bool,
+    is_deleted: bool,
+    is_renamed: bool,
+    is_copied: bool,
+) -> FileChangeKind {
+    if is_new {
+        FileChangeKind::Added
+    } else if is_deleted {
+        FileChangeKind::Deleted
+    } else if is_copied {
+        FileChangeKind::Copied
+    } else if is_renamed {
+        FileChangeKind::Renamed
+    } else {
+        FileChangeKind::Modified
+    }
+}
+
+fn format_patch(lines: &[&str]) -> String {
+    let mut patch = lines.join("\n");
+    patch.push('\n');
+    patch
 }
 
 fn parse_hunk(lines: &[&str]) -> (Hunk, usize) {
@@ -303,10 +355,7 @@ fn strip_git_prefix(s: &str, prefix: &str) -> String {
 
 fn parse_range(range: &str) -> (u32, u32) {
     if let Some((start, count)) = range.split_once(',') {
-        (
-            start.parse().unwrap_or(1),
-            count.parse().unwrap_or(0),
-        )
+        (start.parse().unwrap_or(1), count.parse().unwrap_or(0))
     } else {
         (range.parse().unwrap_or(1), 1)
     }
@@ -423,8 +472,43 @@ index 0000000..abc1234
 "#;
         let files = parse_unified_diff(input);
         assert_eq!(files.len(), 1);
-        assert!(files[0].is_new);
+        assert_eq!(files[0].change_kind, FileChangeKind::Added);
         assert_eq!(files[0].hunks[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn test_deleted_file_change_kind() {
+        let input = "diff --git a/old.rs b/old.rs\n\
+                     deleted file mode 100644\n\
+                     --- a/old.rs\n\
+                     +++ /dev/null\n\
+                     @@ -1 +0,0 @@\n\
+                     -gone\n";
+        let files = parse_unified_diff(input);
+        assert_eq!(files[0].change_kind, FileChangeKind::Deleted);
+    }
+
+    #[test]
+    fn test_renamed_file_has_stable_previous_path() {
+        let input = "diff --git a/old.rs b/new.rs\n\
+                     similarity index 100%\n\
+                     rename from old.rs\n\
+                     rename to new.rs\n";
+        let files = parse_unified_diff(input);
+        assert_eq!(files[0].change_kind, FileChangeKind::Renamed);
+        assert_eq!(files[0].previous_path.as_deref(), Some("old.rs"));
+        assert_eq!(files[0].id, "file:old.rs->new.rs");
+    }
+
+    #[test]
+    fn test_copied_file_change_kind() {
+        let input = "diff --git a/source.rs b/copy.rs\n\
+                     similarity index 100%\n\
+                     copy from source.rs\n\
+                     copy to copy.rs\n";
+        let files = parse_unified_diff(input);
+        assert_eq!(files[0].change_kind, FileChangeKind::Copied);
+        assert_eq!(files[0].previous_path.as_deref(), Some("source.rs"));
     }
 
     #[test]
@@ -477,8 +561,7 @@ diff --git a/b.rs b/b.rs
 
     #[test]
     fn test_path_with_b_slash() {
-        let (old, new) =
-            parse_diff_git_line("diff --git a/foo b/bar.txt b/foo b/bar.txt");
+        let (old, new) = parse_diff_git_line("diff --git a/foo b/bar.txt b/foo b/bar.txt");
         assert_eq!(old, "foo b/bar.txt");
         assert_eq!(new, "foo b/bar.txt");
     }
@@ -492,9 +575,7 @@ diff --git a/b.rs b/b.rs
 
     #[test]
     fn test_quoted_path_with_tab() {
-        let (old, new) = parse_diff_git_line(
-            r#"diff --git "a/a\tb.txt" "b/a\tb.txt""#,
-        );
+        let (old, new) = parse_diff_git_line(r#"diff --git "a/a\tb.txt" "b/a\tb.txt""#);
         assert_eq!(old, "a\tb.txt");
         assert_eq!(new, "a\tb.txt");
     }
@@ -515,9 +596,7 @@ diff --git a/b.rs b/b.rs
     #[test]
     fn test_quoted_path_with_embedded_quote() {
         // File named a"b.txt → git quotes as "a/a\"b.txt"
-        let (old, new) = parse_diff_git_line(
-            r#"diff --git "a/a\"b.txt" "b/a\"b.txt""#,
-        );
+        let (old, new) = parse_diff_git_line(r#"diff --git "a/a\"b.txt" "b/a\"b.txt""#);
         assert_eq!(old, "a\"b.txt");
         assert_eq!(new, "a\"b.txt");
     }
@@ -554,7 +633,10 @@ diff --git a/b.rs b/b.rs
 
     #[test]
     fn test_patch_path_quoted() {
-        assert_eq!(parse_patch_path(r#""a/foo\tbar.txt""#, "a/"), "foo\tbar.txt");
+        assert_eq!(
+            parse_patch_path(r#""a/foo\tbar.txt""#, "a/"),
+            "foo\tbar.txt"
+        );
     }
 
     #[test]

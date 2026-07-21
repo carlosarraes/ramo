@@ -1,6 +1,7 @@
 pub mod annotations;
 pub mod app;
 pub mod clipboard;
+pub mod core;
 pub mod diff;
 pub mod pi_extension;
 pub mod tmux;

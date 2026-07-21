@@ -366,7 +366,7 @@ impl DiffFile {
 
 - [ ] **Step 6: Verify all model and parser behavior**
 
-Run: `cargo test core::changeset diff::parser`
+Run: `cargo test core::changeset && cargo test diff::parser`
 
 Expected: all model tests and the existing parser suite pass with the normalized fields.
 
@@ -807,7 +807,7 @@ impl ReviewLoader {
 
 Add tests for patch files, stdin, ANSI-colored patches, CRLF patches, empty stdin, malformed non-empty input, missing direct files, identical direct files, binary pairs, and display-path preservation.
 
-Run: `cargo test --test input_loading diff::parser`
+Run: `cargo test --test input_loading && cargo test diff::parser`
 
 Expected: all loader and parser cases pass.
 
