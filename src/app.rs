@@ -675,6 +675,15 @@ impl App {
                             .err()
                             .map(|failure| failure.to_string());
                     }
+                    Some(ReviewHit::Note(id)) => {
+                        if self.review_controller.edit_human_note(&id, viewport) {
+                            self.comment_buf = self
+                                .review_controller
+                                .human_note_draft()
+                                .map_or_else(String::new, |draft| draft.body.clone());
+                            self.input_mode = InputMode::Note;
+                        }
+                    }
                     Some(ReviewHit::Diff(anchor)) => {
                         self.review_keyboard_anchor = None;
                         self.review_mouse_drag = Some(ReviewMouseDrag::Selection {

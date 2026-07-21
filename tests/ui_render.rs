@@ -182,6 +182,53 @@ fn renderer_highlights_only_the_bounded_visible_window() {
 }
 
 #[test]
+fn inline_agent_notes_render_inside_the_measured_review_stream() {
+    let mut annotated = file("src/note.rs", FileChangeKind::Modified, 4);
+    annotated.agent = Some(
+        pdiff::notes::parse_agent_context(
+            "agent.json",
+            br#"{"files":[{"path":"src/note.rs","annotations":[{
+              "newRange":[2,2],
+              "summary":"Check the retry boundary.",
+              "rationale":"The final attempt currently sleeps.",
+              "author":"pi",
+              "tags":["correctness"]
+            }]}]}"#,
+        )
+        .unwrap()
+        .files
+        .remove(0),
+    );
+    let (visible, _) = render(
+        100,
+        18,
+        vec![annotated.clone()],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            agent_notes: true,
+            ..ReviewOptions::default()
+        },
+    );
+    let frame = text(&visible);
+    assert!(frame.contains("AI note"), "{frame}");
+    assert!(frame.contains("src/note.rs R2"), "{frame}");
+    assert!(frame.contains("Check the retry boundary."), "{frame}");
+    assert!(frame.contains("pi · correctness"), "{frame}");
+
+    let (hidden, _) = render(
+        100,
+        18,
+        vec![annotated],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            agent_notes: false,
+            ..ReviewOptions::default()
+        },
+    );
+    assert!(!text(&hidden).contains("Check the retry boundary."));
+}
+
+#[test]
 fn moved_rows_keep_moved_paint_while_changed_characters_use_stronger_backgrounds() {
     let mut moved = file("src/moved.rs", FileChangeKind::Modified, 2);
     moved.hunks[0].lines[0].moved = Some(MovedLineKind::OldMoved);

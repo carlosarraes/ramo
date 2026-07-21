@@ -1,5 +1,10 @@
 use crate::diff::model::{DiffFile, DiffLine, LineType, MovedLineKind};
 use crate::input::sanitize_terminal_text;
+use crate::notes::{
+    HumanNote, HumanNoteDraft, NoteBoxLayout, NoteSource, NoteTarget, ReviewNote,
+    annotation_range_label, note_box_layout, note_source, resolve_note_target, stable_note_id,
+};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::context::{
     CollapsedGap, FileContextState, GapPosition, SourceFailure, derive_collapsed_gaps,
@@ -20,6 +25,7 @@ pub(crate) enum ReviewRowKind {
     Collapsed,
     ExpandedContext,
     Placeholder,
+    Note,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -29,6 +35,7 @@ pub(crate) struct ReviewRowKey {
     pub kind: ReviewRowKind,
     pub old_line: Option<u32>,
     pub new_line: Option<u32>,
+    pub note_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +94,30 @@ pub(crate) enum ReviewRow {
         gap: CollapsedGap,
         text: String,
     },
+    Note {
+        key: ReviewRowKey,
+        card: NoteCard,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NoteCard {
+    pub id: String,
+    pub target: NoteTarget,
+    pub source: NoteSource,
+    pub title: String,
+    pub location: String,
+    pub lines: Vec<String>,
+    pub tags: Vec<String>,
+    pub author: Option<String>,
+    pub placement: NoteBoxLayout,
+    pub human: bool,
+}
+
+impl NoteCard {
+    pub(crate) fn height(&self) -> usize {
+        self.lines.len().saturating_add(3).max(4)
+    }
 }
 
 impl ReviewRow {
@@ -96,7 +127,8 @@ impl ReviewRow {
             | Self::Split { key, .. }
             | Self::Stack { key, .. }
             | Self::Collapsed { key, .. }
-            | Self::Placeholder { key, .. } => key,
+            | Self::Placeholder { key, .. }
+            | Self::Note { key, .. } => key,
         }
     }
 }
@@ -106,6 +138,13 @@ pub(crate) struct RowPlan {
     pub rows: Vec<ReviewRow>,
     pub hunk_anchor_keys: Vec<ReviewRowKey>,
     pub line_number_digits: usize,
+}
+
+pub(crate) struct NotePlanOptions<'a> {
+    pub human_notes: &'a [HumanNote],
+    pub draft: Option<&'a HumanNoteDraft>,
+    pub show_agent_notes: bool,
+    pub content_width: u16,
 }
 
 #[cfg(test)]
@@ -175,6 +214,88 @@ pub(crate) fn build_row_plan_with_context(
         rows,
         hunk_anchor_keys,
     }
+}
+
+pub(crate) fn build_row_plan_with_notes(
+    file: &DiffFile,
+    layout: EffectiveLayout,
+    show_hunk_headers: bool,
+    context: Option<&FileContextState>,
+    options: NotePlanOptions<'_>,
+) -> RowPlan {
+    let mut plan = build_row_plan_with_context(file, layout, show_hunk_headers, context);
+    if plan.rows.is_empty() {
+        return plan;
+    }
+    let layout_mode = match layout {
+        EffectiveLayout::Split => crate::core::input::LayoutMode::Split,
+        EffectiveLayout::Stack => crate::core::input::LayoutMode::Stack,
+    };
+    let mut placements = Vec::<(usize, NoteCard)>::new();
+    if let Some(agent) = &file.agent {
+        for note in &agent.annotations {
+            let source = note_source(note);
+            if !options.show_agent_notes && source != NoteSource::User {
+                continue;
+            }
+            let target = resolve_note_target(file, note);
+            let anchor = note_anchor_index(&plan.rows, &target);
+            placements.push((
+                anchor,
+                external_card(
+                    file,
+                    note,
+                    target,
+                    source,
+                    layout_mode,
+                    options.content_width,
+                ),
+            ));
+        }
+    }
+    for note in options
+        .human_notes
+        .iter()
+        .filter(|note| note.target.file_id == file.id)
+    {
+        let anchor = note_anchor_index(&plan.rows, &note.target);
+        placements.push((
+            anchor,
+            human_card(file, note, layout_mode, options.content_width),
+        ));
+    }
+    if let Some(draft) = options
+        .draft
+        .filter(|draft| draft.target.file_id == file.id)
+    {
+        let anchor = note_anchor_index(&plan.rows, &draft.target);
+        placements.push((
+            anchor,
+            draft_card(file, draft, layout_mode, options.content_width),
+        ));
+    }
+    if placements.is_empty() {
+        return plan;
+    }
+    let mut rows = Vec::with_capacity(plan.rows.len().saturating_add(placements.len()));
+    for (index, row) in plan.rows.into_iter().enumerate() {
+        rows.push(row);
+        for (_, card) in placements.iter().filter(|(anchor, _)| *anchor == index) {
+            rows.push(ReviewRow::Note {
+                key: ReviewRowKey {
+                    file_id: file.id.clone(),
+                    hunk_index: card.target.hunk_index,
+                    kind: ReviewRowKind::Note,
+                    old_line: card.target.old_range.map(|range| range.start),
+                    new_line: card.target.new_range.map(|range| range.start),
+                    note_id: Some(card.id.clone()),
+                },
+                card: card.clone(),
+            });
+        }
+    }
+    plan.rows = rows;
+    plan
 }
 
 fn append_gap_rows(
@@ -523,7 +644,193 @@ fn row_key(
         kind,
         old_line,
         new_line,
+        note_id: None,
     }
+}
+
+fn note_anchor_index(rows: &[ReviewRow], target: &NoteTarget) -> usize {
+    let exact = rows.iter().position(|row| {
+        let key = row.key();
+        key.hunk_index == target.hunk_index
+            && match target.anchor_side {
+                Some(crate::notes::NoteAnchorSide::New) => key.new_line == target.anchor_line,
+                Some(crate::notes::NoteAnchorSide::Old) => key.old_line == target.anchor_line,
+                None => false,
+            }
+    });
+    exact
+        .or_else(|| {
+            rows.iter()
+                .position(|row| row.key().hunk_index == target.hunk_index)
+        })
+        .unwrap_or(0)
+}
+
+fn external_card(
+    file: &DiffFile,
+    note: &ReviewNote,
+    target: NoteTarget,
+    source: NoteSource,
+    layout: crate::core::input::LayoutMode,
+    width: u16,
+) -> NoteCard {
+    let placement = note_box_layout(layout, target.anchor_side, width);
+    let mut body = note.summary.clone();
+    if let Some(rationale) = &note.rationale {
+        body.push('\n');
+        body.push_str(rationale);
+    }
+    if !note.tags.is_empty() || note.author.is_some() || note.confidence.is_some() {
+        body.push('\n');
+        if let Some(author) = &note.author {
+            body.push_str(author);
+        }
+        if !note.tags.is_empty() {
+            if note.author.is_some() {
+                body.push_str(" · ");
+            }
+            body.push_str(&note.tags.join(" · "));
+        }
+        if let Some(confidence) = &note.confidence {
+            if note.author.is_some() || !note.tags.is_empty() {
+                body.push_str(" · ");
+            }
+            body.push_str(confidence.as_str());
+            body.push_str(" confidence");
+        }
+    }
+    NoteCard {
+        id: stable_note_id(file, note),
+        target,
+        title: note.title.clone().unwrap_or_else(|| match source {
+            NoteSource::User => "Your note".into(),
+            NoteSource::Agent => "Agent note".into(),
+            NoteSource::Ai => "AI note".into(),
+            NoteSource::Named(ref value) => format!("{value} note"),
+        }),
+        location: annotation_range_label(note, Some(file)),
+        lines: wrap_note_text(&body, usize::from(placement.content_width)),
+        tags: note.tags.clone(),
+        author: note.author.clone(),
+        placement,
+        source,
+        human: false,
+    }
+}
+
+fn human_card(
+    file: &DiffFile,
+    note: &HumanNote,
+    layout: crate::core::input::LayoutMode,
+    width: u16,
+) -> NoteCard {
+    let placement = note_box_layout(layout, note.target.anchor_side, width);
+    let location = target_location(file, &note.target);
+    NoteCard {
+        id: note.id.clone(),
+        target: note.target.clone(),
+        source: NoteSource::User,
+        title: "Your note".into(),
+        location,
+        lines: wrap_note_text(&note.body, usize::from(placement.content_width)),
+        tags: Vec::new(),
+        author: None,
+        placement,
+        human: true,
+    }
+}
+
+fn draft_card(
+    file: &DiffFile,
+    draft: &HumanNoteDraft,
+    layout: crate::core::input::LayoutMode,
+    width: u16,
+) -> NoteCard {
+    let placement = note_box_layout(layout, draft.target.anchor_side, width);
+    let body = if draft.body.is_empty() {
+        "Write a note".to_owned()
+    } else {
+        draft.body.clone()
+    };
+    NoteCard {
+        id: draft.id.clone(),
+        target: draft.target.clone(),
+        source: NoteSource::User,
+        title: "Draft note".into(),
+        location: target_location(file, &draft.target),
+        lines: wrap_note_text(&body, usize::from(placement.content_width)),
+        tags: Vec::new(),
+        author: None,
+        placement,
+        human: true,
+    }
+}
+
+fn target_location(file: &DiffFile, target: &NoteTarget) -> String {
+    let mut parts = Vec::new();
+    if let Some(range) = target.old_range {
+        parts.push(if range.start == range.end {
+            format!("L{}", range.start)
+        } else {
+            format!("L{}–L{}", range.start, range.end)
+        });
+    }
+    if let Some(range) = target.new_range {
+        parts.push(if range.start == range.end {
+            format!("R{}", range.start)
+        } else {
+            format!("R{}–R{}", range.start, range.end)
+        });
+    }
+    format!(
+        "{} {}",
+        file.path,
+        if parts.is_empty() {
+            "hunk".into()
+        } else {
+            parts.join(" → ")
+        }
+    )
+}
+
+fn wrap_note_text(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut output = Vec::new();
+    for source_line in text.lines() {
+        let mut current = String::new();
+        let mut current_width = 0usize;
+        for word in source_line.split_whitespace() {
+            let word_width = UnicodeWidthStr::width(word);
+            if current_width > 0 && current_width.saturating_add(1 + word_width) <= width {
+                current.push(' ');
+                current.push_str(word);
+                current_width += 1 + word_width;
+            } else {
+                if !current.is_empty() {
+                    output.push(std::mem::take(&mut current));
+                    current_width = 0;
+                }
+                for character in word.chars() {
+                    let character_width = character.width().unwrap_or(0);
+                    if current_width > 0 && current_width.saturating_add(character_width) > width {
+                        output.push(std::mem::take(&mut current));
+                        current_width = 0;
+                    }
+                    current.push(character);
+                    current_width = current_width.saturating_add(character_width);
+                }
+            }
+        }
+        if !current.is_empty() {
+            output.push(current);
+        } else if source_line.is_empty() {
+            output.push(String::new());
+        }
+    }
+    if output.is_empty() {
+        output.push(String::new());
+    }
+    output
 }
 
 fn max_line_number_digits(file: &DiffFile) -> usize {

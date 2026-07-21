@@ -1,5 +1,6 @@
 pub(crate) mod context;
 mod model;
+mod target;
 
 pub use context::{
     AgentContextError, AgentContextSource, MAX_AGENT_ANNOTATIONS, MAX_AGENT_CONTEXT_BYTES,
@@ -7,4 +8,9 @@ pub use context::{
 };
 pub use model::{
     AgentContext, AgentFileContext, LineRange, NoteConfidence, NoteSource, ReviewNote,
+};
+pub use target::{
+    HumanNote, HumanNoteDraft, NoteAnchorSide, NoteBoxLayout, NoteTarget, annotated_hunks,
+    annotation_range_label, note_box_layout, note_source, resolve_note_target,
+    resolve_ranges_target, stable_note_id,
 };

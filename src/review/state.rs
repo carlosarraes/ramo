@@ -5,6 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::core::input::LayoutMode;
 use crate::diff::model::DiffFile;
 use crate::input::sanitize_terminal_text;
+use crate::notes::{HumanNote, HumanNoteDraft, LineRange, annotated_hunks, resolve_ranges_target};
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
 use super::context::{
@@ -16,7 +17,9 @@ use super::geometry::{
     split_columns, stack_columns,
 };
 use super::navigation::{signed_offset, wrapping_index};
-use super::row::{EffectiveLayout, ReviewRow, ReviewRowKey, build_row_plan_with_context};
+use super::row::{
+    EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, build_row_plan_with_notes,
+};
 use super::selection::{SelectionPoint, SelectionRow, project_selection};
 
 const DEFAULT_SIDEBAR_WIDTH: u16 = 34;
@@ -193,6 +196,7 @@ pub enum ReviewHit {
     SidebarDivider,
     Scrollbar,
     Collapsed(GapKey),
+    Note(String),
     Diff(SelectionPoint),
 }
 
@@ -216,6 +220,7 @@ pub struct ReviewSnapshot {
     pub total_height: usize,
     pub max_scroll_top: usize,
     pub horizontal_offset: usize,
+    pub note_count: usize,
 }
 
 pub struct ReviewController {
@@ -238,6 +243,9 @@ pub struct ReviewController {
     dirty: bool,
     snapshot: ReviewSnapshot,
     contexts: HashMap<String, FileContextState>,
+    human_notes: Vec<HumanNote>,
+    human_note_draft: Option<HumanNoteDraft>,
+    next_human_note_id: u64,
 }
 
 pub(crate) struct ReviewRenderView<'a> {
@@ -271,7 +279,175 @@ impl ReviewController {
             dirty: true,
             snapshot: empty_snapshot(),
             contexts: HashMap::new(),
+            human_notes: Vec::new(),
+            human_note_draft: None,
+            next_human_note_id: 1,
         }
+    }
+
+    pub fn human_notes(&self) -> &[HumanNote] {
+        &self.human_notes
+    }
+
+    pub fn human_note_draft(&self) -> Option<&HumanNoteDraft> {
+        self.human_note_draft.as_ref()
+    }
+
+    pub fn begin_human_note(&mut self, viewport: Viewport) -> Option<String> {
+        self.ensure_geometry(viewport);
+        let file_id = self.selected_file_id.as_deref()?;
+        let file = self.files.iter().find(|file| file.id == file_id)?;
+        let new_range = self
+            .selected_row_key
+            .as_ref()
+            .and_then(|key| key.new_line)
+            .map(|line| LineRange {
+                start: line,
+                end: line,
+            });
+        let old_range = self
+            .selected_row_key
+            .as_ref()
+            .and_then(|key| key.old_line)
+            .map(|line| LineRange {
+                start: line,
+                end: line,
+            });
+        let id = format!("draft:{}", self.next_human_note_id);
+        self.next_human_note_id = self.next_human_note_id.saturating_add(1);
+        self.human_note_draft = Some(HumanNoteDraft {
+            id: id.clone(),
+            target: resolve_ranges_target(file, old_range, new_range),
+            body: String::new(),
+            editing: None,
+        });
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        Some(id)
+    }
+
+    pub fn update_human_note_draft(&mut self, body: &str, viewport: Viewport) -> bool {
+        let Some(draft) = &mut self.human_note_draft else {
+            return false;
+        };
+        draft.body = sanitize_terminal_text(body, false);
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        true
+    }
+
+    pub fn cancel_human_note_draft(&mut self, viewport: Viewport) -> bool {
+        let cancelled = self.human_note_draft.take().is_some();
+        if cancelled {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+        cancelled
+    }
+
+    pub fn save_human_note_draft(&mut self, viewport: Viewport) -> Option<String> {
+        let draft = self.human_note_draft.take()?;
+        let body = draft.body.trim().to_owned();
+        let id = if let Some(editing) = draft.editing {
+            if body.is_empty() {
+                self.human_notes.retain(|note| note.id != editing);
+            } else if let Some(note) = self.human_notes.iter_mut().find(|note| note.id == editing) {
+                note.body = body;
+            }
+            editing
+        } else if body.is_empty() {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+            return None;
+        } else {
+            let id = draft.id.replacen("draft:", "human:", 1);
+            self.human_notes.push(HumanNote {
+                id: id.clone(),
+                target: draft.target,
+                body,
+                created_at: None,
+                updated_at: None,
+            });
+            id
+        };
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        Some(id)
+    }
+
+    pub fn edit_human_note(&mut self, id: &str, viewport: Viewport) -> bool {
+        let Some(note) = self.human_notes.iter().find(|note| note.id == id).cloned() else {
+            return false;
+        };
+        self.human_note_draft = Some(HumanNoteDraft {
+            id: format!("draft:{id}"),
+            target: note.target,
+            body: note.body,
+            editing: Some(note.id),
+        });
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        true
+    }
+
+    pub fn add_human_note(
+        &mut self,
+        file_path: &str,
+        new_range: Option<LineRange>,
+        old_range: Option<LineRange>,
+        body: &str,
+        viewport: Viewport,
+    ) -> String {
+        let Some(file) = self.files.iter().find(|file| {
+            file.id == file_path
+                || file.path == file_path
+                || file.previous_path.as_deref() == Some(file_path)
+        }) else {
+            return String::new();
+        };
+        let id = format!("human:{}", self.next_human_note_id);
+        self.next_human_note_id = self.next_human_note_id.saturating_add(1);
+        self.human_notes.push(HumanNote {
+            id: id.clone(),
+            target: resolve_ranges_target(file, old_range, new_range),
+            body: sanitize_terminal_text(body, false),
+            created_at: None,
+            updated_at: None,
+        });
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        id
+    }
+
+    pub fn remove_human_note(&mut self, id: &str, viewport: Viewport) -> bool {
+        let initial = self.human_notes.len();
+        self.human_notes.retain(|note| note.id != id);
+        let removed = self.human_notes.len() != initial;
+        if removed {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+        removed
+    }
+
+    pub fn clear_human_notes(&mut self, file: Option<&str>, viewport: Viewport) -> usize {
+        let initial = self.human_notes.len();
+        self.human_notes.retain(|note| {
+            file.is_some_and(|file| {
+                note.target.file_id != file
+                    && self.files.iter().any(|candidate| {
+                        candidate.id == note.target.file_id
+                            && candidate.path != file
+                            && candidate.previous_path.as_deref() != Some(file)
+                    })
+            })
+        });
+        let removed = initial.saturating_sub(self.human_notes.len());
+        if removed > 0 {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+        removed
     }
 
     pub fn snapshot(&mut self, viewport: Viewport) -> &ReviewSnapshot {
@@ -352,6 +528,7 @@ impl ReviewController {
             .get(bound.row_index)?;
         match row {
             ReviewRow::Collapsed { gap, .. } => Some(ReviewHit::Collapsed(gap.key.clone())),
+            ReviewRow::Note { card, .. } => Some(ReviewHit::Note(card.id.clone())),
             ReviewRow::Stack { .. } => {
                 let columns = stack_columns(
                     self.content_width(viewport),
@@ -475,7 +652,8 @@ impl ReviewController {
                     }
                     ReviewRow::HunkHeader { .. }
                     | ReviewRow::Collapsed { .. }
-                    | ReviewRow::Placeholder { .. } => None,
+                    | ReviewRow::Placeholder { .. }
+                    | ReviewRow::Note { .. } => None,
                 }
             })
     }
@@ -624,6 +802,16 @@ impl ReviewController {
         let selected_hunk_index = self.selected_hunk_index;
 
         self.files = files;
+        self.human_notes
+            .retain(|note| self.files.iter().any(|file| file.id == note.target.file_id));
+        if self.human_note_draft.as_ref().is_some_and(|draft| {
+            !self
+                .files
+                .iter()
+                .any(|file| file.id == draft.target.file_id)
+        }) {
+            self.human_note_draft = None;
+        }
         self.contexts.clear();
         self.geometry = None;
         self.planned_files.clear();
@@ -744,7 +932,8 @@ impl ReviewController {
             }
             ReviewAction::ToggleAgentNotes => {
                 self.options.agent_notes = !self.options.agent_notes;
-                self.refresh_snapshot();
+                self.dirty = true;
+                self.rebuild(viewport, true);
                 ReviewEffect::Redraw
             }
             ReviewAction::FocusFilter => ReviewEffect::FocusFilter,
@@ -815,11 +1004,17 @@ impl ReviewController {
                 let file = &self.files[*index];
                 PlannedFile::new(
                     file.id.clone(),
-                    build_row_plan_with_context(
+                    build_row_plan_with_notes(
                         file,
                         self.effective_layout,
                         self.options.hunk_headers,
                         self.contexts.get(&file.id),
+                        NotePlanOptions {
+                            human_notes: &self.human_notes,
+                            draft: self.human_note_draft.as_ref(),
+                            show_agent_notes: self.options.agent_notes,
+                            content_width,
+                        },
                     ),
                 )
             })
@@ -899,16 +1094,14 @@ impl ReviewController {
 
     fn move_annotated_hunk(&mut self, delta: i32, viewport: Viewport) {
         let targets = self
-            .options
-            .annotated_hunks
-            .iter()
+            .annotated_hunk_targets()
+            .into_iter()
             .filter(|target| {
                 self.visible_indices.iter().any(|index| {
                     self.files[*index].id == target.file_id
                         && target.hunk_index < self.files[*index].hunks.len()
                 })
             })
-            .cloned()
             .collect::<Vec<_>>();
         let current = targets
             .iter()
@@ -979,6 +1172,29 @@ impl ReviewController {
             .collect()
     }
 
+    fn annotated_hunk_targets(&self) -> Vec<HunkTarget> {
+        let mut targets = self.options.annotated_hunks.clone();
+        for file in &self.files {
+            targets.extend(
+                annotated_hunks(file)
+                    .into_iter()
+                    .map(|hunk| HunkTarget::new(&file.id, hunk)),
+            );
+        }
+        targets.extend(self.human_notes.iter().filter_map(|note| {
+            note.target
+                .hunk_index
+                .map(|hunk| HunkTarget::new(&note.target.file_id, hunk))
+        }));
+        targets.sort_by(|left, right| {
+            left.file_id
+                .cmp(&right.file_id)
+                .then(left.hunk_index.cmp(&right.hunk_index))
+        });
+        targets.dedup();
+        targets
+    }
+
     fn visible_file_ids(&self) -> impl Iterator<Item = String> + '_ {
         self.visible_indices
             .iter()
@@ -1042,6 +1258,7 @@ impl ReviewController {
                     ReviewRow::HunkHeader { text, .. }
                     | ReviewRow::Placeholder { text, .. }
                     | ReviewRow::Collapsed { text, .. } => SelectionRow::stack(text),
+                    ReviewRow::Note { card, .. } => SelectionRow::stack(card.lines.join("\n")),
                 }
             })
             .collect()
@@ -1075,7 +1292,8 @@ impl ReviewController {
                     }
                     ReviewRow::HunkHeader { .. }
                     | ReviewRow::Collapsed { .. }
-                    | ReviewRow::Placeholder { .. } => 0,
+                    | ReviewRow::Placeholder { .. }
+                    | ReviewRow::Note { .. } => 0,
                 })
             })
             .max()
@@ -1116,10 +1334,17 @@ impl ReviewController {
                 }
             })
             .collect();
+        let annotated_hunks = self.annotated_hunk_targets();
         let sidebar_entries = build_sidebar_entries(
             self.visible_indices.iter().map(|index| &self.files[*index]),
-            &self.options.annotated_hunks,
+            &annotated_hunks,
         );
+        let note_count = self
+            .planned_files
+            .iter()
+            .flat_map(|file| &file.plan.rows)
+            .filter(|row| matches!(row, ReviewRow::Note { .. }))
+            .count();
         self.snapshot = ReviewSnapshot {
             visible_files,
             sidebar_entries,
@@ -1147,6 +1372,7 @@ impl ReviewController {
             total_height: geometry.map_or(0, |geometry| geometry.total_height),
             max_scroll_top: geometry.map_or(0, ReviewGeometry::max_scroll_top),
             horizontal_offset: self.horizontal_offset,
+            note_count,
         };
     }
 }
@@ -1292,5 +1518,6 @@ fn empty_snapshot() -> ReviewSnapshot {
         total_height: 0,
         max_scroll_top: 0,
         horizontal_offset: 0,
+        note_count: 0,
     }
 }

@@ -203,9 +203,13 @@ fn render_stream(
         .geometry
         .visible_window(scroll, usize::from(area.height), 2);
     for (window_offset, bound) in view.geometry.rows[window.range.clone()].iter().enumerate() {
-        let Some(y) = visible_y(bound.top, scroll, area) else {
+        if bound.top.saturating_add(bound.height) <= scroll {
             continue;
-        };
+        }
+        let first_line = scroll.saturating_sub(bound.top);
+        let y = area
+            .y
+            .saturating_add(bound.top.saturating_sub(scroll) as u16);
         let file = &view.files[view.visible_indices[bound.file_index]];
         let planned = &view.planned_files[bound.file_index].plan;
         let row = &planned.rows[bound.row_index];
@@ -222,6 +226,7 @@ fn render_stream(
             highlights,
             window.range.start.saturating_add(window_offset),
             selection,
+            first_line,
         );
     }
     render_scrollbar(area, buffer, view.snapshot, theme);
@@ -241,6 +246,7 @@ fn render_row(
     highlights: &mut HighlightCache,
     geometry_row: usize,
     selection: Option<(SelectionPoint, SelectionPoint)>,
+    first_line: usize,
 ) {
     match row {
         ReviewRow::HunkHeader { text, .. } => {
@@ -277,8 +283,8 @@ fn render_row(
         }
         ReviewRow::Stack { cell, .. } => {
             let columns = stack_columns(area.width, digits, snapshot.line_numbers);
-            for line in 0..bound.height {
-                let draw_y = y.saturating_add(line as u16);
+            for line in first_line..bound.height {
+                let draw_y = y.saturating_add(line.saturating_sub(first_line) as u16);
                 if draw_y >= area.bottom() {
                     break;
                 }
@@ -308,8 +314,8 @@ fn render_row(
         }
         ReviewRow::Split { left, right, .. } => {
             let columns = split_columns(area.width, digits, snapshot.line_numbers);
-            for line in 0..bound.height {
-                let draw_y = y.saturating_add(line as u16);
+            for line in first_line..bound.height {
+                let draw_y = y.saturating_add(line.saturating_sub(first_line) as u16);
                 if draw_y >= area.bottom() {
                     break;
                 }
@@ -369,7 +375,86 @@ fn render_row(
                 );
             }
         }
+        ReviewRow::Note { card, .. } => {
+            render_note_card(area, y, first_line, card, buffer, theme);
+        }
     }
+}
+
+fn render_note_card(
+    area: Rect,
+    y: u16,
+    first_line: usize,
+    card: &crate::review::row::NoteCard,
+    buffer: &mut Buffer,
+    theme: &AppTheme,
+) {
+    let x = area.x.saturating_add(card.placement.box_left);
+    let width = card.placement.box_width.min(area.right().saturating_sub(x));
+    if width == 0 {
+        return;
+    }
+    let height = card.height();
+    for line in first_line..height {
+        let draw_y = y.saturating_add(line.saturating_sub(first_line) as u16);
+        if draw_y >= area.bottom() {
+            break;
+        }
+        let (text, style) = if line == 0 {
+            let title = format!("─ {} ", card.title);
+            let fill = usize::from(width).saturating_sub(2 + title.chars().count());
+            (
+                format!("┌{title}{}┐", "─".repeat(fill)),
+                Style::default()
+                    .fg(theme.note_title_text)
+                    .bg(theme.note_title_background)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else if line + 1 == height {
+            (
+                format!("└{}┘", "─".repeat(usize::from(width).saturating_sub(2))),
+                Style::default()
+                    .fg(theme.note_border)
+                    .bg(theme.note_background),
+            )
+        } else {
+            let content = if line == 1 {
+                card.location.as_str()
+            } else {
+                card.lines
+                    .get(line.saturating_sub(2))
+                    .map_or("", String::as_str)
+            };
+            let available = usize::from(width).saturating_sub(4);
+            let content = truncate_cells(content, available);
+            let padding =
+                available.saturating_sub(unicode_width::UnicodeWidthStr::width(content.as_str()));
+            (
+                format!("│ {content}{} │", " ".repeat(padding)),
+                Style::default()
+                    .fg(if line == 1 { theme.muted } else { theme.text })
+                    .bg(theme.note_background),
+            )
+        };
+        buffer.set_stringn(x, draw_y, text, usize::from(width), style);
+    }
+}
+
+fn truncate_cells(text: &str, width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+
+    let mut cells = 0usize;
+    text.chars()
+        .take_while(|character| {
+            let next = cells.saturating_add(character.width().unwrap_or(0));
+            if next > width {
+                false
+            } else {
+                cells = next;
+                true
+            }
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]

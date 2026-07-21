@@ -337,6 +337,9 @@ pub(crate) fn build_review_geometry(
 }
 
 fn measure_row_height(row: &ReviewRow, line_digits: usize, options: GeometryOptions) -> usize {
+    if let ReviewRow::Note { card, .. } = row {
+        return card.height();
+    }
     if !options.wrap_lines {
         return 1;
     }
@@ -344,6 +347,7 @@ fn measure_row_height(row: &ReviewRow, line_digits: usize, options: GeometryOpti
         ReviewRow::HunkHeader { .. }
         | ReviewRow::Collapsed { .. }
         | ReviewRow::Placeholder { .. } => 1,
+        ReviewRow::Note { card, .. } => card.height(),
         ReviewRow::Stack { cell, .. } => {
             wrapped_height(cell, stack_code_width(options, line_digits))
         }

@@ -81,31 +81,31 @@ git commit -m "feat: load normalized agent context"
 - Test: `tests/ui_render.rs`
 - Test: `tests/ui_mouse.rs`
 
-- [ ] **Step 1: Write failing targeting and geometry tests**
+- [x] **Step 1: Write failing targeting and geometry tests**
 
 Cover old/new overlap, new-side anchor precedence, file/hunk fallback, GitHub-style labels, stable synthesized ids, source classification (`ai`, `agent`, `user`), annotated-hunk indices, toggle visibility where user notes remain visible, split left/right docking, stack layout, narrow fallback, deterministic note height, scrollbar totals, and hit testing across inserted note rows.
 
-- [ ] **Step 2: Confirm note rows are not represented**
+- [x] **Step 2: Confirm note rows are not represented**
 
 Run: `cargo test --test notes_state --test ui_render -- --nocapture`
 
 Expected: compilation/assertion failure because row plans contain only diff/context rows.
 
-- [ ] **Step 3: Add stable note targets and controller-owned human notes**
+- [x] **Step 3: Add stable note targets and controller-owned human notes**
 
 Define `NoteTarget { file_id, old_range, new_range, hunk_index }` and `HumanNote { id, target, body, created_at, updated_at }`. Resolve external annotations against hunk ranges and exact line rows. Synthesize missing external ids from source, file id, ranges, and content. Preserve human notes through reload when the target file id remains; clamp missing lines to hunk/file fallback without crossing files.
 
 Expose controller operations to begin, update, save, cancel, edit, remove, list, clear, and focus notes. These methods are also the future session mutation boundary.
 
-- [ ] **Step 4: Insert measured note rows into the canonical plan**
+- [x] **Step 4: Insert measured note rows into the canonical plan**
 
 Add note-card rows immediately after their anchor diff row (or hunk/file fallback), using one placement function for layout width, left offset, content width, and height. Every note row has a stable key and occupies real geometry rows. User/draft notes are always visible; AI/agent notes obey `agent_notes`. The existing `{`/`}` navigation uses annotated hunk indices derived from the same targets.
 
-- [ ] **Step 5: Render plain note cards and preserve interaction geometry**
+- [x] **Step 5: Render plain note cards and preserve interaction geometry**
 
 Render source/title/location, wrapped summary/rationale, tags/confidence/author, draft controls, and human note bodies with semantic theme colors. No top bar/menu is added. Mouse selection, scrollbar, context gaps, and sidebar file selection continue to use shared geometry.
 
-- [ ] **Step 6: Run state/render/mouse regressions and commit**
+- [x] **Step 6: Run state/render/mouse regressions and commit**
 
 Run: `cargo test --test notes_state --test review_state --test ui_render --test ui_mouse --test review_selection`
 
