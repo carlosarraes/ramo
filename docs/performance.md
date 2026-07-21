@@ -6,11 +6,11 @@ Local release-mode sample from 2026-07-21:
 
 ```text
 pdiff parity stress benchmark (descriptive; no timing threshold)
-parse_large_patch_50000_changed_lines: iterations=5 total_ms=22.369 mean_ms=4.474
-parse_2000_files: iterations=5 total_ms=6.559 mean_ms=1.312
-parse_20000_non_ascii_changed_lines: iterations=5 total_ms=12.314 mean_ms=2.463
-navigate_resize_100_files: iterations=3 total_ms=2578.425 mean_ms=859.475
-manual_watch_reload_50_generations: iterations=2 total_ms=2.193 mean_ms=1.096
+parse_large_patch_50000_changed_lines: iterations=5 total_ms=19.683 mean_ms=3.937
+parse_2000_files: iterations=5 total_ms=5.945 mean_ms=1.189
+parse_20000_non_ascii_changed_lines: iterations=5 total_ms=7.938 mean_ms=1.588
+navigate_resize_100_files: iterations=3 total_ms=2546.896 mean_ms=848.965
+manual_watch_reload_50_generations: iterations=2 total_ms=2.281 mean_ms=1.140
 ```
 
 The navigation scenario performs 120 alternating 159/160/220-column viewport cycles per iteration across 100 files, including page navigation and file jumps. The watch scenario writes and reloads 50 distinct direct-file generations through `WatchRuntime` per iteration.

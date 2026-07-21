@@ -188,7 +188,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Pi integration | verified | Rust installer writes embedded `src/pi_prompt.md`; no extension runtime | `tests/integrations.rs::pi_install_writes_a_markdown_prompt_and_no_typescript`, `pi_uninstall_preserves_unrelated_prompt_files` |
 | tmux pane discovery/send | verified | injected `TmuxClient`, stable selection routing | exact literal argv/stdin/failure tests plus isolated `tests/integrations.rs::real_tmux_server_receives_the_exact_native_buffer` |
 | OSC 52 clipboard | verified | `src/clipboard.rs`, shared selection projection | CJK mouse-selection PTY test asserts exact OSC 52 payload |
-| Linux support | implemented | native build/test and release target | cross-platform CI workflow added; first remote run pending |
+| Linux support | verified | native x86-64 build, full unit/integration/PTY/session suite, release target | 2026-07-21 locked release build plus full local gate; CI coverage also configured |
 | macOS support | implemented | Unix paths and x86-64/ARM64 target checks | cross-platform CI workflow added; first remote run pending |
 | Windows support | implemented | native `CONIN$`/`SetStdHandle` piped-review restoration and x86-64/ARM64 target checks | `tests/runtime_resolution.rs`; Windows CI runtime job added but first remote run pending |
 
@@ -221,6 +221,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Shared geometry for rendering/interaction | verified | `ReviewGeometry`, shared row columns and hit tests | geometry, selection, mouse, and render tests |
 | Large patch/many-file/non-ASCII benchmarks | verified | dependency-free `benches/parity.rs` release harness | `cargo bench --bench parity`; scenario output in `docs/performance.md` |
 | Navigation/resize/watch memory checks | verified | bounded per-line highlight LRU and non-accumulating controller/context/watch generations | `tests/performance_bounds.rs`, `tests/highlighting.rs::line_lru_is_bounded_while_scrolling_through_one_large_file`, `review::context::tests::repeated_context_reads_reuse_one_entry_per_source_and_invalidation_releases_all`, `tests/watch.rs::repeated_manual_watch_generations_replace_one_snapshot_without_accumulating_results` |
+| Local release artifact and linkage | verified | locked optimized x86-64 Linux build is one 8.5 MiB ELF executable | `file` and `ldd` show only the platform loader, libc, libm, and libgcc_s; source/runtime audit finds no JS/TS or JS runtime launch path |
 | Cross-platform CLI/unit CI | implemented | `.github/workflows/ci.yml` portable Linux/macOS/Windows matrix plus separate Unix PTY jobs | local workflow parse and four non-host Rust target checks; first remote run pending |
 | Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs`, `tests/pty_ui.rs`, `tests/pty_notes.rs`, `tests/pty_watch.rs`, `tests/pty_session.rs`, and two-terminal `tests/session_e2e.rs` |
 | Single-binary install/release documentation | implemented | `README.md`, `install.sh`, `install.ps1`, locked six-target release workflow | `tests/installers.rs` network-free archive selection; Windows PowerShell dry-runs run in CI; release artifact verified locally in slice 2 |
