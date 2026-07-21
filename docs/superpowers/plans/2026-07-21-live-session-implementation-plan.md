@@ -48,12 +48,12 @@
 - Test: `tests/session_cli.rs`
 - Test: `tests/skill_path.rs`
 
-- [ ] Write failing parser tests for every command and conflict: selectors, navigation modes, reload `--` input, comment target exclusivity, bounded batch stdin, note type, JSON/text, and mandatory `--yes` clearing.
-- [ ] Add `session list|get|context|review|navigate|reload`, `session comment add|apply|list|rm|clear`, `daemon serve`, `mcp serve`, and `skill path` actions.
-- [ ] Canonicalize `--repo` selectors through native VCS detection; enforce exactly one id/repo/session-path selector as appropriate.
-- [ ] Parse reload's nested review command through the existing normalized CLI layer while rejecting stdin-backed/nested session commands.
-- [ ] Embed the pdiff review skill and materialize it atomically under the platform data directory so `skill path` preserves the one-installed-binary requirement.
-- [ ] Run `cargo test --test session_cli --test skill_path --test cli_parse --test cli_contract` and commit `feat: add native session commands`.
+- [x] Write failing parser tests for every command and conflict: selectors, navigation modes, reload `--` input, comment target exclusivity, bounded batch stdin, note type, JSON/text, and mandatory `--yes` clearing.
+- [x] Add `session list|get|context|review|navigate|reload`, `session comment add|apply|list|rm|clear`, `daemon serve`, `mcp serve`, and `skill path` actions.
+- [x] Canonicalize `--repo` selectors through native VCS detection; enforce exactly one id/repo/session-path selector as appropriate.
+- [x] Parse reload's nested review command through the existing normalized CLI layer while rejecting stdin-backed/nested session commands.
+- [x] Embed the pdiff review skill and materialize it atomically under the platform data directory so `skill path` preserves the one-installed-binary requirement.
+- [x] Run `cargo test --test session_cli --test skill_path --test cli_parse --test cli_contract` and commit `feat: add native session commands`.
 
 ## Task 3: Implement the loopback daemon and bounded HTTP client
 

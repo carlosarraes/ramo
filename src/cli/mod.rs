@@ -9,6 +9,7 @@ use clap::{CommandFactory, Parser, error::ErrorKind};
 
 use crate::core::input::{ReviewInput, ReviewOutput};
 use crate::markup::MarkupRenderOptions;
+use crate::session::SessionCommand;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
@@ -18,6 +19,9 @@ pub enum Action {
     UninstallPi,
     MarkupRender(MarkupRenderOptions),
     MarkupGuide,
+    Session(SessionCommand),
+    DaemonServe,
+    SkillPath,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,6 +36,7 @@ pub enum CliError {
     ConflictingInput,
     InvalidDiffTargets(Vec<String>),
     UnsupportedIntegration(String),
+    Session(String),
 }
 
 impl fmt::Display for CliError {
@@ -52,6 +57,7 @@ impl fmt::Display for CliError {
                     "unsupported integration target: {target}; expected pi"
                 )
             }
+            Self::Session(message) => formatter.write_str(message),
         }
     }
 }

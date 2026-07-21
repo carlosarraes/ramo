@@ -25,6 +25,9 @@ pub enum StartupAction {
     InstallPi,
     UninstallPi,
     Markup,
+    Session,
+    Daemon,
+    Skill,
 }
 
 pub fn resolve_action(action: &Action) -> StartupAction {
@@ -34,6 +37,9 @@ pub fn resolve_action(action: &Action) -> StartupAction {
         Action::InstallPi => StartupAction::InstallPi,
         Action::UninstallPi => StartupAction::UninstallPi,
         Action::MarkupRender(_) | Action::MarkupGuide => StartupAction::Markup,
+        Action::Session(_) => StartupAction::Session,
+        Action::DaemonServe => StartupAction::Daemon,
+        Action::SkillPath => StartupAction::Skill,
     }
 }
 
@@ -65,6 +71,21 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
             crate::markup::render(&options)?;
             Ok(ExitCode::SUCCESS)
         }
+        Action::SkillPath => {
+            let path = crate::session::materialize_review_skill()?;
+            println!("{}", path.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Action::Session(_) => Err(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "the native pdiff session broker is not running",
+        )
+        .into()),
+        Action::DaemonServe => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "native pdiff session serving is not available in this build",
+        )
+        .into()),
         Action::Review(input) => run_review(input, invocation.output),
     }
 }

@@ -52,6 +52,226 @@ pub enum Command {
         #[command(subcommand)]
         command: MarkupCommand,
     },
+    /// Inspect and control a live pdiff review.
+    Session {
+        #[command(subcommand)]
+        command: SessionCommand,
+    },
+    /// Run the native live-session broker.
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommand,
+    },
+    /// Compatibility alias for the native live-session broker.
+    Mcp {
+        #[command(subcommand)]
+        command: DaemonCommand,
+    },
+    /// Inspect native pdiff agent assets.
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DaemonCommand {
+    /// Serve the loopback live-session API.
+    Serve,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SkillCommand {
+    /// Materialize and print the embedded pdiff review skill path.
+    Path,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionCommand {
+    /// List live reviews.
+    List(SessionListArgs),
+    /// Get one live review snapshot.
+    Get(SessionSelectedArgs),
+    /// Get focused context for one live review.
+    Context(SessionSelectedArgs),
+    /// Export the structured review for one live review.
+    Review(SessionReviewArgs),
+    /// Move the selected location in one live review.
+    Navigate(SessionNavigateArgs),
+    /// Replace the input of one live review.
+    Reload(SessionReloadArgs),
+    /// Manage live review comments.
+    Comment {
+        #[command(subcommand)]
+        command: SessionCommentCommand,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct SessionListArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SessionSelectorArgs {
+    #[arg(value_name = "SESSION_ID")]
+    pub session_id: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionSelectedArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionReviewArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub include_patch: bool,
+    #[arg(long)]
+    pub include_notes: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionNavigateArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub file: Option<String>,
+    #[arg(long)]
+    pub hunk: Option<usize>,
+    #[arg(long)]
+    pub old_line: Option<u32>,
+    #[arg(long)]
+    pub new_line: Option<u32>,
+    #[arg(long)]
+    pub next_comment: bool,
+    #[arg(long)]
+    pub prev_comment: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionReloadArgs {
+    #[arg(value_name = "SESSION_ID")]
+    pub session_id: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    pub session_path: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    pub source: Option<PathBuf>,
+    #[arg(long)]
+    pub json: bool,
+    #[arg(last = true, required = true, value_name = "REVIEW_COMMAND")]
+    pub review_command: Vec<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionCommentCommand {
+    /// Add one live agent comment.
+    Add(SessionCommentAddArgs),
+    /// Apply a JSON comment batch from standard input.
+    Apply(SessionCommentApplyArgs),
+    /// List comments.
+    List(SessionCommentListArgs),
+    /// Remove one live comment by id.
+    Rm(SessionCommentRemoveArgs),
+    /// Clear live comments after explicit confirmation.
+    Clear(SessionCommentClearArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SessionCommentAddArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub file: String,
+    #[arg(long)]
+    pub old_line: Option<u32>,
+    #[arg(long)]
+    pub new_line: Option<u32>,
+    #[arg(long)]
+    pub summary: String,
+    #[arg(long)]
+    pub rationale: Option<String>,
+    #[arg(long)]
+    pub markup: Option<String>,
+    #[arg(long)]
+    pub author: Option<String>,
+    #[arg(long)]
+    pub focus: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionCommentApplyArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub stdin: bool,
+    #[arg(long)]
+    pub focus: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SessionCommentTypeArg {
+    Live,
+    All,
+    Ai,
+    Agent,
+    User,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionCommentListArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub file: Option<String>,
+    #[arg(long = "type", value_enum)]
+    pub note_type: Option<SessionCommentTypeArg>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionCommentRemoveArgs {
+    #[arg(value_name = "TARGET")]
+    pub targets: Vec<String>,
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionCommentClearArgs {
+    #[command(flatten)]
+    pub selector: SessionSelectorArgs,
+    #[arg(long)]
+    pub file: Option<String>,
+    #[arg(long)]
+    pub include_user: bool,
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long)]
+    pub yes: bool,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]
