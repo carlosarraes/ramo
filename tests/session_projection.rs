@@ -1,8 +1,8 @@
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::notes::{LineRange, LiveNoteInput, NoteAnchorSide};
-use pdiff::review::{ReviewController, ReviewOptions, Viewport};
-use pdiff::session::{
+use ramo::core::input::LayoutMode;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::notes::{LineRange, LiveNoteInput, NoteAnchorSide};
+use ramo::review::{ReviewController, ReviewOptions, Viewport};
+use ramo::session::{
     SESSION_API_VERSION, SESSION_DAEMON_VERSION, SessionDescriptor, SessionSelector,
     build_registration, build_session_context, build_session_review, build_snapshot,
     supported_session_actions,

@@ -4,11 +4,11 @@ use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "pdiff",
+    name = "ramo",
     version,
     about = "Review-first terminal diff viewer",
     disable_version_flag = true,
-    after_help = "Common review options:\n  --mode <MODE>                           layout mode: auto, split, stack\n  --watch                                 auto-reload when the current diff input changes\n  --theme <THEME>                         named theme override\n  --agent-context <PATH>                  JSON sidecar with agent rationale\n  --pager                                 use pager-style chrome and controls\n  --line-numbers / --no-line-numbers      show or hide line numbers\n  --wrap / --no-wrap                      wrap or truncate long diff lines\n  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows\n  --agent-notes / --no-agent-notes        show or hide agent notes by default\n  --transparent-bg / --no-transparent-bg  use or paint the terminal background\n  --exclude-untracked                     hide untracked working-tree files\n\nRun `pdiff <command> --help` for command-specific syntax."
+    after_help = "Common review options:\n  --mode <MODE>                           layout mode: auto, split, stack\n  --watch                                 auto-reload when the current diff input changes\n  --theme <THEME>                         named theme override\n  --agent-context <PATH>                  JSON sidecar with agent rationale\n  --pager                                 use pager-style chrome and controls\n  --line-numbers / --no-line-numbers      show or hide line numbers\n  --wrap / --no-wrap                      wrap or truncate long diff lines\n  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows\n  --agent-notes / --no-agent-notes        show or hide agent notes by default\n  --transparent-bg / --no-transparent-bg  use or paint the terminal background\n  --exclude-untracked                     hide untracked working-tree files\n\nRun `ramo <command> --help` for command-specific syntax."
 )]
 pub struct Cli {
     #[arg(short = 'v', long = "version", action = ArgAction::Version)]
@@ -44,16 +44,16 @@ pub enum Command {
         #[command(subcommand)]
         command: StashCommand,
     },
-    /// Install a pdiff integration.
+    /// Install a ramo integration.
     Install(IntegrationArgs),
-    /// Uninstall a pdiff integration.
+    /// Uninstall a ramo integration.
     Uninstall(IntegrationArgs),
     /// Render or inspect native terminal markup without opening the review UI.
     Markup {
         #[command(subcommand)]
         command: MarkupCommand,
     },
-    /// Inspect and control a live pdiff review.
+    /// Inspect and control a live ramo review.
     Session {
         #[command(subcommand)]
         command: SessionCommand,
@@ -68,7 +68,7 @@ pub enum Command {
         #[command(subcommand)]
         command: DaemonCommand,
     },
-    /// Inspect native pdiff agent assets.
+    /// Inspect native ramo agent assets.
     Skill {
         #[command(subcommand)]
         command: SkillCommand,
@@ -83,7 +83,7 @@ pub enum DaemonCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum SkillCommand {
-    /// Materialize and print the embedded pdiff review skill path.
+    /// Materialize and print the embedded ramo review skill path.
     Path,
 }
 

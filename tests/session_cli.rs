@@ -1,20 +1,20 @@
-use pdiff::cli::{Action, parse_from};
-use pdiff::core::input::ReviewInput;
-use pdiff::session::{
+use ramo::cli::{Action, parse_from};
+use ramo::core::input::ReviewInput;
+use ramo::session::{
     CommentListType, CommentRevealMode, SessionCommand, SessionOutput, SessionSelector,
 };
 
 #[test]
 fn list_get_context_and_review_normalize_output_selectors_and_flags() {
     assert!(matches!(
-        parse_from(["pdiff", "session", "list", "--json"], true)
+        parse_from(["ramo", "session", "list", "--json"], true)
             .unwrap()
             .action,
         Action::Session(SessionCommand::List {
             output: SessionOutput::Json
         })
     ));
-    let get = parse_from(["pdiff", "session", "get", "abc"], true).unwrap();
+    let get = parse_from(["ramo", "session", "get", "abc"], true).unwrap();
     assert!(matches!(
         get.action,
         Action::Session(SessionCommand::Get {
@@ -24,7 +24,7 @@ fn list_get_context_and_review_normalize_output_selectors_and_flags() {
     ));
     assert!(matches!(
         parse_from(
-            ["pdiff", "session", "context", "--repo", ".", "--json"],
+            ["ramo", "session", "context", "--repo", ".", "--json"],
             true
         )
         .unwrap()
@@ -40,7 +40,7 @@ fn list_get_context_and_review_normalize_output_selectors_and_flags() {
     assert!(matches!(
         parse_from(
             [
-                "pdiff",
+                "ramo",
                 "session",
                 "review",
                 "abc",
@@ -64,7 +64,7 @@ fn navigation_requires_exactly_one_valid_target_mode() {
     assert!(matches!(
         parse_from(
             [
-                "pdiff", "session", "navigate", "abc", "--file", "src/lib.rs", "--new-line", "7"
+                "ramo", "session", "navigate", "abc", "--file", "src/lib.rs", "--new-line", "7"
             ],
             true,
         )
@@ -75,7 +75,7 @@ fn navigation_requires_exactly_one_valid_target_mode() {
     ));
     assert!(matches!(
         parse_from(
-            ["pdiff", "session", "navigate", "abc", "--next-comment"],
+            ["ramo", "session", "navigate", "abc", "--next-comment"],
             true,
         )
         .unwrap()
@@ -84,9 +84,9 @@ fn navigation_requires_exactly_one_valid_target_mode() {
             if direction.as_str() == "next"
     ));
     for args in [
-        vec!["pdiff", "session", "navigate", "abc"],
+        vec!["ramo", "session", "navigate", "abc"],
         vec![
-            "pdiff",
+            "ramo",
             "session",
             "navigate",
             "abc",
@@ -98,7 +98,7 @@ fn navigation_requires_exactly_one_valid_target_mode() {
             "2",
         ],
         vec![
-            "pdiff",
+            "ramo",
             "session",
             "navigate",
             "abc",
@@ -114,7 +114,7 @@ fn navigation_requires_exactly_one_valid_target_mode() {
 fn reload_reuses_the_existing_review_parser_and_rejects_stdin_or_nested_actions() {
     let invocation = parse_from(
         [
-            "pdiff", "session", "reload", "abc", "--source", "/tmp", "--", "show", "HEAD~1", "--",
+            "ramo", "session", "reload", "abc", "--source", "/tmp", "--", "show", "HEAD~1", "--",
             "src",
         ],
         true,
@@ -130,14 +130,14 @@ fn reload_reuses_the_existing_review_parser_and_rejects_stdin_or_nested_actions(
     ));
     assert!(
         parse_from(
-            ["pdiff", "session", "reload", "abc", "--", "patch", "-"],
+            ["ramo", "session", "reload", "abc", "--", "patch", "-"],
             true,
         )
         .is_err()
     );
     assert!(
         parse_from(
-            ["pdiff", "session", "reload", "abc", "--", "session", "list"],
+            ["ramo", "session", "reload", "abc", "--", "session", "list"],
             true,
         )
         .is_err()
@@ -149,7 +149,7 @@ fn comment_commands_validate_targets_batches_types_and_destructive_confirmation(
     assert!(matches!(
         parse_from(
             [
-                "pdiff",
+                "ramo",
                 "session",
                 "comment",
                 "add",
@@ -177,7 +177,7 @@ fn comment_commands_validate_targets_batches_types_and_destructive_confirmation(
     assert!(
         parse_from(
             [
-                "pdiff",
+                "ramo",
                 "session",
                 "comment",
                 "add",
@@ -198,7 +198,7 @@ fn comment_commands_validate_targets_batches_types_and_destructive_confirmation(
     assert!(matches!(
         parse_from(
             [
-                "pdiff", "session", "comment", "apply", "abc", "--stdin", "--focus"
+                "ramo", "session", "comment", "apply", "abc", "--stdin", "--focus"
             ],
             true,
         )
@@ -209,11 +209,11 @@ fn comment_commands_validate_targets_batches_types_and_destructive_confirmation(
             ..
         })
     ));
-    assert!(parse_from(["pdiff", "session", "comment", "apply", "abc"], true,).is_err());
+    assert!(parse_from(["ramo", "session", "comment", "apply", "abc"], true,).is_err());
     assert!(matches!(
         parse_from(
             [
-                "pdiff", "session", "comment", "list", "abc", "--type", "agent"
+                "ramo", "session", "comment", "list", "abc", "--type", "agent"
             ],
             true,
         )
@@ -224,11 +224,11 @@ fn comment_commands_validate_targets_batches_types_and_destructive_confirmation(
             ..
         })
     ));
-    assert!(parse_from(["pdiff", "session", "comment", "clear", "abc"], true,).is_err());
+    assert!(parse_from(["ramo", "session", "comment", "clear", "abc"], true,).is_err());
     assert!(matches!(
         parse_from(
             [
-                "pdiff", "session", "comment", "clear", "abc", "--all", "--yes"
+                "ramo", "session", "comment", "clear", "abc", "--all", "--yes"
             ],
             true,
         )
@@ -243,19 +243,19 @@ fn comment_commands_validate_targets_batches_types_and_destructive_confirmation(
 
 #[test]
 fn selector_conflicts_and_daemon_aliases_are_explicit() {
-    assert!(parse_from(["pdiff", "session", "get", "abc", "--repo", "."], true,).is_err());
+    assert!(parse_from(["ramo", "session", "get", "abc", "--repo", "."], true,).is_err());
     assert!(matches!(
-        parse_from(["pdiff", "daemon", "serve"], true)
+        parse_from(["ramo", "daemon", "serve"], true)
             .unwrap()
             .action,
         Action::DaemonServe
     ));
     assert!(matches!(
-        parse_from(["pdiff", "mcp", "serve"], true).unwrap().action,
+        parse_from(["ramo", "mcp", "serve"], true).unwrap().action,
         Action::DaemonServe
     ));
     assert!(matches!(
-        parse_from(["pdiff", "skill", "path"], true).unwrap().action,
+        parse_from(["ramo", "skill", "path"], true).unwrap().action,
         Action::SkillPath
     ));
 }

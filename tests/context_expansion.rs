@@ -3,19 +3,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use pdiff::app::App;
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::model::{
+use ramo::app::App;
+use ramo::config::ResolvedConfig;
+use ramo::core::input::LayoutMode;
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::review::NativeContextSourceLoader;
-use pdiff::review::{
+use ramo::review::NativeContextSourceLoader;
+use ramo::review::{
     CollapsedGap, ContextSourceLoader, GapKey, GapPosition, ReviewController, ReviewOptions,
     SourceFailure, SourceSide, Viewport, derive_collapsed_gaps, expand_gap_lines,
     select_gap_for_toggle, source_for_context,
 };
-use pdiff::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
+use ramo::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
 
 fn line(kind: LineType, old: Option<u32>, new: Option<u32>, text: &str) -> DiffLine {
     DiffLine {
@@ -254,7 +254,7 @@ fn controller_expansion_grows_shared_geometry_and_reuses_loaded_source() {
     assert_eq!(loader.calls, 1);
 
     controller.apply(
-        pdiff::review::ReviewAction::SetLayout(LayoutMode::Split),
+        ramo::review::ReviewAction::SetLayout(LayoutMode::Split),
         viewport,
     );
     assert_eq!(loader.calls, 1);

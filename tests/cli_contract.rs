@@ -3,7 +3,7 @@ use predicates::prelude::*;
 
 #[test]
 fn help_lists_every_foundation_review_command() {
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .arg("--help")
         .assert()
@@ -27,17 +27,17 @@ fn help_lists_every_foundation_review_command() {
 
 #[test]
 fn version_is_plain_and_successful() {
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("pdiff "));
+        .stdout(predicate::str::starts_with("ramo "));
 }
 
 #[test]
 fn invalid_layout_fails_before_terminal_startup() {
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .args(["diff", "--mode", "columns"])
         .assert()
@@ -48,7 +48,7 @@ fn invalid_layout_fails_before_terminal_startup() {
 
 #[test]
 fn unsupported_integration_fails_without_terminal_output() {
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .args(["install", "vscode"])
         .assert()

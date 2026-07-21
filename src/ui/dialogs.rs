@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
 use super::themes::AppTheme;
 
-pub const AGENT_SKILL_PROMPT: &str = "Load the pdiff skill and use it for this review. Run `pdiff skill path` to get the native skill path.";
+pub const AGENT_SKILL_PROMPT: &str = "Load the ramo skill and use it for this review. Run `ramo skill path` to get the native skill path.";
 
 pub fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let width = width.min(area.width);

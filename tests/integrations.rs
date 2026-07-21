@@ -2,9 +2,9 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io;
 
-use pdiff::process::command::SystemCommandExecutor;
-use pdiff::process::command::{CommandExecutor, CommandRequest, CommandResult};
-use pdiff::tmux::{PasteMode, TmuxClient};
+use ramo::process::command::SystemCommandExecutor;
+use ramo::process::command::{CommandExecutor, CommandRequest, CommandResult};
+use ramo::tmux::{PasteMode, TmuxClient};
 
 fn argv(values: &[&str]) -> Vec<OsString> {
     values.iter().map(OsString::from).collect()
@@ -49,7 +49,7 @@ fn tmux_send_uses_literal_stdin_and_never_a_shell() {
 
     assert_eq!(
         executor.requests[0].argv,
-        argv(&["tmux", "load-buffer", "-b", "pdiff-send", "-"])
+        argv(&["tmux", "load-buffer", "-b", "ramo-send", "-"])
     );
     assert_eq!(
         executor.requests[0].stdin.as_deref(),
@@ -64,7 +64,7 @@ fn tmux_send_uses_literal_stdin_and_never_a_shell() {
             "-p",
             "-r",
             "-b",
-            "pdiff-send",
+            "ramo-send",
             "-t",
             "%7",
             "-d",
@@ -92,7 +92,7 @@ fn tmux_list_filters_the_current_pane_and_preserves_target_metadata() {
 #[test]
 fn osc52_encodes_wide_character_selection_exactly() {
     let mut output = Vec::new();
-    pdiff::clipboard::write_osc52(&mut output, "界 old").unwrap();
+    ramo::clipboard::write_osc52(&mut output, "界 old").unwrap();
     assert_eq!(output, b"\x1b]52;c;55WMIG9sZA==\x07");
 }
 
@@ -103,7 +103,7 @@ fn tmux_plain_paste_and_failures_are_operation_specific() {
     let executor = tmux.into_executor();
     assert_eq!(
         executor.requests[1].argv,
-        argv(&["tmux", "paste-buffer", "-b", "pdiff-send", "-t", "%2", "-d",])
+        argv(&["tmux", "paste-buffer", "-b", "ramo-send", "-t", "%2", "-d",])
     );
 
     let failure = CommandResult {
@@ -133,8 +133,8 @@ fn real_tmux_server_receives_the_exact_native_buffer() {
     {
         return;
     }
-    let socket = format!("pdiff-test-{}", std::process::id());
-    let session = "pdiff-native-smoke";
+    let socket = format!("ramo-test-{}", std::process::id());
+    let session = "ramo-native-smoke";
     let start = std::process::Command::new("tmux")
         .args(["-L", &socket, "new-session", "-d", "-s", session, "cat"])
         .output()
@@ -172,32 +172,32 @@ fn real_tmux_server_receives_the_exact_native_buffer() {
 #[test]
 fn pi_install_writes_a_markdown_prompt_and_no_typescript() {
     let home = tempfile::tempdir().unwrap();
-    let installed = pdiff::pi_extension::install_at(home.path()).unwrap();
-    assert_eq!(installed, home.path().join(".pi/agent/prompts/pdiff.md"));
+    let installed = ramo::pi_extension::install_at(home.path()).unwrap();
+    assert_eq!(installed, home.path().join(".pi/agent/prompts/ramo.md"));
     let text = std::fs::read_to_string(&installed).unwrap();
-    assert!(text.contains("pdiff diff --staged"));
-    assert!(text.contains("pdiff show"));
+    assert!(text.contains("ramo diff --staged"));
+    assert!(text.contains("ramo show"));
     assert!(text.contains("--output"));
     assert!(!text.contains("registerCommand"));
     assert!(
         !home
             .path()
-            .join(".pi/agent/extensions/pdiff/index.ts")
+            .join(".pi/agent/extensions/ramo/index.ts")
             .exists()
     );
 
-    pdiff::pi_extension::uninstall_at(home.path()).unwrap();
+    ramo::pi_extension::uninstall_at(home.path()).unwrap();
     assert!(!installed.exists());
 }
 
 #[test]
 fn pi_uninstall_preserves_unrelated_prompt_files() {
     let home = tempfile::tempdir().unwrap();
-    let installed = pdiff::pi_extension::install_at(home.path()).unwrap();
+    let installed = ramo::pi_extension::install_at(home.path()).unwrap();
     let other = installed.parent().unwrap().join("other.md");
     std::fs::write(&other, "keep me").unwrap();
 
-    pdiff::pi_extension::uninstall_at(home.path()).unwrap();
+    ramo::pi_extension::uninstall_at(home.path()).unwrap();
     assert!(!installed.exists());
     assert_eq!(std::fs::read_to_string(other).unwrap(), "keep me");
 }

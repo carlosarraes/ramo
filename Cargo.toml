@@ -1,10 +1,10 @@
 [package]
-name = "pdiff"
+name = "ramo"
 version = "0.0.6"
 edition = "2024"
 
 [lib]
-name = "pdiff"
+name = "ramo"
 path = "src/lib.rs"
 
 [dependencies]

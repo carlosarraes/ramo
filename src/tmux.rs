@@ -93,7 +93,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
 
     pub fn send_to_pane(&mut self, target: &str, text: &str, mode: PasteMode) -> io::Result<()> {
         let load = self.executor.execute(CommandRequest {
-            argv: self.argv(&["load-buffer", "-b", "pdiff-send", "-"]),
+            argv: self.argv(&["load-buffer", "-b", "ramo-send", "-"]),
             stdin: Some(text.as_bytes().to_vec()),
             inherit_stdio: false,
         })?;
@@ -103,7 +103,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
         if mode == PasteMode::Bracketed {
             argv.extend(strings(&["-p", "-r"]));
         }
-        argv.extend(strings(&["-b", "pdiff-send", "-t", target, "-d"]));
+        argv.extend(strings(&["-b", "ramo-send", "-t", target, "-d"]));
         let paste = self.executor.execute(CommandRequest {
             argv,
             stdin: None,

@@ -185,7 +185,7 @@ impl WatchRuntime {
     fn validate_source_path(&self, source_path: Option<&Path>) -> Result<PathBuf, String> {
         if self.reload_roots.is_empty() {
             return Err(
-                "session reload requires the initial pdiff session to be rooted in a repository"
+                "session reload requires the initial ramo session to be rooted in a repository"
                     .into(),
             );
         }
@@ -368,7 +368,7 @@ fn ensure_in_roots(roots: &[PathBuf], candidate: &Path, description: &str) -> Re
         Ok(())
     } else {
         Err(format!(
-            "session reload refused {description} outside the initial pdiff root: {}",
+            "session reload refused {description} outside the initial ramo root: {}",
             candidate.display()
         ))
     }

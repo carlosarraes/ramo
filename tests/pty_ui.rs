@@ -29,12 +29,12 @@ impl PtyProcess {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("pdiff"));
+        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
         for argument in args {
             command.arg(argument);
         }
-        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+        command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         for (key, value) in env {
             command.env(key, value);
         }
@@ -93,7 +93,7 @@ impl PtyProcess {
             match self.chunks.recv_timeout(remaining) {
                 Ok(chunk) => self.raw.extend(chunk),
                 Err(RecvTimeoutError::Timeout) => {
-                    let clean = pdiff::input::sanitize_terminal_text(
+                    let clean = ramo::input::sanitize_terminal_text(
                         &String::from_utf8_lossy(&self.raw),
                         false,
                     );
@@ -103,7 +103,7 @@ impl PtyProcess {
                     panic!("PTY ended before rendering {needle}")
                 }
             }
-            let clean = pdiff::input::sanitize_terminal_text(
+            let clean = ramo::input::sanitize_terminal_text(
                 &String::from_utf8_lossy(&self.raw[start.min(self.raw.len())..]),
                 false,
             );
@@ -170,7 +170,7 @@ fn fixture() -> String {
 }
 
 fn disable_save_prompt(config_home: &Path) {
-    let path = config_home.join("pdiff/config.toml");
+    let path = config_home.join("ramo/config.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "prompt_save_view_preferences = false\n").unwrap();
 }
@@ -212,7 +212,7 @@ fn changed_layout_and_theme_can_be_saved_from_the_centered_prompt() {
     process.send("\r");
     assert_eq!(process.wait(), 0);
 
-    let saved = std::fs::read_to_string(config_home.join("pdiff/config.toml")).unwrap();
+    let saved = std::fs::read_to_string(config_home.join("ramo/config.toml")).unwrap();
     assert!(saved.contains("mode = \"split\""));
     assert!(saved.contains("theme = "));
     assert_eq!(
@@ -240,7 +240,7 @@ fn cancel_returns_to_review_and_repeated_quit_discards_without_writing() {
     process.read_until("Save view preferences?");
     process.send("\x1bqq");
     assert_eq!(process.wait(), 0);
-    assert!(!config_home.join("pdiff/config.toml").exists());
+    assert!(!config_home.join("ramo/config.toml").exists());
     assert_eq!(
         process
             .raw
@@ -389,9 +389,9 @@ fn direct_agent_skill_dialog_copies_native_guidance_and_closes() {
     process.read_until("println!");
     process.send("A");
     let dialog = process.read_until("Agent skill");
-    assert!(dialog.contains("pdiff skill path"));
+    assert!(dialog.contains("ramo skill path"));
     let mut sequence = Vec::new();
-    pdiff::clipboard::write_osc52(&mut sequence, pdiff::ui::dialogs::AGENT_SKILL_PROMPT).unwrap();
+    ramo::clipboard::write_osc52(&mut sequence, ramo::ui::dialogs::AGENT_SKILL_PROMPT).unwrap();
     process.send("y");
     process.read_raw_until(&sequence);
     process.send("\x1bqq");
@@ -402,7 +402,7 @@ fn direct_agent_skill_dialog_copies_native_guidance_and_closes() {
 fn deprecated_theme_syntax_surfaces_a_native_startup_notice() {
     let temp = tempfile::tempdir().unwrap();
     let config_home = temp.path().join("config");
-    let path = config_home.join("pdiff/config.toml");
+    let path = config_home.join("ramo/config.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         path,
@@ -430,7 +430,7 @@ fn deprecated_theme_syntax_surfaces_a_native_startup_notice() {
 fn installed_version_change_surfaces_a_local_copied_skill_notice_once() {
     let temp = tempfile::tempdir().unwrap();
     let config_home = temp.path().join("config");
-    let state = config_home.join("pdiff/state.json");
+    let state = config_home.join("ramo/state.json");
     std::fs::create_dir_all(state.parent().unwrap()).unwrap();
     std::fs::write(&state, "{\"version\":1,\"lastSeenCliVersion\":\"0.0.5\"}\n").unwrap();
     let fixture = fixture();
@@ -439,11 +439,11 @@ fn installed_version_change_surfaces_a_local_copied_skill_notice_once() {
         &["patch", &fixture],
         &[
             ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
-            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
+            ("RAMO_DISABLE_UPDATE_NOTICE", "0"),
         ],
     );
 
-    process.read_until("If your agent copied pdiff's skill");
+    process.read_until("If your agent copied ramo's skill");
     process.send("q");
     assert_eq!(process.wait(), 0);
 
@@ -471,8 +471,8 @@ fn remote_update_notice_uses_an_optional_nonblocking_git_query() {
         &[
             ("PATH", &path),
             ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
-            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
-            ("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
+            ("RAMO_DISABLE_UPDATE_NOTICE", "0"),
+            ("RAMO_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
         ],
     );
 
@@ -493,7 +493,7 @@ fn slow_remote_update_query_is_killed_without_blocking_the_review() {
     std::fs::create_dir(&bin).unwrap();
     std::fs::write(
         &git,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"$PDIFF_TEST_GIT_PID_PATH\"\nexec sleep 10\n",
+        "#!/bin/sh\nprintf '%s' \"$$\" > \"$RAMO_TEST_GIT_PID_PATH\"\nexec sleep 10\n",
     )
     .unwrap();
     std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -506,10 +506,10 @@ fn slow_remote_update_query_is_killed_without_blocking_the_review() {
         &[
             ("PATH", &path),
             ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
-            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
-            ("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
-            ("PDIFF_TEST_UPDATE_NOTICE_TIMEOUT_MS", "50"),
-            ("PDIFF_TEST_GIT_PID_PATH", pid_path.to_str().unwrap()),
+            ("RAMO_DISABLE_UPDATE_NOTICE", "0"),
+            ("RAMO_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
+            ("RAMO_TEST_UPDATE_NOTICE_TIMEOUT_MS", "50"),
+            ("RAMO_TEST_GIT_PID_PATH", pid_path.to_str().unwrap()),
         ],
     );
 
@@ -547,7 +547,7 @@ fn local_and_remote_startup_notices_are_shown_in_order() {
     std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.7\\n'\n").unwrap();
     std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
     let config_home = temp.path().join("config");
-    let config = config_home.join("pdiff/config.toml");
+    let config = config_home.join("ramo/config.toml");
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(
         config,
@@ -567,9 +567,9 @@ fn local_and_remote_startup_notices_are_shown_in_order() {
         &[
             ("PATH", &path),
             ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
-            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
-            ("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
-            ("PDIFF_TEST_STARTUP_NOTICE_DURATION_MS", "80"),
+            ("RAMO_DISABLE_UPDATE_NOTICE", "0"),
+            ("RAMO_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
+            ("RAMO_TEST_STARTUP_NOTICE_DURATION_MS", "80"),
         ],
     );
 

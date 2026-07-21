@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-const REVIEW_SKILL: &str = include_str!("pdiff-review-SKILL.md");
+const REVIEW_SKILL: &str = include_str!("ramo-review-SKILL.md");
 
 pub fn review_skill_path() -> io::Result<PathBuf> {
     let base = dirs::data_dir().ok_or_else(|| {
@@ -11,7 +11,7 @@ pub fn review_skill_path() -> io::Result<PathBuf> {
             "platform data directory is unavailable",
         )
     })?;
-    Ok(base.join("pdiff/skills/pdiff-review/SKILL.md"))
+    Ok(base.join("ramo/skills/ramo-review/SKILL.md"))
 }
 
 pub fn materialize_review_skill() -> io::Result<PathBuf> {

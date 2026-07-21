@@ -13,8 +13,8 @@ pub fn install(target: &str) -> io::Result<()> {
         )
     })?;
     let path = install_at(&home)?;
-    eprintln!("Installed native pdiff prompt to {}", path.display());
-    eprintln!("Restart Pi to activate /pdiff.");
+    eprintln!("Installed native ramo prompt to {}", path.display());
+    eprintln!("Restart Pi to activate /ramo.");
     Ok(())
 }
 
@@ -28,7 +28,7 @@ pub fn uninstall(target: &str) -> io::Result<()> {
     })?;
     let path = prompt_path(&home);
     uninstall_at(&home)?;
-    eprintln!("Removed native pdiff prompt from {}", path.display());
+    eprintln!("Removed native ramo prompt from {}", path.display());
     Ok(())
 }
 
@@ -38,7 +38,7 @@ pub fn install_at(home: &Path) -> io::Result<PathBuf> {
         .parent()
         .expect("the prompt path always has a parent directory");
     fs::create_dir_all(directory)?;
-    let temporary = directory.join(format!(".pdiff.md.{}.tmp", std::process::id()));
+    let temporary = directory.join(format!(".ramo.md.{}.tmp", std::process::id()));
     fs::write(&temporary, PROMPT_SOURCE)?;
     #[cfg(windows)]
     if path.exists() {
@@ -66,7 +66,7 @@ pub fn uninstall_at(home: &Path) -> io::Result<()> {
 }
 
 fn prompt_path(home: &Path) -> PathBuf {
-    home.join(".pi/agent/prompts/pdiff.md")
+    home.join(".pi/agent/prompts/ramo.md")
 }
 
 fn validate_target(target: &str) -> io::Result<()> {

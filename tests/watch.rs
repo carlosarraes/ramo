@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use pdiff::core::input::VcsId;
-use pdiff::core::input::{CommonOptions, ReviewInput};
-use pdiff::input::{LoadContext, ReloadPlan, ReviewLoader};
-use pdiff::vcs::SystemCommandRunner;
-use pdiff::watch::{
+use ramo::core::input::VcsId;
+use ramo::core::input::{CommonOptions, ReviewInput};
+use ramo::input::{LoadContext, ReloadPlan, ReviewLoader};
+use ramo::vcs::SystemCommandRunner;
+use ramo::watch::{
     Coverage, NativeObserver, WatchCoordinator, WatchIntervals, WatchPlan, WatchRuntime,
     WatchTarget, WatchUpdate,
 };
@@ -144,7 +144,7 @@ fn native_observer_sees_an_atomic_replacement_of_an_exact_file() {
 
 fn direct_file_review(
     temp: &tempfile::TempDir,
-) -> (pdiff::input::LoadedReview, PathBuf, ResolvedWatchContext) {
+) -> (ramo::input::LoadedReview, PathBuf, ResolvedWatchContext) {
     let left = temp.path().join("left.rs");
     let right = temp.path().join("right.rs");
     fs::write(&left, "old\n").unwrap();
@@ -164,7 +164,7 @@ fn direct_file_review(
 
 struct ResolvedWatchContext {
     cwd: PathBuf,
-    config: pdiff::config::ResolvedConfig,
+    config: ramo::config::ResolvedConfig,
     runner: SystemCommandRunner,
 }
 
@@ -172,7 +172,7 @@ impl ResolvedWatchContext {
     fn new(cwd: &std::path::Path) -> Self {
         Self {
             cwd: cwd.to_path_buf(),
-            config: pdiff::config::ResolvedConfig::default(),
+            config: ramo::config::ResolvedConfig::default(),
             runner: SystemCommandRunner,
         }
     }

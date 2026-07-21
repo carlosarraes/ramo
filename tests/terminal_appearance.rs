@@ -5,11 +5,11 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 #[cfg(unix)]
 use std::time::{Duration, Instant};
 
-use pdiff::ui::appearance::{
+use ramo::ui::appearance::{
     RgbColor, appearance_for_background, appearance_from_colorfgbg, parse_osc11_background,
 };
-use pdiff::ui::themes::TerminalAppearance;
-use pdiff::ui::themes::ThemeRegistry;
+use ramo::ui::themes::TerminalAppearance;
+use ramo::ui::themes::ThemeRegistry;
 #[cfg(unix)]
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -82,14 +82,14 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
             pixel_height: 0,
         })
         .unwrap();
-    let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("pdiff"));
+    let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("ramo"));
     command.cwd(temp.path());
     command.args(["patch", patch.to_str().unwrap(), "--theme", "auto"]);
     let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = reserved.local_addr().unwrap().port();
     drop(reserved);
-    command.env("PDIFF_SESSION_PORT", port.to_string());
-    command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+    command.env("RAMO_SESSION_PORT", port.to_string());
+    command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
     command.env("COLORFGBG", "");
     let start = Instant::now();
     let mut child = pair.slave.spawn_command(command).unwrap();
@@ -131,7 +131,7 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
                 writer.flush().unwrap();
             }
         }
-        let clean = pdiff::input::sanitize_terminal_text(&String::from_utf8_lossy(&raw), false);
+        let clean = ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&raw), false);
         if clean.contains("old") && clean.contains("new") {
             break;
         }
@@ -139,7 +139,7 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
     writer.write_all(b"q").unwrap();
     writer.flush().unwrap();
     assert!(child.wait().unwrap().success());
-    let client = pdiff::session::SessionClient::new(format!("127.0.0.1:{port}").parse().unwrap());
+    let client = ramo::session::SessionClient::new(format!("127.0.0.1:{port}").parse().unwrap());
     let _ = client.shutdown();
     (raw, start.elapsed())
 }

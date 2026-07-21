@@ -31,12 +31,12 @@ impl PtyProcess {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("pdiff"));
+        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
         for argument in args {
             command.arg(argument);
         }
-        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+        command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         for (key, value) in env {
             command.env(key, value);
         }
@@ -243,7 +243,7 @@ fn editor_key_launches_literal_file_and_line_argv_then_resumes_the_review() {
     let capture = fixture.dir.path().join("editor-argv.txt");
     fs::write(
         &editor,
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$PDIFF_EDITOR_CAPTURE\"\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$RAMO_EDITOR_CAPTURE\"\n",
     )
     .unwrap();
     fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
@@ -255,7 +255,7 @@ fn editor_key_launches_literal_file_and_line_argv_then_resumes_the_review() {
         &args.iter().map(String::as_str).collect::<Vec<_>>(),
         &[
             ("EDITOR", editor_setting.as_str()),
-            ("PDIFF_EDITOR_CAPTURE", capture_setting.as_str()),
+            ("RAMO_EDITOR_CAPTURE", capture_setting.as_str()),
         ],
     );
     session.read_until("initial change");
@@ -278,7 +278,7 @@ fn panic_after_terminal_entry_restores_the_alternate_screen_before_diagnostic() 
     let mut session = PtyProcess::spawn_with_env(
         fixture.dir.path(),
         &args.iter().map(String::as_str).collect::<Vec<_>>(),
-        &[("PDIFF_TEST_PANIC_AFTER_TERMINAL", "1")],
+        &[("RAMO_TEST_PANIC_AFTER_TERMINAL", "1")],
     );
     assert_eq!(session.wait(), 101);
     let entered = session
@@ -307,7 +307,7 @@ fn runtime_error_after_terminal_entry_restores_before_printing_the_error() {
     let mut session = PtyProcess::spawn_with_env(
         fixture.dir.path(),
         &args.iter().map(String::as_str).collect::<Vec<_>>(),
-        &[("PDIFF_TEST_ERROR_AFTER_TERMINAL", "1")],
+        &[("RAMO_TEST_ERROR_AFTER_TERMINAL", "1")],
     );
     assert_eq!(session.wait(), 1);
     let entered = session
@@ -346,7 +346,7 @@ fn ctrl_z_restores_terminal_then_sigcont_redraws_the_review() {
         }
         assert!(
             Instant::now() < deadline,
-            "pdiff did not enter stopped state"
+            "ramo did not enter stopped state"
         );
         std::thread::sleep(Duration::from_millis(10));
     }

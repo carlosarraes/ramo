@@ -134,11 +134,11 @@ impl SessionRegistry {
         match matches.as_slice() {
             [session] => Ok(session.clone()),
             [] => Err(format!(
-                "No live pdiff session matches {}.",
+                "No live ramo session matches {}.",
                 describe_selector(selector)
             )),
             sessions => Err(format!(
-                "{} live pdiff sessions match {}; select one by session id.",
+                "{} live ramo sessions match {}; select one by session id.",
                 sessions.len(),
                 describe_selector(selector)
             )),
@@ -261,7 +261,7 @@ pub fn dispatch_session_command(
                 session.pending_responses.remove(&request_id);
             }
             Err(format!(
-                "Timed out waiting for live pdiff session {session_id} to apply the command"
+                "Timed out waiting for live ramo session {session_id} to apply the command"
             ))
         }
     }
@@ -376,10 +376,10 @@ pub fn spawn_session_daemon(options: SessionDaemonOptions) -> io::Result<Session
     let listener = TcpListener::bind(requested).map_err(|error| {
         let message = if error.kind() == io::ErrorKind::AddrInUse {
             format!(
-                "cannot start the pdiff session broker on {requested}: address is already in use"
+                "cannot start the ramo session broker on {requested}: address is already in use"
             )
         } else {
-            format!("cannot start the pdiff session broker on {requested}: {error}")
+            format!("cannot start the ramo session broker on {requested}: {error}")
         };
         io::Error::new(error.kind(), message)
     })?;
@@ -398,7 +398,7 @@ pub fn spawn_session_daemon(options: SessionDaemonOptions) -> io::Result<Session
     let daemon_state = Arc::clone(&state);
     let daemon_stop = Arc::clone(&stop);
     let thread = thread::Builder::new()
-        .name("pdiff-session-daemon".into())
+        .name("ramo-session-daemon".into())
         .spawn(move || {
             serve_loop(
                 listener,
@@ -444,7 +444,7 @@ fn serve_loop(
                     daemon.last_activity = Instant::now();
                 }
                 let _ = thread::Builder::new()
-                    .name("pdiff-session-http".into())
+                    .name("ramo-session-http".into())
                     .spawn(move || {
                         if super::wire::connection_uses_session_wire(&stream).unwrap_or(false) {
                             serve_wire_connection(stream, &registry, &stop);
@@ -537,7 +537,7 @@ fn serve_wire_connection(
         Err(_) => return,
     };
     let writer_thread = thread::Builder::new()
-        .name("pdiff-session-wire-writer".into())
+        .name("ramo-session-wire-writer".into())
         .spawn(move || {
             while let Ok(frame) = route_receiver.recv() {
                 if super::write_session_frame(&mut writer, &frame).is_err() {

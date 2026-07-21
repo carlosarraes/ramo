@@ -1,4 +1,4 @@
-use pdiff::markup::{StmlElement, StmlNode, StmlParseLimits, decode_stml_entities, parse_stml};
+use ramo::markup::{StmlElement, StmlNode, StmlParseLimits, decode_stml_entities, parse_stml};
 
 fn first_element(markup: &str) -> StmlElement {
     parse_stml(markup, StmlParseLimits::default())

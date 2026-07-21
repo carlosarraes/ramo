@@ -4,10 +4,10 @@ use std::io::Cursor;
 use std::path::Path;
 use std::sync::Mutex;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, ReviewInput, VcsId};
-use pdiff::input::{LoadContext, ReviewLoader};
-use pdiff::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, ReviewInput, VcsId};
+use ramo::input::{LoadContext, ReviewLoader};
+use ramo::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
 
 enum Reply {
     Output {
@@ -94,7 +94,7 @@ fn load(
     input: &ReviewInput,
     runner: &ScriptedRunner,
     cwd: &Path,
-) -> Result<pdiff::input::LoadedReview, pdiff::input::LoadError> {
+) -> Result<ramo::input::LoadedReview, ramo::input::LoadError> {
     let config = ResolvedConfig {
         vcs: Some(VcsId::Sl),
         ..Default::default()
@@ -113,11 +113,11 @@ fn load(
 #[test]
 fn sl_builders_use_git_format_and_show_change() {
     assert_eq!(
-        pdiff::vcs::sl::build_sl_diff_args(Some("main::."), &["src".into()]),
+        ramo::vcs::sl::build_sl_diff_args(Some("main::."), &["src".into()]),
         ["diff", "--git", "-r", "main::.", "--", "src"]
     );
     assert_eq!(
-        pdiff::vcs::sl::build_sl_show_args(None, &[]),
+        ramo::vcs::sl::build_sl_show_args(None, &[]),
         ["diff", "--git", "--change", "."]
     );
 }

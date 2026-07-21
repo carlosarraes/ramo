@@ -9,9 +9,9 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 const STATE_VERSION: u64 = 1;
-const DISABLE_UPDATE_NOTICE_ENV: &str = "PDIFF_DISABLE_UPDATE_NOTICE";
+const DISABLE_UPDATE_NOTICE_ENV: &str = "RAMO_DISABLE_UPDATE_NOTICE";
 const HUNK_DISABLE_UPDATE_NOTICE_ENV: &str = "HUNK_DISABLE_UPDATE_NOTICE";
-const RELEASE_REPOSITORY: &str = "https://github.com/carlosarraes/pdiff.git";
+const RELEASE_REPOSITORY: &str = "https://github.com/carlosarraes/ramo.git";
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(5);
 const UPDATE_DELAY: Duration = Duration::from_millis(1_200);
 const UPDATE_REPEAT: Duration = Duration::from_secs(21_600);
@@ -69,14 +69,14 @@ pub fn resolve_skill_refresh_notice(
 
     match previous_version {
         Some(previous) if previous != installed_version => Some(format!(
-            "pdiff {installed_version} installed • If your agent copied pdiff's skill, run pdiff skill path"
+            "ramo {installed_version} installed • If your agent copied ramo's skill, run ramo skill path"
         )),
         _ => None,
     }
 }
 
 fn state_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|path| path.join("pdiff/state.json"))
+    dirs::config_dir().map(|path| path.join("ramo/state.json"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,7 +104,7 @@ impl RemoteUpdateRuntime {
         let worker_cancelled = Arc::clone(&cancelled);
         let (sender, receiver) = mpsc::channel();
         std::thread::Builder::new()
-            .name("pdiff-update-notice".into())
+            .name("ramo-update-notice".into())
             .spawn(move || {
                 if !wait_interruptibly(&worker_cancelled, delay) {
                     return;
@@ -162,7 +162,7 @@ pub fn select_remote_update_notice(installed_version: &str, tags: &str) -> Optio
         candidates.filter(|candidate| candidate > &installed).max()
     }?;
     Some(format!(
-        "Update available: {} • install the latest pdiff release",
+        "Update available: {} • install the latest ramo release",
         selected.normalized()
     ))
 }
@@ -227,7 +227,7 @@ fn read_bounded(mut reader: impl Read, limit: usize) -> Vec<u8> {
 
 fn update_timeout() -> Duration {
     #[cfg(debug_assertions)]
-    if let Ok(value) = std::env::var("PDIFF_TEST_UPDATE_NOTICE_TIMEOUT_MS")
+    if let Ok(value) = std::env::var("RAMO_TEST_UPDATE_NOTICE_TIMEOUT_MS")
         && let Ok(milliseconds) = value.parse::<u64>()
     {
         return Duration::from_millis(milliseconds.max(1));
@@ -237,7 +237,7 @@ fn update_timeout() -> Duration {
 
 fn update_delay() -> Duration {
     #[cfg(debug_assertions)]
-    if let Ok(value) = std::env::var("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS")
+    if let Ok(value) = std::env::var("RAMO_TEST_UPDATE_NOTICE_DELAY_MS")
         && let Ok(milliseconds) = value.parse::<u64>()
     {
         return Duration::from_millis(milliseconds);

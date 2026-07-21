@@ -1,10 +1,10 @@
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::review::{ReviewController, ReviewOptions, Viewport};
-use pdiff::session::{
+use ramo::core::input::LayoutMode;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::review::{ReviewController, ReviewOptions, Viewport};
+use ramo::session::{
     ClientSessionFrame, MAX_SESSION_FRAME_BYTES, ServerSessionFrame, SessionAddress,
     SessionDaemonOptions, SessionDescriptor, SessionRegistrationClient, build_registration,
     build_snapshot, read_session_frame, spawn_session_daemon, write_session_frame,
@@ -14,8 +14,8 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 const PATCH: &str = "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-old\n+new\n";
 
 fn fixture() -> (
-    pdiff::session::SessionRegistration,
-    pdiff::session::SessionSnapshot,
+    ramo::session::SessionRegistration,
+    ramo::session::SessionSnapshot,
 ) {
     let mut controller = ReviewController::new(
         parse_unified_diff(PATCH),
@@ -136,12 +136,12 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
             pixel_height: 0,
         })
         .unwrap();
-    let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("pdiff"));
+    let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("ramo"));
     command.cwd(temp.path());
     command.args(["patch", patch.to_str().unwrap()]);
-    command.env("PDIFF_SESSION_HOST", "127.0.0.1");
-    command.env("PDIFF_SESSION_PORT", port.to_string());
-    command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+    command.env("RAMO_SESSION_HOST", "127.0.0.1");
+    command.env("RAMO_SESSION_PORT", port.to_string());
+    command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
     let mut child = pair.slave.spawn_command(command).unwrap();
     drop(pair.slave);
     let mut writer = pair.master.take_writer().unwrap();
@@ -154,7 +154,7 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
         *reader_output.lock().unwrap() = bytes;
     });
     let address = format!("127.0.0.1:{port}").parse().unwrap();
-    let client = pdiff::session::SessionClient::new(address);
+    let client = ramo::session::SessionClient::new(address);
     let deadline = Instant::now() + Duration::from_secs(2);
     while client
         .request(

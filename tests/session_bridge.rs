@@ -1,8 +1,8 @@
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::notes::LineRange;
-use pdiff::review::{ReviewController, ReviewOptions, Viewport};
-use pdiff::session::{apply_session_request, build_snapshot};
+use ramo::core::input::LayoutMode;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::notes::LineRange;
+use ramo::review::{ReviewController, ReviewOptions, Viewport};
+use ramo::session::{apply_session_request, build_snapshot};
 
 const PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,3 @@\n keep\n-old\n+new\n tail\n@@ -10,2 +10,2 @@\n-old ten\n+new ten\n end\n";
 

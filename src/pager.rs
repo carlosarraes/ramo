@@ -54,10 +54,10 @@ impl Error for PagerError {
 
 pub fn resolve_text_pager(env: &BTreeMap<String, String>) -> Result<PagerSpec, PagerError> {
     let (variable, value) = env
-        .get("PDIFF_TEXT_PAGER")
-        .map(|value| ("PDIFF_TEXT_PAGER", value.as_str()))
+        .get("RAMO_TEXT_PAGER")
+        .map(|value| ("RAMO_TEXT_PAGER", value.as_str()))
         .or_else(|| env.get("PAGER").map(|value| ("PAGER", value.as_str())))
-        .unwrap_or(("PDIFF_TEXT_PAGER", "less -R"));
+        .unwrap_or(("RAMO_TEXT_PAGER", "less -R"));
 
     let words = shell_words::split(value).map_err(|error| PagerError::InvalidSetting {
         variable,
@@ -67,7 +67,7 @@ pub fn resolve_text_pager(env: &BTreeMap<String, String>) -> Result<PagerSpec, P
         return Ok(default_pager());
     }
     let spec = parse_words(variable, words)?;
-    if is_pdiff_program(&spec.program) {
+    if is_ramo_program(&spec.program) {
         return Ok(default_pager());
     }
     Ok(spec)
@@ -116,7 +116,7 @@ fn assignment(word: &str) -> Option<(&str, &str)> {
     Some((name, value))
 }
 
-fn is_pdiff_program(program: &str) -> bool {
+fn is_ramo_program(program: &str) -> bool {
     let name = program
         .rsplit(['/', '\\'])
         .next()
@@ -125,7 +125,7 @@ fn is_pdiff_program(program: &str) -> bool {
     name.strip_suffix(".exe")
         .or_else(|| name.strip_suffix(".cmd"))
         .unwrap_or(&name)
-        == "pdiff"
+        == "ramo"
 }
 
 fn default_pager() -> PagerSpec {

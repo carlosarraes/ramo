@@ -3,17 +3,17 @@ use std::io;
 use std::process::Command;
 use std::time::Instant;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::input::{LoadContext, ReviewLoader};
-use pdiff::notes::{LiveNoteInput, NoteAnchorSide};
-use pdiff::review::{ReviewAction, ReviewController, ReviewOptions, Viewport};
-use pdiff::session::{
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::input::{LoadContext, ReviewLoader};
+use ramo::notes::{LiveNoteInput, NoteAnchorSide};
+use ramo::review::{ReviewAction, ReviewController, ReviewOptions, Viewport};
+use ramo::session::{
     SessionDescriptor, apply_session_reload, build_registration, build_session_review,
     build_snapshot, refresh_session_descriptor,
 };
-use pdiff::vcs::SystemCommandRunner;
-use pdiff::watch::WatchRuntime;
+use ramo::vcs::SystemCommandRunner;
+use ramo::watch::WatchRuntime;
 use serde_json::json;
 
 const FIRST_PATCH: &str = "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-old a\n+new a\ndiff --git a/src/b.rs b/src/b.rs\n--- a/src/b.rs\n+++ b/src/b.rs\n@@ -1 +1 @@\n-old b\n+new b\n";
@@ -26,7 +26,7 @@ fn viewport() -> Viewport {
     }
 }
 
-fn load(input: &ReviewInput, cwd: &std::path::Path) -> pdiff::input::LoadedReview {
+fn load(input: &ReviewInput, cwd: &std::path::Path) -> ramo::input::LoadedReview {
     let config = ResolvedConfig::default();
     let runner = SystemCommandRunner;
     ReviewLoader
@@ -198,7 +198,7 @@ fn rejected_reload_does_not_replace_review_or_runtime_plan() {
         viewport(),
     )
     .unwrap_err();
-    assert!(error.contains("outside the initial pdiff root"));
+    assert!(error.contains("outside the initial ramo root"));
     assert_eq!(controller.files()[0].patch, original_patch);
 
     fs::write(&after, "valid second\n").unwrap();
@@ -231,8 +231,8 @@ fn git_reload_uses_the_requested_source_and_refreshes_metadata() {
         );
     };
     git(&["init", "-q"]);
-    git(&["config", "user.name", "Pdiff Test"]);
-    git(&["config", "user.email", "pdiff@example.invalid"]);
+    git(&["config", "user.name", "Ramo Test"]);
+    git(&["config", "user.email", "ramo@example.invalid"]);
     fs::write(repo.path().join("file.rs"), "committed\n").unwrap();
     git(&["add", "file.rs"]);
     git(&["commit", "-q", "-m", "initial"]);

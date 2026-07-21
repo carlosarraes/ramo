@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use pdiff::session::{SessionAddress, SessionClient, SessionDaemonOptions, spawn_session_daemon};
+use ramo::session::{SessionAddress, SessionClient, SessionDaemonOptions, spawn_session_daemon};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde_json::{Value, json};
 
@@ -27,13 +27,13 @@ impl ReviewPty {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("pdiff"));
+        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("ramo"));
         command.cwd(cwd);
         command.args(["patch", patch.to_str().unwrap()]);
-        command.env("PDIFF_SESSION_HOST", address.ip().to_string());
-        command.env("PDIFF_SESSION_PORT", address.port().to_string());
-        command.env("PDIFF_SESSION_PATH", session_path);
-        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+        command.env("RAMO_SESSION_HOST", address.ip().to_string());
+        command.env("RAMO_SESSION_PORT", address.port().to_string());
+        command.env("RAMO_SESSION_PATH", session_path);
+        command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         let child = pair.slave.spawn_command(command).unwrap();
         drop(pair.slave);
         let writer = pair.master.take_writer().unwrap();
@@ -94,8 +94,8 @@ fn two_live_terminals_route_isolated_commands_and_reconnect_before_idle_exit() {
     let second_patch = repo.path().join("second.patch");
     std::fs::write(&first_patch, PATCH_ONE).unwrap();
     std::fs::write(&second_patch, PATCH_TWO).unwrap();
-    let first_path = "/dev/pts/pdiff-one";
-    let second_path = "/dev/pts/pdiff-two";
+    let first_path = "/dev/pts/ramo-one";
+    let second_path = "/dev/pts/ramo-two";
     let first = ReviewPty::spawn(repo.path(), &first_patch, address, first_path);
     let second = ReviewPty::spawn(repo.path(), &second_patch, address, second_path);
     let client = SessionClient::new(address);
@@ -132,7 +132,7 @@ fn two_live_terminals_route_isolated_commands_and_reconnect_before_idle_exit() {
             Duration::from_secs(1),
         )
         .unwrap_err();
-    assert!(ambiguous.to_string().contains("2 live pdiff sessions"));
+    assert!(ambiguous.to_string().contains("2 live ramo sessions"));
     let by_path = client
         .request(
             json!({"action":"get","selector":{"sessionPath":second_path}}),

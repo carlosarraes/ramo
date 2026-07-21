@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::model::{
+use ramo::core::input::LayoutMode;
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, MovedLineKind, SourceSpec,
 };
-use pdiff::review::{
+use ramo::review::{
     ContextSourceLoader, ReviewController, ReviewOptions, SelectionPoint, SourceFailure, Viewport,
 };
-use pdiff::ui::highlight::{HighlightCache, HighlightCacheStats};
-use pdiff::ui::review::ReviewWidget;
-use pdiff::ui::themes::ThemeRegistry;
+use ramo::ui::highlight::{HighlightCache, HighlightCacheStats};
+use ramo::ui::review::ReviewWidget;
+use ramo::ui::themes::ThemeRegistry;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
@@ -185,7 +185,7 @@ fn renderer_highlights_only_the_bounded_visible_window() {
 fn inline_agent_notes_render_inside_the_measured_review_stream() {
     let mut annotated = file("src/note.rs", FileChangeKind::Modified, 4);
     annotated.agent = Some(
-        pdiff::notes::parse_agent_context(
+        ramo::notes::parse_agent_context(
             "agent.json",
             br#"{"files":[{"path":"src/note.rs","annotations":[{
               "newRange":[2,2],
@@ -232,7 +232,7 @@ fn inline_agent_notes_render_inside_the_measured_review_stream() {
 fn inline_agent_markup_replaces_plain_fallback_and_keeps_semantic_span_style() {
     let mut annotated = file("src/markup.rs", FileChangeKind::Modified, 4);
     annotated.agent = Some(
-        pdiff::notes::parse_agent_context(
+        ramo::notes::parse_agent_context(
             "agent.json",
             br#"{"files":[{"path":"src/markup.rs","annotations":[{
               "newRange":[2,2],

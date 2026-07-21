@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::{SESSION_REGISTRATION_VERSION, SessionRegistration, SessionSnapshot};
 
-pub const SESSION_WIRE_PREFACE: &[u8] = b"PDIFF-SESSION/1\n";
+pub const SESSION_WIRE_PREFACE: &[u8] = b"RAMO-SESSION/1\n";
 pub const MAX_SESSION_FRAME_BYTES: usize = 1024 * 1024;
 
 pub(crate) fn connection_uses_session_wire(stream: &TcpStream) -> io::Result<bool> {
@@ -26,7 +26,7 @@ pub(crate) fn connection_uses_session_wire(stream: &TcpStream) -> io::Result<boo
         if Instant::now() >= deadline {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                "timed out reading pdiff session connection preface",
+                "timed out reading ramo session connection preface",
             ));
         }
         thread::sleep(Duration::from_millis(2));
@@ -77,7 +77,7 @@ impl SessionWireFrame for ClientSessionFrame {
         if version.is_some_and(|version| version != SESSION_REGISTRATION_VERSION) {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "incompatible pdiff session registration frame version",
+                "incompatible ramo session registration frame version",
             ))
         } else {
             Ok(())
@@ -115,7 +115,7 @@ impl SessionWireFrame for ServerSessionFrame {
         if version.is_some_and(|version| version != SESSION_REGISTRATION_VERSION) {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "incompatible pdiff session daemon frame version",
+                "incompatible ramo session daemon frame version",
             ))
         } else {
             Ok(())
@@ -132,7 +132,7 @@ pub fn write_session_frame<W: Write, F: SessionWireFrame>(
     if payload.len() > MAX_SESSION_FRAME_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "pdiff session frame exceeds 1 MiB",
+            "ramo session frame exceeds 1 MiB",
         ));
     }
     writer.write_all(&(payload.len() as u32).to_be_bytes())?;
@@ -147,7 +147,7 @@ pub fn read_session_frame<R: Read, F: SessionWireFrame>(reader: &mut R) -> io::R
     if length == 0 || length > MAX_SESSION_FRAME_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "invalid bounded pdiff session frame length",
+            "invalid bounded ramo session frame length",
         ));
     }
     let mut payload = vec![0_u8; length];

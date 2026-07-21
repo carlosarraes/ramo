@@ -4,10 +4,10 @@ use std::io::Cursor;
 use std::path::Path;
 use std::sync::Mutex;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, ReviewInput, VcsId};
-use pdiff::input::{LoadContext, ReloadPlan, ReviewLoader};
-use pdiff::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, ReviewInput, VcsId};
+use ramo::input::{LoadContext, ReloadPlan, ReviewLoader};
+use ramo::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
 
 enum Reply {
     Output {
@@ -96,7 +96,7 @@ fn load(
     input: &ReviewInput,
     runner: &ScriptedRunner,
     cwd: &Path,
-) -> Result<pdiff::input::LoadedReview, pdiff::input::LoadError> {
+) -> Result<ramo::input::LoadedReview, ramo::input::LoadError> {
     let config = ResolvedConfig {
         vcs: Some(VcsId::Jj),
         ..Default::default()
@@ -115,11 +115,11 @@ fn load(
 #[test]
 fn jj_builders_use_git_format_and_fileset_boundary() {
     assert_eq!(
-        pdiff::vcs::jj::build_jj_diff_args(Some("main..@"), &["src/lib.rs".into()]),
+        ramo::vcs::jj::build_jj_diff_args(Some("main..@"), &["src/lib.rs".into()]),
         ["diff", "--git", "-r", "main..@", "--", "src/lib.rs"]
     );
     assert_eq!(
-        pdiff::vcs::jj::build_jj_show_args(None, &[]),
+        ramo::vcs::jj::build_jj_show_args(None, &[]),
         ["diff", "--git", "-r", "@"]
     );
 }

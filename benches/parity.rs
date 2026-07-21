@@ -2,13 +2,13 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, ReviewInput};
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::input::{LoadContext, ReviewLoader};
-use pdiff::review::{ReviewAction, ReviewController, ReviewOptions, ScrollUnit, Viewport};
-use pdiff::vcs::SystemCommandRunner;
-use pdiff::watch::{WatchIntervals, WatchRuntime, WatchUpdate};
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, ReviewInput};
+use ramo::diff::parser::parse_unified_diff;
+use ramo::input::{LoadContext, ReviewLoader};
+use ramo::review::{ReviewAction, ReviewController, ReviewOptions, ScrollUnit, Viewport};
+use ramo::vcs::SystemCommandRunner;
+use ramo::watch::{WatchIntervals, WatchRuntime, WatchUpdate};
 
 struct BenchDir(PathBuf);
 
@@ -19,7 +19,7 @@ impl BenchDir {
             .expect("system clock after Unix epoch")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "pdiff-parity-bench-{}-{unique}",
+            "ramo-parity-bench-{}-{unique}",
             std::process::id()
         ));
         std::fs::create_dir(&path).expect("create temporary benchmark directory");
@@ -69,7 +69,7 @@ fn measure<T>(name: &str, iterations: usize, mut operation: impl FnMut() -> T) {
     );
 }
 
-fn navigation_resize(files: Vec<pdiff::diff::model::DiffFile>) {
+fn navigation_resize(files: Vec<ramo::diff::model::DiffFile>) {
     let mut controller = ReviewController::new(files, ReviewOptions::default());
     for cycle in 0..120 {
         let viewport = Viewport {
@@ -139,7 +139,7 @@ fn main() {
     let unicode = patch(1, 10_000, true);
     let navigation = parse_unified_diff(&patch(100, 10, true));
 
-    println!("pdiff parity stress benchmark (descriptive; no timing threshold)");
+    println!("ramo parity stress benchmark (descriptive; no timing threshold)");
     measure("parse_large_patch_50000_changed_lines", 5, || {
         parse_unified_diff(black_box(&large))
     });

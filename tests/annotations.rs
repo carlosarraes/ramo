@@ -1,7 +1,7 @@
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::notes::LineRange;
-use pdiff::review::{ReviewController, ReviewOptions, Viewport};
+use ramo::core::input::LayoutMode;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::notes::LineRange;
+use ramo::review::{ReviewController, ReviewOptions, Viewport};
 
 const PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,3 @@\n keep\n-old\n+new\n tail\n";
 
@@ -9,7 +9,7 @@ const PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++
 fn export_contains_human_side_ranges_and_context_but_not_external_notes() {
     let mut files = parse_unified_diff(PATCH);
     files[0].agent = Some(
-        pdiff::notes::parse_agent_context(
+        ramo::notes::parse_agent_context(
             "agent.json",
             br#"{"files":[{"path":"src/lib.rs","annotations":[{
               "newRange":[2,2],"summary":"external","source":"user"
@@ -44,7 +44,7 @@ fn export_contains_human_side_ranges_and_context_but_not_external_notes() {
     assert_eq!(annotations[0].display_range, "L2 → R2");
     assert!(annotations[0].diff_context.contains("-old"));
     assert!(annotations[0].diff_context.contains("+new"));
-    let markdown = pdiff::annotations::output::format_markdown(&annotations);
+    let markdown = ramo::annotations::output::format_markdown(&annotations);
     assert!(markdown.contains("human review"));
     assert!(!markdown.contains("external"));
 }

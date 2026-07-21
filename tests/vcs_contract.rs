@@ -1,9 +1,9 @@
 use std::io;
 use std::path::Path;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, ReviewInput, VcsId};
-use pdiff::vcs::{
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, ReviewInput, VcsId};
+use ramo::vcs::{
     CommandOutput, CommandRunner, CommandSpec, VcsAdapter, VcsError, VcsLoadContext, VcsOperation,
 };
 
@@ -35,7 +35,7 @@ fn neutral_operations_do_not_leak_cli_command_names() {
 
 #[test]
 fn git_args_force_parseable_prefixes_and_preserve_pathspec_boundaries() {
-    let args = pdiff::vcs::git::build_git_diff_args(
+    let args = ramo::vcs::git::build_git_diff_args(
         Some("main...HEAD"),
         true,
         &["src/lib.rs".into()],
@@ -64,13 +64,13 @@ fn git_args_force_parseable_prefixes_and_preserve_pathspec_boundaries() {
 
 #[test]
 fn git_show_and_stash_args_disable_external_diff_and_color() {
-    let show = pdiff::vcs::git::build_git_show_args(Some("HEAD^"), &["src".into()], false);
+    let show = ramo::vcs::git::build_git_show_args(Some("HEAD^"), &["src".into()], false);
     assert!(show.windows(2).any(|pair| pair == ["show", "--format="]));
     assert!(show.iter().any(|arg| arg == "--no-ext-diff"));
     assert!(show.iter().any(|arg| arg == "--no-color"));
     assert_eq!(&show[show.len() - 2..], ["--", "src"]);
 
-    let stash = pdiff::vcs::git::build_git_stash_args(Some("stash@{1}"), false);
+    let stash = ramo::vcs::git::build_git_stash_args(Some("stash@{1}"), false);
     assert!(stash.windows(3).any(|args| args == ["stash", "show", "-p"]));
     assert_eq!(stash.last().map(String::as_str), Some("stash@{1}"));
 }
@@ -82,12 +82,12 @@ fn nearest_checkout_wins_and_same_root_prefers_jj_then_sl_then_git() {
     std::fs::create_dir_all(temp.path().join("nested/.git")).unwrap();
     std::fs::create_dir_all(temp.path().join("nested/.jj")).unwrap();
     std::fs::create_dir_all(temp.path().join("nested/src")).unwrap();
-    let selected = pdiff::vcs::detect::select_vcs(&temp.path().join("nested/src"), None).unwrap();
+    let selected = ramo::vcs::detect::select_vcs(&temp.path().join("nested/src"), None).unwrap();
     assert_eq!(selected.id, VcsId::Jj);
     assert_eq!(selected.repo_root, temp.path().join("nested"));
 
     let explicit =
-        pdiff::vcs::detect::select_vcs(&temp.path().join("nested/src"), Some(VcsId::Git)).unwrap();
+        ramo::vcs::detect::select_vcs(&temp.path().join("nested/src"), Some(VcsId::Git)).unwrap();
     assert_eq!(explicit.id, VcsId::Git);
     assert_eq!(explicit.repo_root, temp.path().join("nested"));
 }
@@ -98,12 +98,12 @@ fn upstream_mercurial_marker_is_not_misdetected_as_sapling() {
     std::fs::create_dir_all(temp.path().join(".hg")).unwrap();
     std::fs::write(temp.path().join(".hg/requires"), "revlogv1\n").unwrap();
     assert_ne!(
-        pdiff::vcs::detect::select_vcs(temp.path(), None).map(|value| value.id),
+        ramo::vcs::detect::select_vcs(temp.path(), None).map(|value| value.id),
         Some(VcsId::Sl)
     );
     std::fs::write(temp.path().join(".hg/requires"), "revlogv1\ntreestate\n").unwrap();
     assert_eq!(
-        pdiff::vcs::detect::select_vcs(temp.path(), None)
+        ramo::vcs::detect::select_vcs(temp.path(), None)
             .unwrap()
             .id,
         VcsId::Sl
@@ -147,7 +147,7 @@ fn git_error(input: ReviewInput, failure: FailureKind) -> String {
         jj_executable: "jj",
         sl_executable: "sl",
     };
-    pdiff::vcs::git::GitAdapter
+    ramo::vcs::git::GitAdapter
         .load(&input, &context)
         .unwrap_err()
         .to_string()

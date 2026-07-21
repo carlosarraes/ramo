@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::model::{
+use ramo::core::input::LayoutMode;
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::review::{
+use ramo::review::{
     HunkTarget, ReviewAction, ReviewController, ReviewEffect, ReviewFileStatus, ReviewOptions,
     ScrollUnit, SidebarEntrySnapshot, Viewport,
 };

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::review::{ReviewAction, ReviewController, ReviewOptions, ScrollUnit, Viewport};
+use ramo::diff::parser::parse_unified_diff;
+use ramo::review::{ReviewAction, ReviewController, ReviewOptions, ScrollUnit, Viewport};
 
 fn patch(files: usize, changed_pairs: usize) -> String {
     let mut patch = String::new();

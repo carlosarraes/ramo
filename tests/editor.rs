@@ -2,8 +2,8 @@ use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 
-use pdiff::process::command::{CommandExecutor, CommandRequest, CommandResult};
-use pdiff::process::editor::{
+use ramo::process::command::{CommandExecutor, CommandRequest, CommandResult};
+use ramo::process::editor::{
     EditorError, EditorLaunchError, EditorLauncher, build_editor_command, should_suspend_for_editor,
 };
 

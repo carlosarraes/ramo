@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use pdiff::config::{ConfigPaths, ConfigResolver, CustomThemeConfig};
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::ui::themes::{
+use ramo::config::{ConfigPaths, ConfigResolver, CustomThemeConfig};
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::ui::themes::{
     AppTheme, BUNDLED_THEME_IDS, ReviewLineStyle, TerminalAppearance, ThemeRegistry,
 };
 use ratatui::style::Color;

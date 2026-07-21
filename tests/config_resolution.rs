@@ -1,11 +1,11 @@
-use pdiff::config::{ConfigPaths, ConfigResolver};
-use pdiff::core::input::{CommonOptions, LayoutMode, ReviewInput, VcsId};
+use ramo::config::{ConfigPaths, ConfigResolver};
+use ramo::core::input::{CommonOptions, LayoutMode, ReviewInput, VcsId};
 
 #[test]
 fn builtin_user_repo_command_and_cli_layers_merge_in_order() {
     let temp = tempfile::tempdir().unwrap();
     let user = temp.path().join("user.toml");
-    let repo = temp.path().join("repo/.pdiff/config.toml");
+    let repo = temp.path().join("repo/.ramo/config.toml");
     std::fs::create_dir_all(repo.parent().unwrap()).unwrap();
     std::fs::write(
         &user,
@@ -36,7 +36,7 @@ fn builtin_user_repo_command_and_cli_layers_merge_in_order() {
 
 fn patch_input(options: CommonOptions) -> ReviewInput {
     ReviewInput::Patch {
-        source: pdiff::core::input::PatchSource::Stdin,
+        source: ramo::core::input::PatchSource::Stdin,
         options,
     }
 }
@@ -121,9 +121,9 @@ fn missing_files_are_ignored() {
 #[test]
 fn discovery_chooses_the_nearest_repository_config() {
     let temp = tempfile::tempdir().unwrap();
-    let outer = temp.path().join(".pdiff/config.toml");
+    let outer = temp.path().join(".ramo/config.toml");
     let inner_root = temp.path().join("nested/project");
-    let inner = inner_root.join(".pdiff/config.toml");
+    let inner = inner_root.join(".ramo/config.toml");
     let cwd = inner_root.join("src");
     std::fs::create_dir_all(outer.parent().unwrap()).unwrap();
     std::fs::create_dir_all(inner.parent().unwrap()).unwrap();

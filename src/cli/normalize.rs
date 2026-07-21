@@ -261,7 +261,7 @@ fn normalize_session_navigate(args: SessionNavigateArgs) -> Result<SessionComman
 
 fn normalize_session_reload(args: SessionReloadArgs) -> Result<SessionCommand, CliError> {
     let selector = normalize_reload_selector(&args)?;
-    let mut nested = vec!["pdiff".to_owned()];
+    let mut nested = vec!["ramo".to_owned()];
     nested.extend(args.review_command);
     let next_input = match super::parse_from(nested, true)?.action {
         Action::Review(ReviewInput::Patch {
@@ -276,7 +276,7 @@ fn normalize_session_reload(args: SessionReloadArgs) -> Result<SessionCommand, C
         Action::Review(input) => input,
         _ => {
             return Err(session_error(
-                "session reload accepts only a pdiff review command after --",
+                "session reload accepts only a ramo review command after --",
             ));
         }
     };

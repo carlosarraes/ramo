@@ -1,16 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use pdiff::app::App;
-use pdiff::config::{
+use ramo::app::App;
+use ramo::config::{
     ResolvedConfig, ViewPreferenceChanges, ViewPreferences, save_view_preferences,
 };
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::model::{
+use ramo::core::input::LayoutMode;
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::review::Viewport;
-use pdiff::ui::input::InputMode;
+use ramo::review::Viewport;
+use ramo::ui::input::InputMode;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -115,7 +115,7 @@ fn targeted_save_changes_only_owned_global_keys_and_preserves_toml_text() {
 #[test]
 fn save_creates_parents_and_io_errors_name_the_target() {
     let temp = tempfile::tempdir().unwrap();
-    let nested = temp.path().join("new/pdiff/config.toml");
+    let nested = temp.path().join("new/ramo/config.toml");
     let mut current = preferences();
     current.wrap_lines = true;
     save_view_preferences(

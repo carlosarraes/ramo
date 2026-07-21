@@ -216,7 +216,7 @@ fn route(request: HttpRequest, port: u16, registry: &Arc<Mutex<SessionRegistry>>
                 status: 200,
                 body: json!({
                     "ok": true,
-                    "name": "pdiff-session-broker",
+                    "name": "ramo-session-broker",
                     "version": super::SESSION_DAEMON_VERSION,
                     "sessionApi": SESSION_API_PATH,
                     "sessionCapabilities": SESSION_CAPABILITIES_PATH,
@@ -247,7 +247,7 @@ fn route(request: HttpRequest, port: u16, registry: &Arc<Mutex<SessionRegistry>>
         _ => error_response(
             404,
             "not-found",
-            "No pdiff session route exists at this path",
+            "No ramo session route exists at this path",
         ),
     }
 }
@@ -380,7 +380,7 @@ fn route_session_api(request: HttpRequest, registry: &Arc<Mutex<SessionRegistry>
         _ => error_response(
             400,
             "unsupported-action",
-            "Unsupported pdiff session action",
+            "Unsupported ramo session action",
         ),
     }
 }

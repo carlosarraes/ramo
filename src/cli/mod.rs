@@ -48,7 +48,7 @@ impl fmt::Display for CliError {
             }
             Self::InvalidDiffTargets(targets) => write!(
                 formatter,
-                "pdiff diff accepts one revision or two existing files; received {} target(s)",
+                "ramo diff accepts one revision or two existing files; received {} target(s)",
                 targets.len()
             ),
             Self::UnsupportedIntegration(target) => {

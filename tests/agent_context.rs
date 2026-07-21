@@ -2,15 +2,15 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::changeset::Changeset;
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::diff::model::DiffFile;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::input::{LoadContext, LoadError, ReviewLoader};
-use pdiff::notes::{AgentContextError, AgentContextSource, parse_agent_context};
-use pdiff::vcs::SystemCommandRunner;
-use pdiff::watch::{WatchRuntime, WatchUpdate};
+use ramo::config::ResolvedConfig;
+use ramo::core::changeset::Changeset;
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::diff::model::DiffFile;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::input::{LoadContext, LoadError, ReviewLoader};
+use ramo::notes::{AgentContextError, AgentContextSource, parse_agent_context};
+use ramo::vcs::SystemCommandRunner;
+use ramo::watch::{WatchRuntime, WatchUpdate};
 
 fn file(path: &str) -> DiffFile {
     parse_unified_diff(&format!(
@@ -137,14 +137,14 @@ fn malformed_files_summaries_and_ranges_are_operation_specific() {
 
 #[test]
 fn sidecar_and_collection_limits_are_enforced() {
-    let oversized = vec![b' '; pdiff::notes::MAX_AGENT_CONTEXT_BYTES + 1];
+    let oversized = vec![b' '; ramo::notes::MAX_AGENT_CONTEXT_BYTES + 1];
     assert!(matches!(
         parse_agent_context("large.json", &oversized),
         Err(AgentContextError::TooLarge { .. })
     ));
 
     let mut files = Vec::new();
-    for index in 0..=pdiff::notes::MAX_AGENT_FILES {
+    for index in 0..=ramo::notes::MAX_AGENT_FILES {
         files.push(format!(r#"{{"path":"{index}","annotations":[]}}"#));
     }
     let json = format!(r#"{{"files":[{}]}}"#, files.join(","));

@@ -1,12 +1,12 @@
-use pdiff::core::changeset::Changeset;
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::model::DiffFile;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::notes::{
+use ramo::core::changeset::Changeset;
+use ramo::core::input::LayoutMode;
+use ramo::diff::model::DiffFile;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::notes::{
     LineRange, NoteAnchorSide, NoteSource, annotated_hunks, annotation_range_label,
     note_box_layout, note_source, resolve_note_target, stable_note_id,
 };
-use pdiff::review::{
+use ramo::review::{
     ReviewAction, ReviewController, ReviewHit, ReviewOptions, ReviewPoint, Viewport,
 };
 
@@ -14,7 +14,7 @@ const PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++
 
 fn annotated_file() -> DiffFile {
     let mut changeset = Changeset::new("test", "test", parse_unified_diff(PATCH));
-    let context = pdiff::notes::parse_agent_context(
+    let context = ramo::notes::parse_agent_context(
         "agent.json",
         br#"{
           "files":[{"path":"src/lib.rs","annotations":[

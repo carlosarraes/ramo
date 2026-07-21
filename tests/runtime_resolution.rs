@@ -1,5 +1,5 @@
-use pdiff::cli::Action;
-use pdiff::runtime::{StartupAction, resolve_action, stdin_needs_tty_replacement};
+use ramo::cli::Action;
+use ramo::runtime::{StartupAction, resolve_action, stdin_needs_tty_replacement};
 
 #[test]
 fn integrations_do_not_initialize_the_review_ui() {

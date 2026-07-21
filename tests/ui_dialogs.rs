@@ -1,7 +1,7 @@
-use pdiff::ui::dialogs::{
+use ramo::ui::dialogs::{
     AGENT_SKILL_PROMPT, DialogOverlay, ThemeSelection, centered_rect, help_text,
 };
-use pdiff::ui::themes::ThemeRegistry;
+use ramo::ui::themes::ThemeRegistry;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -95,6 +95,6 @@ fn overlays_render_centered_and_remain_usable_at_small_sizes() {
         .unwrap();
     let frame = buffer_text(&terminal);
     assert!(frame.contains("Agent skill"), "{frame}");
-    assert!(frame.contains("pdiff skill path"), "{frame}");
-    assert!(AGENT_SKILL_PROMPT.contains("pdiff skill path"));
+    assert!(frame.contains("ramo skill path"), "{frame}");
+    assert!(AGENT_SKILL_PROMPT.contains("ramo skill path"));
 }

@@ -191,15 +191,15 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         Ok(client) => {
             app.attach_session_registration(client, session_descriptor, initial_snapshot.state)
         }
-        Err(error) => eprintln!("pdiff: live session registration disabled: {error}"),
+        Err(error) => eprintln!("ramo: live session registration disabled: {error}"),
     }
     let mut terminal = TerminalSession::enter()?;
     #[cfg(debug_assertions)]
-    if std::env::var_os("PDIFF_TEST_PANIC_AFTER_TERMINAL").is_some() {
+    if std::env::var_os("RAMO_TEST_PANIC_AFTER_TERMINAL").is_some() {
         panic!("injected terminal panic");
     }
     #[cfg(debug_assertions)]
-    let inject_runtime_error = std::env::var_os("PDIFF_TEST_ERROR_AFTER_TERMINAL").is_some();
+    let inject_runtime_error = std::env::var_os("RAMO_TEST_ERROR_AFTER_TERMINAL").is_some();
     #[cfg(not(debug_assertions))]
     let inject_runtime_error = false;
     let app_result = if inject_runtime_error {
@@ -234,13 +234,13 @@ fn finish_annotations(annotations: Vec<Annotation>, review_output: ReviewOutput)
     }
     match prompt_save_tty(annotations.len()) {
         Ok(true) => {
-            output::write_markdown(&annotations, &PathBuf::from("pdiff-review.md"))?;
-            eprintln!("Saved to pdiff-review.md.");
+            output::write_markdown(&annotations, &PathBuf::from("ramo-review.md"))?;
+            eprintln!("Saved to ramo-review.md.");
         }
         Ok(false) => eprintln!("\n{}", output::format_markdown(&annotations)),
         Err(_) => {
-            output::write_markdown(&annotations, &PathBuf::from("pdiff-review.md"))?;
-            eprintln!("Wrote {} comment(s) to pdiff-review.md", annotations.len());
+            output::write_markdown(&annotations, &PathBuf::from("ramo-review.md"))?;
+            eprintln!("Wrote {} comment(s) to ramo-review.md", annotations.len());
         }
     }
     Ok(())
@@ -253,7 +253,7 @@ fn prompt_save_tty(count: usize) -> io::Result<bool> {
         .open(tty_path())?;
     let mut writer = io::BufWriter::new(&tty);
     let mut reader = io::BufReader::new(&tty);
-    write!(writer, "Save {count} comment(s) to pdiff-review.md? [y/N] ")?;
+    write!(writer, "Save {count} comment(s) to ramo-review.md? [y/N] ")?;
     writer.flush()?;
     let mut answer = String::new();
     reader.read_line(&mut answer)?;

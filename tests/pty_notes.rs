@@ -26,12 +26,12 @@ impl PtyProcess {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("pdiff"));
+        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
         for arg in args {
             command.arg(arg);
         }
-        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+        command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         for (key, value) in env {
             command.env(key, value);
         }
@@ -69,7 +69,7 @@ impl PtyProcess {
             match self.chunks.recv_timeout(remaining) {
                 Ok(chunk) => self.raw.extend(chunk),
                 Err(RecvTimeoutError::Timeout) => {
-                    let clean = pdiff::input::sanitize_terminal_text(
+                    let clean = ramo::input::sanitize_terminal_text(
                         &String::from_utf8_lossy(&self.raw),
                         false,
                     );
@@ -78,7 +78,7 @@ impl PtyProcess {
                 Err(RecvTimeoutError::Disconnected) => panic!("PTY ended before {needle:?}"),
             }
             let clean =
-                pdiff::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
+                ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
             if clean.contains(needle) {
                 return clean;
             }
@@ -136,7 +136,7 @@ fn fixture() -> String {
 }
 
 fn disable_save_prompt(config_home: &Path) {
-    let path = config_home.join("pdiff/config.toml");
+    let path = config_home.join("ramo/config.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "prompt_save_view_preferences = false\n").unwrap();
 }

@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use pdiff::diff::model::{
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::ui::highlight::HighlightCache;
-use pdiff::ui::themes::ThemeRegistry;
+use ramo::ui::highlight::HighlightCache;
+use ramo::ui::themes::ThemeRegistry;
 
 fn file(id: &str, path: &str, lines: &[&str]) -> DiffFile {
     DiffFile {

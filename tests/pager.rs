@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, ReviewInput};
-use pdiff::input::{
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, ReviewInput};
+use ramo::input::{
     LoadContext, LoadOutcome, ReviewLoader, looks_like_patch, sanitize_terminal_text,
 };
-use pdiff::pager::resolve_text_pager;
-use pdiff::vcs::SystemCommandRunner;
+use ramo::pager::resolve_text_pager;
+use ramo::vcs::SystemCommandRunner;
 
 #[test]
 fn patch_detection_accepts_git_unified_and_hunk_only_inputs_after_ansi_removal() {
@@ -18,22 +18,22 @@ fn patch_detection_accepts_git_unified_and_hunk_only_inputs_after_ansi_removal()
 }
 
 #[test]
-fn pager_resolution_never_invokes_a_shell_or_recurses_into_pdiff() {
-    let env = BTreeMap::from([("PDIFF_TEXT_PAGER".into(), "env LESS=-FRX 'less' -R".into())]);
+fn pager_resolution_never_invokes_a_shell_or_recurses_into_ramo() {
+    let env = BTreeMap::from([("RAMO_TEXT_PAGER".into(), "env LESS=-FRX 'less' -R".into())]);
     let spec = resolve_text_pager(&env).unwrap();
     assert_eq!(spec.program, "less");
     assert_eq!(spec.args, ["-R"]);
     assert_eq!(spec.env.get("LESS").map(String::as_str), Some("-FRX"));
 
-    let recursive = BTreeMap::from([("PDIFF_TEXT_PAGER".into(), "/usr/bin/pdiff pager".into())]);
+    let recursive = BTreeMap::from([("RAMO_TEXT_PAGER".into(), "/usr/bin/ramo pager".into())]);
     assert_eq!(resolve_text_pager(&recursive).unwrap().display, "less -R");
 
-    for command in ["'C:\\tools\\PDIFF.EXE' pager", "'C:\\tools\\pdiff.cmd'"] {
-        let recursive = BTreeMap::from([("PDIFF_TEXT_PAGER".into(), command.into())]);
+    for command in ["'C:\\tools\\RAMO.EXE' pager", "'C:\\tools\\ramo.cmd'"] {
+        let recursive = BTreeMap::from([("RAMO_TEXT_PAGER".into(), command.into())]);
         assert_eq!(resolve_text_pager(&recursive).unwrap().display, "less -R");
     }
 
-    let empty = BTreeMap::from([("PDIFF_TEXT_PAGER".into(), String::new())]);
+    let empty = BTreeMap::from([("RAMO_TEXT_PAGER".into(), String::new())]);
     assert_eq!(resolve_text_pager(&empty).unwrap().display, "less -R");
 }
 
@@ -42,7 +42,7 @@ fn pager_resolution_preserves_literal_operators_and_assignment_precedence() {
     let env = BTreeMap::from([
         ("PAGER".into(), "more".into()),
         (
-            "PDIFF_TEXT_PAGER".into(),
+            "RAMO_TEXT_PAGER".into(),
             "LESS=-F less '-R;' '$(touch nope)' '|' '>' output".into(),
         ),
     ]);
@@ -51,12 +51,12 @@ fn pager_resolution_preserves_literal_operators_and_assignment_precedence() {
     assert_eq!(spec.args, ["-R;", "$(touch nope)", "|", ">", "output"]);
     assert_eq!(spec.env.get("LESS").map(String::as_str), Some("-F"));
 
-    let invalid = BTreeMap::from([("PDIFF_TEXT_PAGER".into(), "'unterminated".into())]);
+    let invalid = BTreeMap::from([("RAMO_TEXT_PAGER".into(), "'unterminated".into())]);
     assert!(
         resolve_text_pager(&invalid)
             .unwrap_err()
             .to_string()
-            .contains("PDIFF_TEXT_PAGER")
+            .contains("RAMO_TEXT_PAGER")
     );
 }
 

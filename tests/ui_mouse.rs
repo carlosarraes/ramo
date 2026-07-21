@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use pdiff::app::App;
-use pdiff::config::ResolvedConfig;
-use pdiff::diff::model::{
+use ramo::app::App;
+use ramo::config::ResolvedConfig;
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::review::{ContextSourceLoader, ReviewAction, ScrollUnit, SourceFailure, Viewport};
-use pdiff::ui::input::{AppAction, map_mouse_event};
+use ramo::review::{ContextSourceLoader, ReviewAction, ScrollUnit, SourceFailure, Viewport};
+use ramo::ui::input::{AppAction, map_mouse_event};
 
 fn mouse(kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) -> MouseEvent {
     MouseEvent {

@@ -84,9 +84,9 @@ pub struct ConfigPaths {
 
 impl ConfigPaths {
     pub fn discover(cwd: &Path) -> Self {
-        let user = dirs::config_dir().map(|path| path.join("pdiff/config.toml"));
+        let user = dirs::config_dir().map(|path| path.join("ramo/config.toml"));
         let repo = cwd.ancestors().find_map(|ancestor| {
-            let candidate = ancestor.join(".pdiff/config.toml");
+            let candidate = ancestor.join(".ramo/config.toml");
             candidate.is_file().then_some(candidate)
         });
         Self { user, repo }

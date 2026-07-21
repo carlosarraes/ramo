@@ -1,12 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use pdiff::app::App;
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::model::{
+use ramo::app::App;
+use ramo::config::ResolvedConfig;
+use ramo::core::input::LayoutMode;
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::review::{ReviewAction, ScrollUnit, Viewport};
-use pdiff::ui::input::{AppAction, InputMode, map_key_event};
+use ramo::review::{ReviewAction, ScrollUnit, Viewport};
+use ramo::ui::input::{AppAction, InputMode, map_key_event};
 use std::path::PathBuf;
 
 fn key(code: KeyCode) -> KeyEvent {

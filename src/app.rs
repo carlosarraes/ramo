@@ -135,7 +135,7 @@ const STARTUP_NOTICE_DURATION: Duration = Duration::from_secs(7);
 
 fn startup_notice_duration() -> Duration {
     #[cfg(debug_assertions)]
-    if let Ok(value) = std::env::var("PDIFF_TEST_STARTUP_NOTICE_DURATION_MS")
+    if let Ok(value) = std::env::var("RAMO_TEST_STARTUP_NOTICE_DURATION_MS")
         && let Ok(milliseconds) = value.parse::<u64>()
     {
         return Duration::from_millis(milliseconds.max(1));
@@ -730,7 +730,7 @@ impl App {
         viewport: Viewport,
     ) -> Result<serde_json::Value, String> {
         let runtime = runtime.ok_or_else(|| {
-            "session reload requires the initial pdiff session to be rooted in a repository"
+            "session reload requires the initial ramo session to be rooted in a repository"
                 .to_owned()
         })?;
         let applied = crate::session::apply_session_reload(

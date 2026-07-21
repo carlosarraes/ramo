@@ -14,8 +14,8 @@ impl GitFixture {
             temp: tempfile::tempdir().unwrap(),
         };
         fixture.git(["init", "-q"]);
-        fixture.git(["config", "user.name", "Pdiff Test"]);
-        fixture.git(["config", "user.email", "pdiff@example.invalid"]);
+        fixture.git(["config", "user.name", "Ramo Test"]);
+        fixture.git(["config", "user.email", "ramo@example.invalid"]);
         std::fs::write(fixture.path().join("tracked.txt"), "base\n").unwrap();
         fixture.git(["add", "tracked.txt"]);
         fixture.git(["commit", "-q", "-m", "base"]);
@@ -43,7 +43,7 @@ impl GitFixture {
 #[test]
 fn invalid_git_ref_fails_before_terminal_startup() {
     let repo = GitFixture::with_commit();
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .current_dir(repo.path())
         .args(["show", "does-not-exist"])
@@ -59,7 +59,7 @@ fn invalid_git_ref_fails_before_terminal_startup() {
 #[test]
 fn git_show_reaches_native_loader_without_terminal_startup_for_empty_pathspec() {
     let repo = GitFixture::with_commit();
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .current_dir(repo.path())
         .args(["show", "HEAD", "--", "absent-path"])

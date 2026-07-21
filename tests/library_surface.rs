@@ -1,4 +1,4 @@
-use pdiff::diff::parser::parse_unified_diff;
+use ramo::diff::parser::parse_unified_diff;
 
 #[test]
 fn parser_is_available_from_the_library_crate() {

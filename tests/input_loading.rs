@@ -1,9 +1,9 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::diff::model::{FileChangeKind, MovedLineKind, SourceSpec};
-use pdiff::input::{LoadError, ReloadPlan, ReviewLoader, normalize_patch_text};
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::diff::model::{FileChangeKind, MovedLineKind, SourceSpec};
+use ramo::input::{LoadError, ReloadPlan, ReviewLoader, normalize_patch_text};
 
 #[test]
 fn patch_stdin_loads_a_changeset() {
@@ -221,14 +221,14 @@ fn unsupported_inputs_fail_before_terminal_startup() {
     };
     assert!(matches!(
         ReviewLoader.load(&input, &mut Cursor::new([])).unwrap_err(),
-        LoadError::UnsupportedInput(pdiff::core::input::InputKind::Pager)
+        LoadError::UnsupportedInput(ramo::core::input::InputKind::Pager)
     ));
 }
 
 #[test]
 fn deterministic_git_ansi_colors_become_moved_line_classes() {
     let patch = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n\x1b[1;35m-old\x1b[m\n\x1b[1;36m+new\x1b[m\n";
-    let files = pdiff::vcs::git::parse_git_patch(patch);
+    let files = ramo::vcs::git::parse_git_patch(patch);
     assert_eq!(
         files[0].hunks[0].lines[0].moved,
         Some(MovedLineKind::OldMoved)

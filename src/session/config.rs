@@ -25,7 +25,7 @@ impl SessionAddress {
     pub fn parse(host: &str, port: u16) -> Result<Self, SessionConfigError> {
         if port == 0 {
             return Err(SessionConfigError(
-                "pdiff session port must be between 1 and 65535".into(),
+                "ramo session port must be between 1 and 65535".into(),
             ));
         }
         let ip = parse_loopback_host(host)?;
@@ -43,7 +43,7 @@ impl SessionAddress {
     pub fn from_socket_addr(socket: SocketAddr) -> Result<Self, SessionConfigError> {
         if socket.port() == 0 || !is_loopback_ip(socket.ip()) {
             return Err(SessionConfigError(
-                "pdiff sessions require a nonzero loopback socket address".into(),
+                "ramo sessions require a nonzero loopback socket address".into(),
             ));
         }
         Ok(Self { socket })
@@ -66,11 +66,11 @@ pub fn resolve_session_address(
     env: &HashMap<String, String>,
 ) -> Result<SessionAddress, SessionConfigError> {
     let host =
-        first_nonempty(env, "PDIFF_SESSION_HOST", "HUNK_MCP_HOST").unwrap_or(DEFAULT_SESSION_HOST);
-    let port = match first_nonempty(env, "PDIFF_SESSION_PORT", "HUNK_MCP_PORT") {
+        first_nonempty(env, "RAMO_SESSION_HOST", "HUNK_MCP_HOST").unwrap_or(DEFAULT_SESSION_HOST);
+    let port = match first_nonempty(env, "RAMO_SESSION_PORT", "HUNK_MCP_PORT") {
         Some(value) => value.parse::<u16>().map_err(|_| {
             SessionConfigError(format!(
-                "invalid pdiff session port {value:?}; expected an integer from 1 to 65535"
+                "invalid ramo session port {value:?}; expected an integer from 1 to 65535"
             ))
         })?,
         None => DEFAULT_SESSION_PORT,
@@ -84,7 +84,7 @@ pub fn validate_request_authority(
     expected_port: u16,
 ) -> Result<(), SessionConfigError> {
     validate_authority(host, expected_port).map_err(|_| {
-        SessionConfigError("Host header is not allowed for the local pdiff session broker".into())
+        SessionConfigError("Host header is not allowed for the local ramo session broker".into())
     })?;
     if let Some(origin) = origin {
         let authority = origin
@@ -92,13 +92,13 @@ pub fn validate_request_authority(
             .or_else(|| origin.strip_prefix("https://"))
             .ok_or_else(|| {
                 SessionConfigError(
-                    "Origin is not allowed for the local pdiff session broker".into(),
+                    "Origin is not allowed for the local ramo session broker".into(),
                 )
             })?;
         let authority = authority.split('/').next().unwrap_or_default();
         if authority.contains('@') || validate_authority(authority, expected_port).is_err() {
             return Err(SessionConfigError(
-                "Origin is not allowed for the local pdiff session broker".into(),
+                "Origin is not allowed for the local ramo session broker".into(),
             ));
         }
     }
@@ -159,13 +159,13 @@ fn parse_loopback_host(host: &str) -> Result<IpAddr, SessionConfigError> {
     } else {
         normalized.parse::<IpAddr>().map_err(|_| {
             SessionConfigError(format!(
-                "pdiff session host {host:?} is not a loopback IP or localhost"
+                "ramo session host {host:?} is not a loopback IP or localhost"
             ))
         })?
     };
     if !is_loopback_ip(ip) {
         return Err(SessionConfigError(format!(
-            "pdiff session host {host:?} is not loopback; remote binding is forbidden"
+            "ramo session host {host:?} is not loopback; remote binding is forbidden"
         )));
     }
     Ok(ip)

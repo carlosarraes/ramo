@@ -774,7 +774,7 @@ fn translate_error(input: &ReviewInput, executable: &str, error: VcsError) -> Vc
             if matches!(input, ReviewInput::StashShow { .. }) && is_missing_stash(&stderr) =>
         {
             VcsError::User {
-                message: "`pdiff stash show` could not find a stash entry to show.".into(),
+                message: "`ramo stash show` could not find a stash entry to show.".into(),
                 help: vec![
                     "Create one with `git stash push`, or pass an explicit stash ref.".into(),
                 ],
@@ -796,22 +796,22 @@ fn translate_error(input: &ReviewInput, executable: &str, error: VcsError) -> Vc
 
 fn command_label(input: &ReviewInput) -> String {
     match input {
-        ReviewInput::VcsDiff { staged: true, .. } => "pdiff diff --staged".into(),
+        ReviewInput::VcsDiff { staged: true, .. } => "ramo diff --staged".into(),
         ReviewInput::VcsDiff {
             range: Some(range), ..
-        } => format!("pdiff diff {range}"),
-        ReviewInput::VcsDiff { .. } => "pdiff diff".into(),
+        } => format!("ramo diff {range}"),
+        ReviewInput::VcsDiff { .. } => "ramo diff".into(),
         ReviewInput::Show {
             reference: Some(reference),
             ..
-        } => format!("pdiff show {reference}"),
-        ReviewInput::Show { .. } => "pdiff show".into(),
+        } => format!("ramo show {reference}"),
+        ReviewInput::Show { .. } => "ramo show".into(),
         ReviewInput::StashShow {
             reference: Some(reference),
             ..
-        } => format!("pdiff stash show {reference}"),
-        ReviewInput::StashShow { .. } => "pdiff stash show".into(),
-        _ => format!("pdiff {:?}", input.kind()),
+        } => format!("ramo stash show {reference}"),
+        ReviewInput::StashShow { .. } => "ramo stash show".into(),
+        _ => format!("ramo {:?}", input.kind()),
     }
 }
 
@@ -850,9 +850,9 @@ fn missing_stash_error(input: &ReviewInput) -> VcsError {
     };
     VcsError::User {
         message: reference.map_or_else(
-            || "`pdiff stash show` could not find a stash entry to show.".into(),
+            || "`ramo stash show` could not find a stash entry to show.".into(),
             |reference| {
-                format!("`pdiff stash show {reference}` could not resolve that stash entry.")
+                format!("`ramo stash show {reference}` could not resolve that stash entry.")
             },
         ),
         help: vec![

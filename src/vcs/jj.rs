@@ -23,15 +23,15 @@ impl VcsAdapter for JjAdapter {
     ) -> Result<VcsPatch, VcsError> {
         if matches!(input, ReviewInput::VcsDiff { staged: true, .. }) {
             return Err(VcsError::User {
-                message: "`pdiff diff --staged` cannot run because Jujutsu has no staging area."
+                message: "`ramo diff --staged` cannot run because Jujutsu has no staging area."
                     .into(),
-                help: vec!["Remove `--staged`, or set `vcs = \"git\"` in pdiff config.".into()],
+                help: vec!["Remove `--staged`, or set `vcs = \"git\"` in ramo config.".into()],
             });
         }
         if matches!(input, ReviewInput::StashShow { .. }) {
             return Err(VcsError::User {
                 message: "Jujutsu does not support stash show.".into(),
-                help: vec!["Use Git VCS mode for `pdiff stash show`.".into()],
+                help: vec!["Use Git VCS mode for `ramo stash show`.".into()],
             });
         }
 
@@ -162,17 +162,17 @@ fn translate_error(input: &ReviewInput, executable: &str, error: VcsError) -> Vc
 
 fn command_label(input: &ReviewInput) -> String {
     match input {
-        ReviewInput::VcsDiff { staged: true, .. } => "pdiff diff --staged".into(),
+        ReviewInput::VcsDiff { staged: true, .. } => "ramo diff --staged".into(),
         ReviewInput::VcsDiff {
             range: Some(range), ..
-        } => format!("pdiff diff {range}"),
-        ReviewInput::VcsDiff { .. } => "pdiff diff".into(),
+        } => format!("ramo diff {range}"),
+        ReviewInput::VcsDiff { .. } => "ramo diff".into(),
         ReviewInput::Show {
             reference: Some(reference),
             ..
-        } => format!("pdiff show {reference}"),
-        ReviewInput::Show { .. } => "pdiff show".into(),
-        _ => format!("pdiff {:?}", input.kind()),
+        } => format!("ramo show {reference}"),
+        ReviewInput::Show { .. } => "ramo show".into(),
+        _ => format!("ramo {:?}", input.kind()),
     }
 }
 

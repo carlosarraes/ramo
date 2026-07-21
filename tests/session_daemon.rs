@@ -3,10 +3,10 @@ use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use pdiff::core::input::LayoutMode;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::review::{ReviewController, ReviewOptions, Viewport};
-use pdiff::session::{
+use ramo::core::input::LayoutMode;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::review::{ReviewController, ReviewOptions, Viewport};
+use ramo::session::{
     SESSION_API_VERSION, SESSION_DAEMON_VERSION, SessionAddress, SessionClient,
     SessionDaemonOptions, SessionDescriptor, SessionOutput, SessionSelector, build_registration,
     build_snapshot, spawn_session_daemon, supported_session_actions,
@@ -14,7 +14,7 @@ use pdiff::session::{
 
 const PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n";
 
-fn start() -> pdiff::session::SessionDaemonHandle {
+fn start() -> ramo::session::SessionDaemonHandle {
     spawn_session_daemon(SessionDaemonOptions {
         address: SessionAddress::loopback_ephemeral(),
         idle_timeout: Duration::from_secs(5),
@@ -75,7 +75,7 @@ fn health_capabilities_and_legacy_tombstone_are_bounded_json_routes() {
 
     let health = client.get_json("/health").unwrap();
     assert_eq!(health["ok"], true);
-    assert_eq!(health["name"], "pdiff-session-broker");
+    assert_eq!(health["name"], "ramo-session-broker");
 
     let (status, body) = raw(
         daemon.address(),
@@ -122,13 +122,13 @@ fn session_api_enforces_method_content_type_body_limit_host_and_origin() {
 
     let oversized = format!(
         "POST /session-api HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-        pdiff::session::MAX_HTTP_BODY_BYTES + 1
+        ramo::session::MAX_HTTP_BODY_BYTES + 1
     );
     assert_eq!(raw(address, oversized.as_bytes()).0, 413);
 
     let huge_header = format!(
         "GET /health HTTP/1.1\r\nHost: {host}\r\nX-Fill: {}\r\n\r\n",
-        "x".repeat(pdiff::session::MAX_HTTP_HEADER_BYTES)
+        "x".repeat(ramo::session::MAX_HTTP_HEADER_BYTES)
     );
     assert_eq!(raw(address, huge_header.as_bytes()).0, 431);
 
@@ -177,7 +177,7 @@ fn registry_list_get_context_review_and_selector_errors_are_structured() {
     daemon.registry().lock().unwrap().register(
         registration,
         snapshot,
-        Some("/tmp/pdiff.sock".into()),
+        Some("/tmp/ramo.sock".into()),
     );
 
     let client = SessionClient::new(daemon.address());
@@ -206,7 +206,7 @@ fn registry_list_get_context_review_and_selector_errors_are_structured() {
             Duration::from_secs(1),
         )
         .unwrap_err();
-    assert!(error.to_string().contains("No live pdiff session"));
+    assert!(error.to_string().contains("No live ramo session"));
 
     let invalid = client
         .request(
@@ -258,11 +258,11 @@ fn installed_binary_serves_and_cli_commands_use_the_native_daemon_without_a_tui(
         .local_addr()
         .unwrap()
         .port();
-    let binary = assert_cmd::cargo::cargo_bin!("pdiff");
+    let binary = assert_cmd::cargo::cargo_bin!("ramo");
     let mut daemon = Command::new(binary)
         .args(["daemon", "serve"])
-        .env("PDIFF_SESSION_HOST", "127.0.0.1")
-        .env("PDIFF_SESSION_PORT", port.to_string())
+        .env("RAMO_SESSION_HOST", "127.0.0.1")
+        .env("RAMO_SESSION_PORT", port.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -280,8 +280,8 @@ fn installed_binary_serves_and_cli_commands_use_the_native_daemon_without_a_tui(
 
     let output = Command::new(binary)
         .args(["session", "list", "--json"])
-        .env("PDIFF_SESSION_HOST", "127.0.0.1")
-        .env("PDIFF_SESSION_PORT", port.to_string())
+        .env("RAMO_SESSION_HOST", "127.0.0.1")
+        .env("RAMO_SESSION_PORT", port.to_string())
         .output()
         .unwrap();
     assert!(
@@ -298,7 +298,7 @@ fn installed_binary_serves_and_cli_commands_use_the_native_daemon_without_a_tui(
 }
 
 #[test]
-fn cli_replaces_a_stale_compatible_pdiff_daemon_with_the_same_binary() {
+fn cli_replaces_a_stale_compatible_ramo_daemon_with_the_same_binary() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let stale = std::thread::spawn(move || {
@@ -311,11 +311,11 @@ fn cli_replaces_a_stale_compatible_pdiff_daemon_with_the_same_binary() {
         let (shutdown, _) = listener.accept().unwrap();
         serve_json(shutdown, 200, serde_json::json!({"ok":true}));
     });
-    let binary = assert_cmd::cargo::cargo_bin!("pdiff");
+    let binary = assert_cmd::cargo::cargo_bin!("ramo");
     let output = Command::new(binary)
         .args(["session", "list", "--json"])
-        .env("PDIFF_SESSION_HOST", "127.0.0.1")
-        .env("PDIFF_SESSION_PORT", port.to_string())
+        .env("RAMO_SESSION_HOST", "127.0.0.1")
+        .env("RAMO_SESSION_PORT", port.to_string())
         .output()
         .unwrap();
     stale.join().unwrap();
@@ -338,13 +338,13 @@ fn cli_does_not_replace_a_foreign_service_on_the_configured_port() {
     let port = listener.local_addr().unwrap().port();
     let foreign = std::thread::spawn(move || {
         let (capabilities, _) = listener.accept().unwrap();
-        serve_json(capabilities, 404, serde_json::json!({"error":"not pdiff"}));
+        serve_json(capabilities, 404, serde_json::json!({"error":"not ramo"}));
         let _ = listener.accept();
     });
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("pdiff"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("ramo"))
         .args(["session", "list", "--json"])
-        .env("PDIFF_SESSION_HOST", "127.0.0.1")
-        .env("PDIFF_SESSION_PORT", port.to_string())
+        .env("RAMO_SESSION_HOST", "127.0.0.1")
+        .env("RAMO_SESSION_PORT", port.to_string())
         .output()
         .unwrap();
     foreign.join().unwrap();

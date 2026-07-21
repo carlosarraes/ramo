@@ -1,15 +1,15 @@
 use std::fs;
 use std::io;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::changeset::stable_file_id;
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::diff::model::{
+use ramo::config::ResolvedConfig;
+use ramo::core::changeset::stable_file_id;
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use pdiff::input::{LoadContext, ReloadPlan, ReviewLoader};
-use pdiff::review::{ReviewAction, ReviewController, ReviewOptions, ScrollUnit, Viewport};
-use pdiff::vcs::SystemCommandRunner;
+use ramo::input::{LoadContext, ReloadPlan, ReviewLoader};
+use ramo::review::{ReviewAction, ReviewController, ReviewOptions, ScrollUnit, Viewport};
+use ramo::vcs::SystemCommandRunner;
 
 fn patch(replacement: &str) -> String {
     format!(

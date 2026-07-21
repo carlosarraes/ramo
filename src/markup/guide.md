@@ -1,7 +1,7 @@
-# pdiff terminal markup (STML)
+# ramo terminal markup (STML)
 
-Render a file with `pdiff markup render note.stml`, or pipe markup to
-`pdiff markup render -`. Use `--width`, `--color`, and `--json` for deterministic
+Render a file with `ramo markup render note.stml`, or pipe markup to
+`ramo markup render -`. Use `--width`, `--color`, and `--json` for deterministic
 automation output.
 
 Inline emphasis and semantic color:

@@ -2,12 +2,12 @@ use std::io::Cursor;
 use std::path::Path;
 use std::process::Command;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, ReviewInput};
-use pdiff::diff::model::SourceSpec;
-use pdiff::input::{LoadContext, LoadError, LoadedReview, ReloadPlan, ReviewLoader};
-use pdiff::vcs::SystemCommandRunner;
-use pdiff::vcs::source::{SourceError, SourceReader};
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, ReviewInput};
+use ramo::diff::model::SourceSpec;
+use ramo::input::{LoadContext, LoadError, LoadedReview, ReloadPlan, ReviewLoader};
+use ramo::vcs::SystemCommandRunner;
+use ramo::vcs::source::{SourceError, SourceReader};
 
 struct GitFixture {
     temp: tempfile::TempDir,
@@ -17,8 +17,8 @@ impl GitFixture {
     fn new() -> Self {
         let fixture = Self::non_repository();
         fixture.git(["init", "-q"]);
-        fixture.git(["config", "user.name", "Pdiff Test"]);
-        fixture.git(["config", "user.email", "pdiff@example.invalid"]);
+        fixture.git(["config", "user.name", "Ramo Test"]);
+        fixture.git(["config", "user.email", "ramo@example.invalid"]);
         fixture
     }
 

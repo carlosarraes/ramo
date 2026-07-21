@@ -24,12 +24,12 @@ impl PtyProcess {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("pdiff"));
+        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
         for argument in args {
             command.arg(argument);
         }
-        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+        command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         for (key, value) in env {
             command.env(key, value);
         }
@@ -83,7 +83,7 @@ impl PtyProcess {
                 }
             }
             let clean =
-                pdiff::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
+                ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
             if clean.contains(needle) {
                 return clean;
             }
@@ -120,7 +120,7 @@ impl PtyProcess {
                 while let Ok(chunk) = self.chunks.try_recv() {
                     self.raw.extend(chunk);
                 }
-                let clean = pdiff::input::sanitize_terminal_text(
+                let clean = ramo::input::sanitize_terminal_text(
                     &String::from_utf8_lossy(&self.raw),
                     false,
                 );
@@ -217,7 +217,7 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
 fn patch_pager_suppresses_application_startup_notices() {
     let temp = tempfile::tempdir().unwrap();
     let config_home = temp.path().join("config");
-    let config = config_home.join("pdiff/config.toml");
+    let config = config_home.join("ramo/config.toml");
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(
         config,
@@ -254,7 +254,7 @@ fn plain_text_pager_does_not_enter_alternate_screen() {
     let mut process = PtyProcess::spawn(
         temp.path(),
         &["pager"],
-        &[("PDIFF_TEXT_PAGER", helper.to_str().unwrap())],
+        &[("RAMO_TEXT_PAGER", helper.to_str().unwrap())],
     );
     process.send("safe\x1b]8;;https://bad\x1b\\text\x1b]8;;\x1b\\\n");
     process.send_eof();
@@ -281,7 +281,7 @@ fn pager_nonzero_exit_code_is_propagated() {
     let mut process = PtyProcess::spawn(
         temp.path(),
         &["pager"],
-        &[("PDIFF_TEXT_PAGER", helper.to_str().unwrap())],
+        &[("RAMO_TEXT_PAGER", helper.to_str().unwrap())],
     );
     process.send("ordinary text\n");
     process.send_eof();
@@ -290,7 +290,7 @@ fn pager_nonzero_exit_code_is_propagated() {
 
 #[cfg(unix)]
 #[test]
-fn recursive_pager_setting_uses_fallback_without_spawning_pdiff_again() {
+fn recursive_pager_setting_uses_fallback_without_spawning_ramo_again() {
     let temp = tempfile::tempdir().unwrap();
     write_helper(
         temp.path(),
@@ -305,7 +305,7 @@ fn recursive_pager_setting_uses_fallback_without_spawning_pdiff_again() {
     let mut process = PtyProcess::spawn(
         temp.path(),
         &["pager"],
-        &[("PDIFF_TEXT_PAGER", "pdiff pager"), ("PATH", &path)],
+        &[("RAMO_TEXT_PAGER", "ramo pager"), ("PATH", &path)],
     );
     process.send("ordinary text\n");
     process.send_eof();
@@ -325,7 +325,7 @@ fn ctrl_c_terminated_pager_maps_to_130() {
     let mut process = PtyProcess::spawn(
         temp.path(),
         &["pager"],
-        &[("PDIFF_TEXT_PAGER", helper.to_str().unwrap())],
+        &[("RAMO_TEXT_PAGER", helper.to_str().unwrap())],
     );
     process.send("ordinary text\n");
     process.send_eof();

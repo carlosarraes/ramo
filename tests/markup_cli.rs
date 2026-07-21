@@ -5,7 +5,7 @@ fn render_accepts_files_stdin_plain_text_and_json_without_entering_the_tui() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("note.stml");
     std::fs::write(&path, "<badge color=success>OK</badge> ready").unwrap();
-    let output = Command::cargo_bin("pdiff")
+    let output = Command::cargo_bin("ramo")
         .unwrap()
         .args([
             "markup",
@@ -27,7 +27,7 @@ fn render_accepts_files_stdin_plain_text_and_json_without_entering_the_tui() {
             .any(|bytes| bytes == b"\x1b[?1049h")
     );
 
-    let output = Command::cargo_bin("pdiff")
+    let output = Command::cargo_bin("ramo")
         .unwrap()
         .args(["markup", "render", "-", "--width", "12", "--json"])
         .write_stdin("<b>hello</b>")
@@ -41,21 +41,21 @@ fn render_accepts_files_stdin_plain_text_and_json_without_entering_the_tui() {
 
 #[test]
 fn guide_is_embedded_and_all_stml_fences_layout_at_reference_width() {
-    let output = Command::cargo_bin("pdiff")
+    let output = Command::cargo_bin("ramo")
         .unwrap()
         .args(["markup", "guide"])
         .output()
         .unwrap();
     assert!(output.status.success());
     let guide = String::from_utf8(output.stdout).unwrap();
-    assert!(guide.contains("pdiff markup render"));
+    assert!(guide.contains("ramo markup render"));
     assert!(!guide.contains("hunk markup render"));
     let mut rest = guide.as_str();
     let mut count = 0;
     while let Some(start) = rest.find("```stml\n") {
         let body = &rest[start + 8..];
         let end = body.find("```").unwrap();
-        let result = pdiff::markup::layout_stml(body[..end].trim_end(), 56);
+        let result = ramo::markup::layout_stml(body[..end].trim_end(), 56);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         count += 1;
         rest = &body[end + 3..];
@@ -65,13 +65,13 @@ fn guide_is_embedded_and_all_stml_fences_layout_at_reference_width() {
 
 #[test]
 fn render_reports_missing_files_and_invalid_widths_before_terminal_startup() {
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .args(["markup", "render", "missing.stml"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("missing.stml"));
-    Command::cargo_bin("pdiff")
+    Command::cargo_bin("ramo")
         .unwrap()
         .args(["markup", "render", "-", "--width", "0"])
         .assert()
@@ -80,7 +80,7 @@ fn render_reports_missing_files_and_invalid_widths_before_terminal_startup() {
 
 #[test]
 fn render_color_modes_resolve_symbolic_named_and_hex_colors_natively() {
-    let output = Command::cargo_bin("pdiff")
+    let output = Command::cargo_bin("ramo")
         .unwrap()
         .args(["markup", "render", "--width", "20", "--color", "always"])
         .write_stdin("<color fg=#0f0>hex</color> <color fg=orange>named</color>")
@@ -97,7 +97,7 @@ fn render_color_modes_resolve_symbolic_named_and_hex_colors_natively() {
         "{stdout:?}"
     );
 
-    let output = Command::cargo_bin("pdiff")
+    let output = Command::cargo_bin("ramo")
         .unwrap()
         .args(["markup", "render", "--json", "--color", "always"])
         .write_stdin("<b>plain json</b>")

@@ -75,7 +75,7 @@ impl SessionRegistrationClient {
         let worker_stop = Arc::clone(&stop);
         let worker_connected = Arc::clone(&connected);
         let thread = thread::Builder::new()
-            .name("pdiff-session-registration".into())
+            .name("ramo-session-registration".into())
             .spawn(move || {
                 let mut backoff = Duration::from_millis(25);
                 while !worker_stop.load(Ordering::Acquire) {
@@ -162,7 +162,7 @@ pub fn create_session_descriptor(
         .unwrap_or_default()
         .as_nanos();
     super::SessionDescriptor {
-        session_id: format!("pdiff-{}-{nonce:x}", std::process::id()),
+        session_id: format!("ramo-{}-{nonce:x}", std::process::id()),
         pid: std::process::id(),
         cwd,
         repo_root,
@@ -233,7 +233,7 @@ pub fn session_timestamp() -> String {
 }
 
 pub fn current_session_path() -> Option<String> {
-    std::env::var("PDIFF_SESSION_PATH")
+    std::env::var("RAMO_SESSION_PATH")
         .ok()
         .filter(|path| !path.trim().is_empty())
         .or_else(platform_tty_path)

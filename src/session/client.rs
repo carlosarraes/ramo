@@ -29,7 +29,7 @@ pub fn run_daemon_from_environment() -> io::Result<()> {
         ..SessionDaemonOptions::default()
     })?;
     eprintln!(
-        "pdiff session broker listening on http://{}{SESSION_API_PATH}",
+        "ramo session broker listening on http://{}{SESSION_API_PATH}",
         daemon.address()
     );
     daemon.wait();
@@ -55,7 +55,7 @@ pub fn ensure_session_daemon() -> io::Result<SessionClient> {
         Ok(_) => {
             client.shutdown().map_err(|error| {
                 io::Error::other(format!(
-                    "an incompatible pdiff session daemon is using {address} and could not be stopped: {error}"
+                    "an incompatible ramo session daemon is using {address} and could not be stopped: {error}"
                 ))
             })?;
             wait_for_port_to_close(address)?;
@@ -89,7 +89,7 @@ fn wait_for_port_to_close(address: SocketAddr) -> io::Result<()> {
     }
     Err(io::Error::new(
         io::ErrorKind::TimedOut,
-        format!("timed out waiting for stale pdiff daemon at {address} to stop"),
+        format!("timed out waiting for stale ramo daemon at {address} to stop"),
     ))
 }
 
@@ -97,7 +97,7 @@ fn launch_daemon(address: SocketAddr) -> io::Result<()> {
     let executable = std::env::current_exe().map_err(|error| {
         io::Error::new(
             error.kind(),
-            format!("could not locate the current pdiff executable: {error}"),
+            format!("could not locate the current ramo executable: {error}"),
         )
     })?;
     let mut daemon = Command::new(executable);
@@ -110,7 +110,7 @@ fn launch_daemon(address: SocketAddr) -> io::Result<()> {
     let mut child = daemon.spawn().map_err(|error| {
         io::Error::new(
             error.kind(),
-            format!("could not launch the native pdiff session daemon: {error}"),
+            format!("could not launch the native ramo session daemon: {error}"),
         )
     })?;
     let client = SessionClient::new(address);
@@ -120,14 +120,14 @@ fn launch_daemon(address: SocketAddr) -> io::Result<()> {
         }
         if let Some(status) = child.try_wait()? {
             return Err(io::Error::other(format!(
-                "pdiff session daemon exited before becoming ready: {status}"
+                "ramo session daemon exited before becoming ready: {status}"
             )));
         }
         thread::sleep(Duration::from_millis(20));
     }
     Err(io::Error::new(
         io::ErrorKind::TimedOut,
-        format!("timed out waiting for the pdiff session daemon at {address}"),
+        format!("timed out waiting for the ramo session daemon at {address}"),
     ))
 }
 
@@ -395,7 +395,7 @@ fn print_session_output(value: &Value, output: SessionOutput) -> io::Result<()> 
 fn print_text_output(value: &Value) {
     if let Some(sessions) = value.get("sessions").and_then(Value::as_array) {
         if sessions.is_empty() {
-            println!("No live pdiff sessions.");
+            println!("No live ramo sessions.");
         } else {
             for session in sessions {
                 println!(
@@ -451,7 +451,7 @@ impl SessionClient {
             io::Error::new(
                 error.kind(),
                 format!(
-                    "could not connect to the pdiff session broker at {}: {error}",
+                    "could not connect to the ramo session broker at {}: {error}",
                     self.address
                 ),
             )
@@ -481,7 +481,7 @@ impl SessionClient {
         if response.len() > MAX_HTTP_RESPONSE_BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "pdiff session response exceeds 1 MiB",
+                "ramo session response exceeds 1 MiB",
             ));
         }
         let header_end = response
@@ -512,7 +512,7 @@ impl SessionClient {
             let message = value
                 .get("error")
                 .and_then(Value::as_str)
-                .unwrap_or("unknown pdiff session broker error");
+                .unwrap_or("unknown ramo session broker error");
             return Err(io::Error::other(message.to_owned()));
         }
         Ok(value)

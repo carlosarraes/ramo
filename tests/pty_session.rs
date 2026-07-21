@@ -10,8 +10,8 @@ const RELOADED_PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/li
 fn cli(binary: &std::path::Path, port: u16, args: &[&str]) -> std::process::Output {
     Command::new(binary)
         .args(args)
-        .env("PDIFF_SESSION_HOST", "127.0.0.1")
-        .env("PDIFF_SESSION_PORT", port.to_string())
+        .env("RAMO_SESSION_HOST", "127.0.0.1")
+        .env("RAMO_SESSION_PORT", port.to_string())
         .output()
         .unwrap()
 }
@@ -25,7 +25,7 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     std::fs::create_dir(temp.path().join(".git")).unwrap();
     let patch = temp.path().join("review.patch");
     std::fs::write(&patch, PATCH).unwrap();
-    let binary = assert_cmd::cargo::cargo_bin!("pdiff");
+    let binary = assert_cmd::cargo::cargo_bin!("ramo");
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: 24,
@@ -37,9 +37,9 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     let mut review = CommandBuilder::new(binary);
     review.cwd(temp.path());
     review.args(["patch", patch.to_str().unwrap()]);
-    review.env("PDIFF_SESSION_HOST", "127.0.0.1");
-    review.env("PDIFF_SESSION_PORT", port.to_string());
-    review.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
+    review.env("RAMO_SESSION_HOST", "127.0.0.1");
+    review.env("RAMO_SESSION_PORT", port.to_string());
+    review.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
     let mut child = pair.slave.spawn_command(review).unwrap();
     drop(pair.slave);
     let mut writer = pair.master.take_writer().unwrap();
@@ -229,7 +229,7 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     writer.write_all(b"qq").unwrap();
     writer.flush().unwrap();
     assert!(child.wait().unwrap().success());
-    let client = pdiff::session::SessionClient::new(format!("127.0.0.1:{port}").parse().unwrap());
+    let client = ramo::session::SessionClient::new(format!("127.0.0.1:{port}").parse().unwrap());
     client.shutdown().unwrap();
     drop(writer);
     drop(pair.master);

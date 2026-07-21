@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pdiff::markup::{MIN_STML_LAYOUT_WIDTH, StmlLine, layout_stml, layout_stml_cached};
+use ramo::markup::{MIN_STML_LAYOUT_WIDTH, StmlLine, layout_stml, layout_stml_cached};
 
 fn text(line: &StmlLine) -> String {
     line.spans.iter().map(|span| span.text.as_str()).collect()
