@@ -313,12 +313,29 @@ fn cli_replaces_a_stale_compatible_ramo_daemon_with_the_same_binary() {
     });
     let binary = assert_cmd::cargo::cargo_bin!("ramo");
     let started = Instant::now();
-    let output = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .args(["session", "list", "--json"])
         .env("RAMO_SESSION_HOST", "127.0.0.1")
-        .env("RAMO_SESSION_PORT", port.to_string())
-        .output()
-        .unwrap();
+        .env("RAMO_SESSION_PORT", port.to_string());
+    #[cfg(not(windows))]
+    let output = command.output().unwrap();
+    #[cfg(windows)]
+    let output = {
+        let capture = tempfile::tempdir().unwrap();
+        let stdout = capture.path().join("stdout");
+        let stderr = capture.path().join("stderr");
+        let status = command
+            .stdout(Stdio::from(std::fs::File::create(&stdout).unwrap()))
+            .stderr(Stdio::from(std::fs::File::create(&stderr).unwrap()))
+            .status()
+            .unwrap();
+        std::process::Output {
+            status,
+            stdout: std::fs::read(stdout).unwrap(),
+            stderr: std::fs::read(stderr).unwrap(),
+        }
+    };
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "session command waited for the detached replacement daemon"
