@@ -435,6 +435,9 @@ fn serve_loop(
                 if !peer.ip().is_loopback() {
                     continue;
                 }
+                if stream.set_nonblocking(false).is_err() {
+                    continue;
+                }
                 let registry = Arc::clone(&registry);
                 let state = Arc::clone(&state);
                 let stop = Arc::clone(&stop);
