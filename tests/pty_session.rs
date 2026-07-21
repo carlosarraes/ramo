@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 const PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,3 @@\n keep\n-old\n+new\n tail\n@@ -10,2 +10,2 @@\n-old ten\n+new ten\n end\n";
+const RELOADED_PATCH: &str = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,3 @@\n keep\n-old\n+newer\n tail\n@@ -10,2 +10,2 @@\n-old ten\n+newer ten\n end\n";
 
 fn cli(binary: &std::path::Path, port: u16, args: &[&str]) -> std::process::Output {
     Command::new(binary)
@@ -21,6 +22,7 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     let port = reserved.local_addr().unwrap().port();
     drop(reserved);
     let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(temp.path().join(".git")).unwrap();
     let patch = temp.path().join("review.patch");
     std::fs::write(&patch, PATCH).unwrap();
     let binary = assert_cmd::cargo::cargo_bin!("pdiff");
@@ -134,6 +136,55 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     };
     let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
     assert_eq!(listed["comments"].as_array().unwrap().len(), 1);
+
+    std::fs::write(&patch, RELOADED_PATCH).unwrap();
+    let reloaded = cli(
+        binary,
+        port,
+        &[
+            "session",
+            "reload",
+            &session_id,
+            "--source",
+            temp.path().to_str().unwrap(),
+            "--json",
+            "--",
+            "patch",
+            patch.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        reloaded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reloaded.stderr)
+    );
+    let reloaded: serde_json::Value = serde_json::from_slice(&reloaded.stdout).unwrap();
+    assert_eq!(reloaded["result"]["sessionId"], session_id);
+    assert_eq!(reloaded["result"]["fileCount"], 1);
+    let exported = cli(
+        binary,
+        port,
+        &[
+            "session",
+            "review",
+            &session_id,
+            "--include-patch",
+            "--include-notes",
+            "--json",
+        ],
+    );
+    assert!(exported.status.success());
+    let exported: serde_json::Value = serde_json::from_slice(&exported.stdout).unwrap();
+    assert!(
+        exported["review"]["files"][0]["patch"]
+            .as_str()
+            .unwrap()
+            .contains("+newer")
+    );
+    assert_eq!(
+        exported["review"]["reviewNotes"].as_array().unwrap().len(),
+        1
+    );
 
     let navigated = cli(
         binary,

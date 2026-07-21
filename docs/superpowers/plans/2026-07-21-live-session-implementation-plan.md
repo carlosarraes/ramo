@@ -119,11 +119,11 @@
 - Modify: `src/runtime.rs`
 - Test: `tests/session_reload.rs`
 
-- [ ] Write failing tests for patch/note inclusion flags, source-path resolution, Git/JJ/SL reloads, direct-file reloads, invalid nested/stdin inputs, preserved session identity, and selected-target fallback.
-- [ ] Export bounded review models directly from current controller files; omit raw patches and notes unless explicitly requested.
-- [ ] Add a synchronous native reload transaction that resolves the supplied `ReviewInput` in the requested source directory, replaces watch/reload plans only on success, and preserves human/live notes by stable target.
-- [ ] Refresh registration metadata/snapshot after reload while preserving the session id and daemon route.
-- [ ] Run `cargo test --test session_reload --test reload --test git_loading --test jj_loading --test sl_loading` and commit `feat: reload live native sessions`.
+- [x] Write failing tests for patch/note inclusion flags, source-path resolution, Git/JJ/SL reloads, direct-file reloads, invalid nested/stdin inputs, preserved session identity, and selected-target fallback.
+- [x] Export bounded review models directly from current controller files; omit raw patches and notes unless explicitly requested.
+- [x] Add a synchronous native reload transaction that resolves the supplied `ReviewInput` in the requested source directory, replaces watch/reload plans only on success, and preserves human/live notes by stable target.
+- [x] Refresh registration metadata/snapshot after reload while preserving the session id and daemon route.
+- [x] Run `cargo test --test session_reload --test reload --test git_loading --test jj_loading --test sl_loading` and commit `feat: reload live native sessions`.
 
 ## Task 7: Prove multi-session routing, document, and close the slice
 

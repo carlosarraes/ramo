@@ -1,9 +1,15 @@
 use std::collections::BTreeSet;
+use std::path::PathBuf;
+use std::time::Instant;
 
+use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::core::input::{CommonOptions, LayoutMode, PatchSource, ReviewInput};
+use crate::input::LoadedReview;
 use crate::notes::{LiveNoteInput, NoteAnchorSide};
 use crate::review::{ReviewController, Viewport};
+use crate::watch::WatchRuntime;
 
 use super::{build_snapshot, session_timestamp};
 
@@ -29,6 +35,168 @@ pub fn apply_session_request(
         }
         _ => Err(format!("unsupported live session action {action:?}")),
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct AppliedSessionReload {
+    pub input: ReviewInput,
+    pub loaded: LoadedReview,
+    pub cwd: PathBuf,
+}
+
+pub fn apply_session_reload(
+    controller: &mut ReviewController,
+    runtime: &mut WatchRuntime,
+    input: &Value,
+    viewport: Viewport,
+) -> Result<AppliedSessionReload, String> {
+    let next_input = input
+        .get("nextInput")
+        .ok_or_else(|| "session reload requires nextInput".to_owned())?;
+    let next_input = parse_review_input(next_input)?;
+    let source_path = input
+        .get("sourcePath")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let replaced = runtime.replace_input(next_input, source_path.as_deref(), Instant::now())?;
+    controller.replace_files(replaced.loaded.changeset.files.clone(), viewport);
+    Ok(AppliedSessionReload {
+        input: replaced.input,
+        loaded: replaced.loaded,
+        cwd: replaced.cwd,
+    })
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+struct WireOptions {
+    mode: Option<LayoutMode>,
+    theme: Option<String>,
+    agent_context: Option<PathBuf>,
+    pager: Option<bool>,
+    watch: Option<bool>,
+    exclude_untracked: Option<bool>,
+    line_numbers: Option<bool>,
+    wrap_lines: Option<bool>,
+    hunk_headers: Option<bool>,
+    agent_notes: Option<bool>,
+    transparent_background: Option<bool>,
+}
+
+impl From<WireOptions> for CommonOptions {
+    fn from(options: WireOptions) -> Self {
+        Self {
+            mode: options.mode,
+            theme: options.theme,
+            agent_context: options.agent_context,
+            pager: options.pager,
+            watch: options.watch,
+            exclude_untracked: options.exclude_untracked,
+            line_numbers: options.line_numbers,
+            wrap_lines: options.wrap_lines,
+            hunk_headers: options.hunk_headers,
+            agent_notes: options.agent_notes,
+            transparent_background: options.transparent_background,
+        }
+    }
+}
+
+fn parse_review_input(value: &Value) -> Result<ReviewInput, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "session reload nextInput must be an object".to_owned())?;
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "session reload nextInput requires a kind".to_owned())?;
+    let options = object.get("options").cloned().unwrap_or_else(|| json!({}));
+    let options: CommonOptions = serde_json::from_value::<WireOptions>(options)
+        .map_err(|error| format!("invalid session reload options: {error}"))?
+        .into();
+    let strings = |field: &str| -> Result<Vec<String>, String> {
+        object
+            .get(field)
+            .map(|value| {
+                serde_json::from_value(value.clone())
+                    .map_err(|error| format!("{field} must be an array of strings: {error}"))
+            })
+            .unwrap_or_else(|| Ok(Vec::new()))
+    };
+    let optional_string = |fields: &[&str]| -> Result<Option<String>, String> {
+        fields
+            .iter()
+            .find_map(|field| object.get(*field))
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| format!("{} must be a string", fields[0]))
+            })
+            .transpose()
+    };
+    Ok(match kind {
+        "diff" if object.contains_key("left") || object.contains_key("right") => {
+            ReviewInput::FilePair {
+                left: required_path(object, "left")?,
+                right: required_path(object, "right")?,
+                display_path: optional_string(&["displayPath"])?.map(PathBuf::from),
+                options,
+            }
+        }
+        "diff" | "vcs" => ReviewInput::VcsDiff {
+            range: optional_string(&["range"])?,
+            staged: object
+                .get("staged")
+                .map(|value| {
+                    value
+                        .as_bool()
+                        .ok_or_else(|| "staged must be a boolean".to_owned())
+                })
+                .transpose()?
+                .unwrap_or(false),
+            pathspecs: strings("pathspecs")?,
+            options,
+        },
+        "show" => ReviewInput::Show {
+            reference: optional_string(&["reference", "ref"])?,
+            pathspecs: strings("pathspecs")?,
+            options,
+        },
+        "stash" | "stash-show" => ReviewInput::StashShow {
+            reference: optional_string(&["reference", "ref"])?,
+            options,
+        },
+        "files" | "difftool" => ReviewInput::FilePair {
+            left: required_path(object, "left")?,
+            right: required_path(object, "right")?,
+            display_path: optional_string(&["displayPath"])?.map(PathBuf::from),
+            options,
+        },
+        "patch" => ReviewInput::Patch {
+            source: PatchSource::File(
+                optional_string(&["path", "file"])?
+                    .filter(|path| path != "-")
+                    .map(PathBuf::from)
+                    .ok_or_else(|| {
+                        "session reload does not support stdin-backed patch input".to_owned()
+                    })?,
+            ),
+            options,
+        },
+        "pager" => {
+            return Err("session reload does not support pager input".into());
+        }
+        _ => return Err(format!("unsupported session reload input kind {kind:?}")),
+    })
+}
+
+fn required_path(object: &serde_json::Map<String, Value>, field: &str) -> Result<PathBuf, String> {
+    object
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("session reload {field} must be a non-empty path"))
 }
 
 fn navigate(

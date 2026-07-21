@@ -154,11 +154,8 @@ pub fn create_session_descriptor(
     loaded: &LoadedReview,
     cwd: &std::path::Path,
 ) -> super::SessionDescriptor {
+    let repo_root = session_repo_root(loaded, cwd).map(|path| canonical_string(&path));
     let cwd = canonical_string(cwd);
-    let repo_root = match &loaded.reload_plan {
-        ReloadPlan::Vcs { repo_root, .. } => Some(canonical_string(repo_root)),
-        _ => None,
-    };
     let launched_at = session_timestamp();
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -174,6 +171,48 @@ pub fn create_session_descriptor(
         title: loaded.changeset.title.clone(),
         source_label: loaded.changeset.source_label.clone(),
     }
+}
+
+pub fn refresh_session_descriptor(
+    current: &super::SessionDescriptor,
+    input: &ReviewInput,
+    loaded: &LoadedReview,
+    cwd: &std::path::Path,
+) -> super::SessionDescriptor {
+    let mut descriptor = current.clone();
+    descriptor.cwd = canonical_string(cwd);
+    descriptor.repo_root = session_repo_root(loaded, cwd).map(|path| canonical_string(&path));
+    descriptor.input_kind = input_kind_name(input.kind()).into();
+    descriptor.title.clone_from(&loaded.changeset.title);
+    descriptor
+        .source_label
+        .clone_from(&loaded.changeset.source_label);
+    descriptor
+}
+
+fn session_repo_root(loaded: &LoadedReview, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+    if let ReloadPlan::Vcs { repo_root, .. } = &loaded.reload_plan {
+        return Some(repo_root.clone());
+    }
+    let root = crate::vcs::detect::select_vcs(cwd, None)?.repo_root;
+    let paths = match &loaded.reload_plan {
+        ReloadPlan::Files { left, right, .. } => vec![left.as_path(), right.as_path()],
+        ReloadPlan::PatchFile { path } => vec![path.as_path()],
+        ReloadPlan::None | ReloadPlan::Vcs { .. } => return None,
+    };
+    paths
+        .into_iter()
+        .all(|path| {
+            let absolute = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                cwd.join(path)
+            };
+            std::fs::canonicalize(absolute)
+                .unwrap_or_else(|_| path.to_path_buf())
+                .starts_with(&root)
+        })
+        .then_some(root)
 }
 
 pub fn session_timestamp() -> String {

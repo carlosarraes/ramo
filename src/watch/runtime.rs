@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::config::ResolvedConfig;
+use crate::config::{ConfigPaths, ConfigResolver, ResolvedConfig};
 use crate::core::changeset::Changeset;
+use crate::core::input::{PatchSource, ReviewInput};
 use crate::diff::model::DiffFile;
 use crate::input::{LoadContext, LoadedReview, ReloadPlan, ReviewLoader};
 use crate::notes::AgentContextSource;
-use crate::vcs::SystemCommandRunner;
+use crate::vcs::{CommandRunner, SystemCommandRunner};
 
 use super::{Coverage, NativeObserver, WatchCoordinator, WatchPlan};
 
@@ -54,6 +55,14 @@ pub struct WatchRuntime {
     pending_error: Option<String>,
     last_reported_error: Option<(String, Instant)>,
     applied_fingerprint: u64,
+    reload_roots: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplacedReviewInput {
+    pub input: ReviewInput,
+    pub loaded: LoadedReview,
+    pub cwd: PathBuf,
 }
 
 impl WatchRuntime {
@@ -104,6 +113,7 @@ impl WatchRuntime {
         } else {
             intervals.safety
         };
+        let reload_roots = initial_reload_roots(initial, &cwd);
         Self {
             reload_plan: initial.reload_plan.clone(),
             agent_context: initial.agent_context.clone(),
@@ -121,7 +131,69 @@ impl WatchRuntime {
             pending_error,
             last_reported_error: None,
             applied_fingerprint: fingerprint(&initial.changeset),
+            reload_roots,
         }
+    }
+
+    pub fn replace_input(
+        &mut self,
+        input: ReviewInput,
+        source_path: Option<&Path>,
+        now: Instant,
+    ) -> Result<ReplacedReviewInput, String> {
+        self.replace_input_with_runner(input, source_path, now, &SystemCommandRunner)
+    }
+
+    pub fn replace_input_with_runner(
+        &mut self,
+        input: ReviewInput,
+        source_path: Option<&Path>,
+        now: Instant,
+        runner: &dyn CommandRunner,
+    ) -> Result<ReplacedReviewInput, String> {
+        let cwd = self.validate_source_path(source_path)?;
+        let input = normalize_reload_input(input, &cwd, &self.reload_roots)?;
+        let config = ConfigResolver::new(ConfigPaths::discover(&cwd))
+            .resolve(&input)
+            .map_err(|error| error.to_string())?;
+        let context = LoadContext {
+            cwd: &cwd,
+            config: &config,
+            runner,
+        };
+        let loaded = ReviewLoader
+            .load_with_context(&input, &mut std::io::empty(), &context)
+            .map_err(|error| error.to_string())?;
+        if matches!(loaded.reload_plan, ReloadPlan::None) {
+            return Err("session reload requires a repeatable review input".into());
+        }
+
+        let reload_roots = self.reload_roots.clone();
+        let mut replacement = Self::new(&loaded, cwd.clone(), config.clone(), config.watch, now);
+        replacement.reload_roots = reload_roots;
+        *self = replacement;
+        Ok(ReplacedReviewInput { input, loaded, cwd })
+    }
+
+    pub fn editor_base(&self) -> &Path {
+        match &self.reload_plan {
+            ReloadPlan::Vcs { repo_root, .. } => repo_root,
+            _ => &self.cwd,
+        }
+    }
+
+    fn validate_source_path(&self, source_path: Option<&Path>) -> Result<PathBuf, String> {
+        if self.reload_roots.is_empty() {
+            return Err(
+                "session reload requires the initial pdiff session to be rooted in a repository"
+                    .into(),
+            );
+        }
+        let candidate = resolve_maybe_real_path(
+            &source_path.map_or_else(|| self.cwd.clone(), |path| resolve_from(&self.cwd, path)),
+        );
+        ensure_in_roots(&self.reload_roots, &candidate, "source path")?;
+        Ok(candidate)
     }
 
     pub fn manual_reload(&mut self, now: Instant) {
@@ -204,6 +276,159 @@ impl WatchRuntime {
         self.last_reported_error = Some((message.clone(), now));
         WatchUpdate::Error { message }
     }
+}
+
+fn initial_reload_roots(initial: &LoadedReview, cwd: &Path) -> Vec<PathBuf> {
+    let root = match &initial.reload_plan {
+        ReloadPlan::Vcs { repo_root, .. } => Some(resolve_maybe_real_path(repo_root)),
+        ReloadPlan::Files { left, right, .. } => {
+            let root = crate::vcs::detect::select_vcs(cwd, None)
+                .map(|detection| resolve_maybe_real_path(&detection.repo_root));
+            root.filter(|root| {
+                [left, right]
+                    .iter()
+                    .map(|path| resolve_maybe_real_path(&resolve_from(cwd, path)))
+                    .all(|path| path.starts_with(root))
+            })
+        }
+        ReloadPlan::PatchFile { path } => {
+            let root = crate::vcs::detect::select_vcs(cwd, None)
+                .map(|detection| resolve_maybe_real_path(&detection.repo_root));
+            root.filter(|root| resolve_maybe_real_path(&resolve_from(cwd, path)).starts_with(root))
+        }
+        ReloadPlan::None => None,
+    };
+    root.into_iter().collect()
+}
+
+fn normalize_reload_input(
+    mut input: ReviewInput,
+    cwd: &Path,
+    roots: &[PathBuf],
+) -> Result<ReviewInput, String> {
+    if input.options().agent_context.as_deref() == Some(Path::new("-")) {
+        return Err("session reload does not support `--agent-context -`".into());
+    }
+    let agent_context = input.options().agent_context.as_ref().map(|path| {
+        let path = resolve_maybe_real_path(&resolve_from(cwd, path));
+        ensure_in_roots(roots, &path, "agent context path")?;
+        Ok::<_, String>(path)
+    });
+    if let Some(agent_context) = agent_context {
+        set_agent_context(&mut input, Some(agent_context?));
+    }
+
+    match &mut input {
+        ReviewInput::FilePair { left, right, .. } => {
+            *left = validate_reload_file(roots, cwd, left, "left file")?;
+            *right = validate_reload_file(roots, cwd, right, "right file")?;
+        }
+        ReviewInput::Patch {
+            source: PatchSource::File(path),
+            ..
+        } => {
+            *path = validate_reload_file(roots, cwd, path, "patch file")?;
+        }
+        ReviewInput::Patch {
+            source: PatchSource::Stdin,
+            ..
+        }
+        | ReviewInput::Pager { .. } => {
+            return Err("session reload does not support stdin-backed patch or pager input".into());
+        }
+        ReviewInput::VcsDiff { .. } | ReviewInput::Show { .. } | ReviewInput::StashShow { .. } => {}
+    }
+    Ok(input)
+}
+
+fn set_agent_context(input: &mut ReviewInput, path: Option<PathBuf>) {
+    match input {
+        ReviewInput::VcsDiff { options, .. }
+        | ReviewInput::Show { options, .. }
+        | ReviewInput::StashShow { options, .. }
+        | ReviewInput::FilePair { options, .. }
+        | ReviewInput::Patch { options, .. }
+        | ReviewInput::Pager { options } => options.agent_context = path,
+    }
+}
+
+fn validate_reload_file(
+    roots: &[PathBuf],
+    cwd: &Path,
+    path: &Path,
+    description: &str,
+) -> Result<PathBuf, String> {
+    let candidate = resolve_maybe_real_path(&resolve_from(cwd, path));
+    ensure_in_roots(roots, &candidate, description)?;
+    Ok(candidate)
+}
+
+fn ensure_in_roots(roots: &[PathBuf], candidate: &Path, description: &str) -> Result<(), String> {
+    if roots.iter().any(|root| candidate.starts_with(root)) {
+        Ok(())
+    } else {
+        Err(format!(
+            "session reload refused {description} outside the initial pdiff root: {}",
+            candidate.display()
+        ))
+    }
+}
+
+fn resolve_from(cwd: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+fn resolve_maybe_real_path(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+    if let Ok(canonical) = std::fs::canonicalize(&absolute) {
+        return canonical;
+    }
+
+    let mut current = absolute.as_path();
+    let mut missing = Vec::new();
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(current) {
+            let joined = missing
+                .iter()
+                .rev()
+                .fold(canonical, |path, part| path.join(part));
+            return lexical_normalize(&joined);
+        }
+        let Some(name) = current.file_name() else {
+            return lexical_normalize(&absolute);
+        };
+        missing.push(name.to_os_string());
+        let Some(parent) = current.parent() else {
+            return lexical_normalize(&absolute);
+        };
+        current = parent;
+    }
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    normalized
 }
 
 fn fingerprint(changeset: &Changeset) -> u64 {

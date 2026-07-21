@@ -455,7 +455,7 @@ impl App {
                     height: size.height,
                 };
                 self.publish_session_snapshot(viewport);
-                needs_redraw |= self.apply_session_requests(viewport);
+                needs_redraw |= self.apply_session_requests(viewport, watch.as_deref_mut());
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
@@ -476,7 +476,11 @@ impl App {
                     }
                 }
                 if let Some((path, line)) = self.editor_request.take() {
-                    if let Some(base) = editor_base {
+                    let base = watch
+                        .as_deref()
+                        .map(WatchRuntime::editor_base)
+                        .or(editor_base);
+                    if let Some(base) = base {
                         self.open_editor(terminal, base, &path, line)?;
                     } else {
                         self.toast = Some(match line {
@@ -553,15 +557,8 @@ impl App {
         match update {
             WatchUpdate::Unchanged => false,
             WatchUpdate::Replaced { files, .. } => {
-                self.files.clone_from(&files);
-                self.flat_lines = build_flat_lines(&self.files);
-                self.file_starts = build_file_starts(&self.flat_lines);
-                self.line_counts = self.files.iter().map(DiffFile::line_counts).collect();
-                self.clamp_cursor();
-                self.review_selection = None;
-                self.review_keyboard_anchor = None;
-                self.context_loader.invalidate();
                 self.review_controller.replace_files(files, viewport);
+                self.synchronize_review_files();
                 if let (Some(client), Some(descriptor)) =
                     (&self.session_registration, &self.session_descriptor)
                 {
@@ -585,6 +582,17 @@ impl App {
         }
     }
 
+    fn synchronize_review_files(&mut self) {
+        self.files = self.review_controller.files().to_vec();
+        self.flat_lines = build_flat_lines(&self.files);
+        self.file_starts = build_file_starts(&self.flat_lines);
+        self.line_counts = self.files.iter().map(DiffFile::line_counts).collect();
+        self.clamp_cursor();
+        self.review_selection = None;
+        self.review_keyboard_anchor = None;
+        self.context_loader.invalidate();
+    }
+
     fn publish_session_snapshot(&mut self, viewport: Viewport) {
         let Some(client) = &self.session_registration else {
             return;
@@ -597,7 +605,11 @@ impl App {
         client.publish_snapshot(snapshot);
     }
 
-    fn apply_session_requests(&mut self, viewport: Viewport) -> bool {
+    fn apply_session_requests(
+        &mut self,
+        viewport: Viewport,
+        mut watch: Option<&mut WatchRuntime>,
+    ) -> bool {
         let mut changed = false;
         for _ in 0..16 {
             let request = self
@@ -607,12 +619,21 @@ impl App {
             let Some(request) = request else {
                 break;
             };
-            let result = crate::session::apply_session_request(
-                &mut self.review_controller,
-                &request.request_id,
-                &request.input,
-                viewport,
-            );
+            let result = if request
+                .input
+                .get("action")
+                .and_then(serde_json::Value::as_str)
+                == Some("reload")
+            {
+                self.apply_live_session_reload(&request.input, watch.as_deref_mut(), viewport)
+            } else {
+                crate::session::apply_session_request(
+                    &mut self.review_controller,
+                    &request.request_id,
+                    &request.input,
+                    viewport,
+                )
+            };
             let snapshot =
                 build_snapshot(&mut self.review_controller, viewport, session_timestamp());
             self.last_session_state = Some(snapshot.state.clone());
@@ -622,6 +643,60 @@ impl App {
             changed = true;
         }
         changed
+    }
+
+    fn apply_live_session_reload(
+        &mut self,
+        input: &serde_json::Value,
+        runtime: Option<&mut WatchRuntime>,
+        viewport: Viewport,
+    ) -> Result<serde_json::Value, String> {
+        let runtime = runtime.ok_or_else(|| {
+            "session reload requires the initial pdiff session to be rooted in a repository"
+                .to_owned()
+        })?;
+        let applied = crate::session::apply_session_reload(
+            &mut self.review_controller,
+            runtime,
+            input,
+            viewport,
+        )?;
+        self.synchronize_review_files();
+        if let Some(descriptor) = self.session_descriptor.as_mut() {
+            *descriptor = crate::session::refresh_session_descriptor(
+                descriptor,
+                &applied.input,
+                &applied.loaded,
+                &applied.cwd,
+            );
+        }
+        if let (Some(client), Some(descriptor)) =
+            (&self.session_registration, &self.session_descriptor)
+        {
+            client.publish_registration(build_registration(
+                descriptor,
+                self.review_controller.files(),
+            ));
+        }
+        self.last_session_state = None;
+        self.toast = Some("Reloaded live session".into());
+        let selected = self.review_controller.snapshot(viewport).clone();
+        let selected_file_path = selected.selected_file_id.as_deref().and_then(|id| {
+            self.review_controller
+                .files()
+                .iter()
+                .find(|file| file.id == id)
+                .map(|file| file.path.clone())
+        });
+        Ok(serde_json::json!({
+            "sessionId":self.session_descriptor.as_ref().map(|descriptor| descriptor.session_id.as_str()),
+            "inputKind":self.session_descriptor.as_ref().map(|descriptor| descriptor.input_kind.as_str()),
+            "title":applied.loaded.changeset.title,
+            "sourceLabel":applied.loaded.changeset.source_label,
+            "fileCount":self.review_controller.files().len(),
+            "selectedFilePath":selected_file_path,
+            "selectedHunkIndex":selected.selected_hunk_index.unwrap_or(0),
+        }))
     }
 
     fn draw(&mut self, frame: &mut Frame) {
