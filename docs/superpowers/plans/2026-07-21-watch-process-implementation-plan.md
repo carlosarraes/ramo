@@ -62,7 +62,7 @@
 - Consumes: `ReviewLoader::load_with_context`, `ReloadPlan`, stable `DiffFile::id`, and the existing viewport-anchor machinery.
 - Produces: `ReloadPlan::Files { left, right, display_path }`, `ReloadPlan::PatchFile { path: PathBuf }`, `ReloadPlan::Vcs { input, repo_root, vcs }`, `ReviewLoader::reload(&ReloadPlan, &LoadContext<'_>) -> Result<LoadedReview, LoadError>`, and `ReviewController::replace_files(Vec<DiffFile>, Viewport)`.
 
-- [ ] **Step 1: Write failing loader and state-preservation tests**
+- [x] **Step 1: Write failing loader and state-preservation tests**
 
 Create `tests/reload.rs` with native temporary files and a controller whose selected file survives reordered replacement:
 
@@ -113,13 +113,13 @@ fn replacing_files_preserves_selected_file_and_viewport_anchor() {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and confirm the contract is absent**
+- [x] **Step 2: Run the focused tests and confirm the contract is absent**
 
 Run: `cargo test --test reload -- --nocapture`
 
 Expected: compilation fails because `PatchFile`, `ReviewLoader::reload`, and `ReviewController::replace_files` do not exist.
 
-- [ ] **Step 3: Add typed reload plans and one loader entry point**
+- [x] **Step 3: Add typed reload plans and one loader entry point**
 
 In `src/input/mod.rs`, add the file-backed patch variant, record the selected VCS, and implement reload without reading process stdin:
 
@@ -155,7 +155,7 @@ impl ReviewLoader {
 
 Add `LoadError::NotReloadable` with display text `this review input cannot be reloaded because it came from stdin`. In `src/input/file_pair.rs`, retain `display_path.map(Path::to_path_buf)` in the reload plan so difftool identity survives refresh. In `src/input/patch.rs`, return `PatchFile` only for `PatchSource::File`; stdin remains `None`. In `src/input/vcs.rs`, set `vcs: selected.id` when constructing the plan. Update existing exact `ReloadPlan` assertions for the new fields and use `..` where the field values are not under test.
 
-- [ ] **Step 4: Add atomic review-model replacement**
+- [x] **Step 4: Add atomic review-model replacement**
 
 In `src/review/state.rs`, capture semantic selection and viewport position before replacing the files, drop cached context/source state, and rebuild through the existing anchor fallback chain:
 
@@ -196,13 +196,13 @@ pub fn replace_files(&mut self, files: Vec<DiffFile>, viewport: Viewport) {
 
 Ensure an empty replacement remains a valid state with no selected file and a zero scroll offset.
 
-- [ ] **Step 5: Run reload and existing review tests**
+- [x] **Step 5: Run reload and existing review tests**
 
 Run: `cargo test --test reload --test input_loading --test git_loading --test jj_loading --test sl_loading --test review_state`
 
 Expected: all tests pass; stdin patch reload returns the distinct `NotReloadable` error.
 
-- [ ] **Step 6: Commit the reload contract**
+- [x] **Step 6: Commit the reload contract**
 
 ```bash
 git add src/input src/review/state.rs src/lib.rs tests/reload.rs tests/input_loading.rs tests/git_loading.rs tests/jj_loading.rs tests/sl_loading.rs
@@ -228,7 +228,7 @@ git commit -m "feat: reload native review inputs"
 - Consumes: `ReloadPlan`, `ReviewLoader::reload`, `LoadedReview`, and `ResolvedConfig`.
 - Produces: `WatchPlan::from_reload_plan`, `WatchCoordinator::{event_hint, manual_hint, tick, finish}`, `NativeObserver`, and `WatchRuntime::{new, manual_reload, poll}` returning `WatchUpdate`.
 
-- [ ] **Step 1: Write deterministic plan and coordinator tests**
+- [x] **Step 1: Write deterministic plan and coordinator tests**
 
 Create `tests/watch.rs` with fake time so debounce behavior never sleeps:
 
@@ -281,13 +281,13 @@ fn bursts_coalesce_and_an_inflight_hint_gets_one_trailing_generation() {
 }
 ```
 
-- [ ] **Step 2: Run the watch tests and verify failure**
+- [x] **Step 2: Run the watch tests and verify failure**
 
 Run: `cargo test --test watch -- --nocapture`
 
 Expected: compilation fails because `pdiff::watch` does not exist.
 
-- [ ] **Step 3: Add the linked native watcher dependency and deterministic plan types**
+- [x] **Step 3: Add the linked native watcher dependency and deterministic plan types**
 
 Add `notify = "8"` to `[dependencies]`. In `src/watch/plan.rs`, define:
 
@@ -310,7 +310,7 @@ pub struct WatchPlan {
 
 Resolve file and patch paths to absolute paths before grouping, sort and deduplicate entries, watch Git repository content recursively, and use `PollOnly` for Jujutsu and Sapling. `ReloadPlan::None` returns `None`.
 
-- [ ] **Step 4: Implement the pure coordinator**
+- [x] **Step 4: Implement the pure coordinator**
 
 In `src/watch/coordinator.rs`, maintain one in-flight generation, one dirty bit, a quiet deadline, a maximum deadline, and a safety-poll deadline:
 
@@ -349,7 +349,7 @@ pub fn accept_result(&self, generation: u64) -> bool {
 
 `manual_hint` schedules an immediate generation. `finish` clears only the matching in-flight generation, schedules the next safety poll, and converts an in-flight dirty hint into one immediate trailing generation. Keep duplicate error suppression as `(message, Instant)` state with a ten-second interval.
 
-- [ ] **Step 5: Adapt `notify` events into non-blocking hints**
+- [x] **Step 5: Adapt `notify` events into non-blocking hints**
 
 In `src/watch/observer.rs`, construct `notify::RecommendedWatcher` handles, send callback results through `std::sync::mpsc`, and filter entry targets by exact absolute path. Watch entry parents with `RecursiveMode::NonRecursive`; watch Git content with `RecursiveMode::Recursive`. Construction or runtime errors set `degraded = true`, are returned once for UI feedback, and leave polling active. `Drop` un-watches all targets.
 
@@ -367,7 +367,7 @@ impl NativeObserver {
 }
 ```
 
-- [ ] **Step 6: Implement synchronous serialized reload runtime with fingerprints**
+- [x] **Step 6: Implement synchronous serialized reload runtime with fingerprints**
 
 In `src/watch/runtime.rs`, define a deterministic FNV-1a fingerprint over changeset source label, title, file ids, paths, and patch text. `WatchRuntime::poll(now)` drains watcher hints, advances the coordinator, executes at most one `ReviewLoader::reload`, and returns:
 
@@ -382,7 +382,7 @@ pub enum WatchUpdate {
 
 Only update the applied fingerprint after a successful accepted generation. Reload errors return `Error` and preserve the old fingerprint, allowing the next hint/poll to retry. Because execution is synchronous in the single TUI loop, there can be no simultaneous loaders; the generation check still prevents a superseded result from being applied if this boundary later becomes asynchronous.
 
-- [ ] **Step 7: Test real atomic replacement and fallback behavior**
+- [x] **Step 7: Test real atomic replacement and fallback behavior**
 
 Extend `tests/watch.rs` with a real `NativeObserver` test that watches a parent directory, writes a sibling temporary file, renames it over the watched path, and polls with a bounded two-second deadline. Add a construction-failure test using a missing parent and verify a `WatchRuntime` created without an observer still refreshes on its safety-poll deadline.
 
@@ -390,7 +390,7 @@ Run: `cargo test --test watch -- --nocapture`
 
 Expected: all deterministic tests pass and the real watcher observes the atomic replacement without an unbounded wait.
 
-- [ ] **Step 8: Commit the watch engine**
+- [x] **Step 8: Commit the watch engine**
 
 ```bash
 git add Cargo.toml Cargo.lock src/watch src/lib.rs tests/watch.rs
@@ -412,7 +412,7 @@ git commit -m "feat: add native watch coordination"
 - Consumes: `WatchRuntime`, `WatchUpdate`, `ReviewEffect::Reload`, and `ReviewController::replace_files`.
 - Produces: `App::run_with_runtime(&mut TerminalSession, Option<&mut WatchRuntime>, &mut EditorLauncher)` and visible reload/error status that never replaces the last valid model on failure.
 
-- [ ] **Step 1: Add failing PTY tests for manual, passive, and failed reloads**
+- [x] **Step 1: Add failing PTY tests for manual, passive, and failed reloads**
 
 Create `tests/pty_watch.rs` by reusing the bounded `portable_pty` harness pattern from `tests/pty_ui.rs`. Cover:
 
@@ -454,13 +454,13 @@ fn watch_error_keeps_the_last_valid_review_visible() {
 }
 ```
 
-- [ ] **Step 2: Run PTY tests and confirm `r` is only a toast**
+- [x] **Step 2: Run PTY tests and confirm `r` is only a toast**
 
 Run: `cargo test --test pty_watch -- --nocapture`
 
 Expected: manual and passive replacement tests time out at their bounded assertions because no reload executes.
 
-- [ ] **Step 3: Poll terminal and watch sources from one event loop**
+- [x] **Step 3: Poll terminal and watch sources from one event loop**
 
 Change the blocking `event::read()` loop in `src/app.rs` to a bounded poll:
 
@@ -483,7 +483,7 @@ while !self.should_quit {
 
 Do not redraw in a busy loop: track `needs_redraw`, set it for input, resize, and non-`Unchanged` watch updates, and draw only when true. The 50 ms event poll bounds watch latency without a background async runtime.
 
-- [ ] **Step 4: Route reload effects and apply results atomically**
+- [x] **Step 4: Route reload effects and apply results atomically**
 
 Make `ReviewEffect::Reload` call `watch.manual_reload(Instant::now())` even when `resolved_config.watch` is false; therefore construct a reload runtime whenever `ReloadPlan != None`, but start `NativeObserver` only when watch is enabled. Apply updates as follows:
 
@@ -510,17 +510,17 @@ fn apply_watch_update(&mut self, update: WatchUpdate, viewport: Viewport) {
 
 An empty watch result must not destroy the current review while the app is running; it presents the message and retries later. This matches the last-valid-review error rule and avoids an abrupt TUI exit during a transient clean state.
 
-- [ ] **Step 5: Construct runtime services from the original stable load context**
+- [x] **Step 5: Construct runtime services from the original stable load context**
 
 In `src/runtime.rs`, retain the original `cwd`, resolved config, reload plan, and initial changeset fingerprint. Pass `config.watch` to `WatchRuntime::new`; reject `--watch` before terminal entry for `ReloadPlan::None` with `LoadError::NotReloadable`. Pager input remains unwatched.
 
-- [ ] **Step 6: Run focused UI, PTY, and loader tests**
+- [x] **Step 6: Run focused UI, PTY, and loader tests**
 
 Run: `cargo test --test pty_watch --test pty_ui --test ui_input --test reload --test watch -- --nocapture`
 
 Expected: all tests pass; manual reload works without `--watch`, passive reload observes atomic saves, and read errors retain old content.
 
-- [ ] **Step 7: Commit TUI reload integration**
+- [x] **Step 7: Commit TUI reload integration**
 
 ```bash
 git add src/app.rs src/runtime.rs src/ui/dialogs.rs tests/pty_watch.rs tests/ui_input.rs
@@ -547,7 +547,7 @@ git commit -m "feat: reload live reviews natively"
 - Consumes: `ReviewEffect::EditFile { path, line }`, `shell_words`, Crossterm terminal primitives, and Ratatui drawing.
 - Produces: `EditorCommand`, `EditorLauncher::open`, `TerminalSession::{enter, terminal, suspend, resume, with_suspended}`, a panic restoration hook, and Unix Ctrl-Z suspend/resume.
 
-- [ ] **Step 1: Write editor-command and fake-runner tests**
+- [x] **Step 1: Write editor-command and fake-runner tests**
 
 Create `tests/editor.rs`:
 
@@ -581,13 +581,13 @@ fn gui_editors_do_not_take_terminal_ownership() {
 
 Add fake-runner cases for unset/empty `$EDITOR`, missing selected file, paths relative to repository root, process-spawn failure, and non-zero exit status.
 
-- [ ] **Step 2: Run editor tests and verify the module is absent**
+- [x] **Step 2: Run editor tests and verify the module is absent**
 
 Run: `cargo test --test editor -- --nocapture`
 
 Expected: compilation fails because `pdiff::process::editor` does not exist.
 
-- [ ] **Step 3: Implement a shell-free process boundary and editor commands**
+- [x] **Step 3: Implement a shell-free process boundary and editor commands**
 
 Define `CommandRequest { argv: Vec<OsString>, stdin: Option<Vec<u8>>, inherit_stdio: bool }`, `CommandResult { status: ExitStatus, stdout: Vec<u8>, stderr: Vec<u8> }`, and a `CommandExecutor` trait in `src/process/command.rs`. `SystemCommandExecutor` must invoke `Command::new(&argv[0]).args(&argv[1..])` directly and never use `sh -c`, `cmd /C`, or string interpolation.
 
@@ -611,7 +611,7 @@ pub fn build_editor_command(editor: &str, path: &Path, line: u32) -> Result<Edit
 }
 ```
 
-- [ ] **Step 4: Add RAII terminal ownership and panic restoration**
+- [x] **Step 4: Add RAII terminal ownership and panic restoration**
 
 `TerminalSession::enter()` calls Ratatui/Crossterm initialization and marks itself active. `restore()` disables mouse capture, restores raw/alternate-screen state, and is idempotent. `Drop` calls `restore()`. `with_suspended` restores, executes a closure, and re-enters even when the closure returns an error. Install a panic hook before terminal entry that calls the low-level idempotent restoration function and then invokes the prior hook.
 
@@ -629,13 +629,13 @@ impl TerminalSession {
 }
 ```
 
-- [ ] **Step 5: Connect `e` and Unix suspend/resume**
+- [x] **Step 5: Connect `e` and Unix suspend/resume**
 
 Resolve selected diff paths against the original VCS repository root or review cwd, require the file to exist, and use line 1 when no selected line is available. Terminal editors run inside `TerminalSession::with_suspended`; GUI editors run without suspending. Report distinct feedback for unset `$EDITOR`, invalid command text, missing file, spawn failure, and non-zero status.
 
 Map Ctrl-Z to `AppAction::Suspend`. On Unix, restore the terminal, raise `SIGTSTP`, and re-enter/redraw after `SIGCONT`; on Windows, return a stable `suspend is not supported by this console` toast. Keep the platform code inside `src/terminal.rs`.
 
-- [ ] **Step 6: Add bounded PTY restoration tests**
+- [x] **Step 6: Add bounded PTY restoration tests**
 
 Create `tests/terminal_lifecycle.rs` with helper test modes exposed only under `PDIFF_TEST_PANIC=1` and `PDIFF_TEST_RUNTIME_ERROR=1`. For each child, assert it enters the alternate screen, exits or panics, and emits `\x1b[?1049l` plus cursor restoration before the diagnostic. Add a Unix-only test that sends Ctrl-Z, waits for stopped status, sends `SIGCONT`, verifies the review redraws, and then quits.
 
@@ -643,7 +643,7 @@ Run: `cargo test --test editor --test terminal_lifecycle --test pty_ui -- --noca
 
 Expected: all tests pass and every terminal-taking path restores ownership.
 
-- [ ] **Step 7: Commit terminal and editor integration**
+- [x] **Step 7: Commit terminal and editor integration**
 
 ```bash
 git add src/terminal.rs src/process src/lib.rs src/app.rs src/runtime.rs src/main.rs tests/editor.rs tests/terminal_lifecycle.rs
@@ -665,7 +665,7 @@ git commit -m "feat: add native editor and terminal job control"
 - Consumes: `CommandExecutor`, stable review selection projection, and OSC 52 encoding.
 - Produces: `TmuxClient<E: CommandExecutor>`, literal buffer transport, non-tmux feedback, and a `ClipboardWriter` boundary whose system implementation remains OSC 52.
 
-- [ ] **Step 1: Write fake-tmux and clipboard tests**
+- [x] **Step 1: Write fake-tmux and clipboard tests**
 
 Create `tests/integrations.rs` cases that assert exact argv and stdin:
 
@@ -690,27 +690,27 @@ fn osc52_encodes_wide_character_selection_exactly() {
 
 Also cover failed `list-panes`, vanished cached pane, plain paste for Pi, filtering the current pane, and empty clipboard selection.
 
-- [ ] **Step 2: Run integration tests before refactoring**
+- [x] **Step 2: Run integration tests before refactoring**
 
 Run: `cargo test --test integrations --test pty_ui -- --nocapture`
 
 Expected: compilation fails because `TmuxClient`, `RecordingExecutor`, and `write_osc52` are not exposed.
 
-- [ ] **Step 3: Move tmux process calls behind `CommandExecutor`**
+- [x] **Step 3: Move tmux process calls behind `CommandExecutor`**
 
 Keep existing free functions as thin `SystemCommandExecutor` compatibility wrappers, but implement behavior in `TmuxClient<E>`. Parse `list-panes` output exactly once, preserve pane ids as literal arguments, write send text only to child stdin, and include stderr in operation-specific errors. Rename the shared buffer to `pdiff-send`.
 
-- [ ] **Step 4: Separate OSC 52 formatting from stdout ownership**
+- [x] **Step 4: Separate OSC 52 formatting from stdout ownership**
 
 Expose `write_osc52(writer: &mut dyn Write, text: &str) -> io::Result<()>`; keep `copy_to_clipboard` as a stdout-lock wrapper. Do not introduce `xclip`, `pbcopy`, PowerShell, or another installed prerequisite in this slice.
 
-- [ ] **Step 5: Run integration and PTY tests**
+- [x] **Step 5: Run integration and PTY tests**
 
 Run: `cargo test --test integrations --test pty_ui --test review_selection -- --nocapture`
 
 Expected: all tests pass, including exact CJK OSC 52 bytes and shell-metacharacter tmux payloads.
 
-- [ ] **Step 6: Commit native optional integrations**
+- [x] **Step 6: Commit native optional integrations**
 
 ```bash
 git add src/tmux.rs src/clipboard.rs src/app.rs tests/integrations.rs tests/pty_ui.rs
@@ -735,7 +735,7 @@ git commit -m "refactor: verify native tmux and clipboard boundaries"
 - Consumes: Pi's global prompt-template convention `~/.pi/agent/prompts/*.md` and the normalized native `pdiff` CLI.
 - Produces: `pi_extension::{install_at, uninstall_at}` for testable filesystem integration and `/pdiff` prompt text that directs Pi to invoke only the native executable.
 
-- [ ] **Step 1: Add failing Pi filesystem tests**
+- [x] **Step 1: Add failing Pi filesystem tests**
 
 Extend `tests/integrations.rs`:
 
@@ -755,13 +755,13 @@ fn pi_install_writes_a_markdown_prompt_and_no_typescript() {
 }
 ```
 
-- [ ] **Step 2: Run the focused test and confirm current TypeScript behavior fails it**
+- [x] **Step 2: Run the focused test and confirm current TypeScript behavior fails it**
 
 Run: `cargo test --test integrations pi_install -- --nocapture`
 
 Expected: compilation fails because `install_at` and `uninstall_at` do not exist.
 
-- [ ] **Step 3: Embed a prompt template and remove all shipped TypeScript**
+- [x] **Step 3: Embed a prompt template and remove all shipped TypeScript**
 
 Create `src/pi_prompt.md`:
 
@@ -772,16 +772,16 @@ argument-hint: "[staged|branch <name>|commit <sha>]"
 ---
 Use the native `pdiff` executable to review the requested target. Choose the command from `$ARGUMENTS`:
 
-- no argument or `staged`: run `pdiff diff --staged --output pdiff-review.md`
-- `branch <name>`: run `pdiff diff <name>...HEAD --output pdiff-review.md`
-- `commit <sha>`: run `pdiff show <sha> --output pdiff-review.md`
+- no argument or `staged`: run `pdiff --output .pdiff-review.md diff --staged`
+- `branch <name>`: run `pdiff --output .pdiff-review.md diff <name>...HEAD`
+- `commit <sha>`: run `pdiff --output .pdiff-review.md show <sha>`
 
-After pdiff exits, read `pdiff-review.md` if it exists, return its review comments to this conversation, and remove only that generated file. If pdiff reports no changes or no comments, say so directly. Do not construct a JavaScript or TypeScript wrapper.
+After pdiff exits, read `.pdiff-review.md` if it exists, return its review comments to this conversation, and remove only that generated file. If pdiff reports no changes or no comments, say so directly. Do not construct a JavaScript or TypeScript wrapper.
 ```
 
 Use `include_str!("pi_prompt.md")`, create `~/.pi/agent/prompts`, and write `pdiff.md` atomically through a sibling temporary file plus rename. `uninstall_at` removes only `pdiff.md` and removes `prompts/` only if it is empty. Production `install`/`uninstall` resolve `dirs::home_dir()` and delegate. Delete `src/pi_extension_src.ts`.
 
-- [ ] **Step 4: Verify there is no runtime or source-language contradiction**
+- [x] **Step 4: Verify there is no runtime or source-language contradiction**
 
 Run:
 
@@ -791,11 +791,11 @@ rg -n "include_str!.*\.ts|index\.ts|registerCommand|node:|Bun" src Cargo.toml RE
 
 Expected: no shipped TypeScript/JavaScript integration or runtime invocation remains. References that explicitly state those runtimes are absent are allowed.
 
-- [ ] **Step 5: Update docs and parity evidence conservatively**
+- [x] **Step 5: Update docs and parity evidence conservatively**
 
 Document `--watch`, manual `r`, atomic-save observation, polling fallback, `$EDITOR` conventions, Ctrl-Z behavior, and the Markdown-based Pi command in `README.md`. In `docs/parity/hunk.md`, mark watch/reload/editor/terminal/Pi rows `verified` only when their named tests pass. Keep Windows `implemented` or `missing` unless an actual Windows CI run exists; do not claim cross-platform verification from Linux.
 
-- [ ] **Step 6: Run the complete slice verification**
+- [x] **Step 6: Run the complete slice verification**
 
 Run:
 
@@ -811,7 +811,7 @@ ldd target/release/pdiff
 
 Expected: formatting, lint, all unit/integration/PTY tests, and release build pass; the artifact is one native executable and its dynamic libraries contain no Node.js, Bun, browser, Hunk, or JavaScript engine.
 
-- [ ] **Step 7: Commit the Rust-only integration closure**
+- [x] **Step 7: Commit the Rust-only integration closure**
 
 ```bash
 git add src/pi_extension.rs src/pi_prompt.md tests/integrations.rs README.md docs/parity/hunk.md docs/superpowers/plans/2026-07-21-watch-process-implementation-plan.md

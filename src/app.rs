@@ -33,6 +33,8 @@ use crate::watch::{WatchRuntime, WatchUpdate};
 
 trait TerminalHost {
     fn terminal(&mut self) -> &mut DefaultTerminal;
+    fn enable_mouse_capture(&mut self) -> io::Result<()>;
+    fn disable_mouse_capture(&mut self) -> io::Result<()>;
     fn suspend(&mut self) -> io::Result<()>;
     fn resume(&mut self) -> io::Result<()>;
     fn suspend_process(&mut self) -> io::Result<()>;
@@ -43,6 +45,14 @@ struct BorrowedTerminal<'a>(&'a mut DefaultTerminal);
 impl TerminalHost for BorrowedTerminal<'_> {
     fn terminal(&mut self) -> &mut DefaultTerminal {
         self.0
+    }
+
+    fn enable_mouse_capture(&mut self) -> io::Result<()> {
+        execute!(io::stdout(), EnableMouseCapture)
+    }
+
+    fn disable_mouse_capture(&mut self) -> io::Result<()> {
+        execute!(io::stdout(), DisableMouseCapture)
     }
 
     fn suspend(&mut self) -> io::Result<()> {
@@ -67,6 +77,14 @@ impl TerminalHost for BorrowedTerminal<'_> {
 impl TerminalHost for TerminalSession {
     fn terminal(&mut self) -> &mut DefaultTerminal {
         self.terminal()
+    }
+
+    fn enable_mouse_capture(&mut self) -> io::Result<()> {
+        self.enable_mouse_capture()
+    }
+
+    fn disable_mouse_capture(&mut self) -> io::Result<()> {
+        self.disable_mouse_capture()
     }
 
     fn suspend(&mut self) -> io::Result<()> {
@@ -402,7 +420,7 @@ impl App {
         mut watch: Option<&mut WatchRuntime>,
         editor_base: Option<&Path>,
     ) -> io::Result<Vec<Annotation>> {
-        execute!(io::stdout(), EnableMouseCapture)?;
+        terminal.enable_mouse_capture()?;
         let run_result = (|| -> io::Result<()> {
             let mut needs_redraw = true;
             while !self.should_quit {
@@ -457,7 +475,7 @@ impl App {
             }
             Ok(())
         })();
-        let disable_result = execute!(io::stdout(), DisableMouseCapture);
+        let disable_result = terminal.disable_mouse_capture();
         run_result?;
         disable_result?;
         Ok(self.annotations)

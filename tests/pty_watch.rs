@@ -300,6 +300,35 @@ fn panic_after_terminal_entry_restores_the_alternate_screen_before_diagnostic() 
 }
 
 #[test]
+fn runtime_error_after_terminal_entry_restores_before_printing_the_error() {
+    let fixture = WatchFixture::new();
+    let args = fixture.args(false);
+    let mut session = PtyProcess::spawn_with_env(
+        fixture.dir.path(),
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        &[("PDIFF_TEST_ERROR_AFTER_TERMINAL", "1")],
+    );
+    assert_eq!(session.wait(), 1);
+    let entered = session
+        .raw
+        .windows(b"\x1b[?1049h".len())
+        .position(|window| window == b"\x1b[?1049h")
+        .expect("alternate screen was not entered");
+    let restored = session
+        .raw
+        .windows(b"\x1b[?1049l".len())
+        .position(|window| window == b"\x1b[?1049l")
+        .expect("alternate screen was not restored");
+    let diagnostic = session
+        .raw
+        .windows(b"injected terminal runtime error".len())
+        .position(|window| window == b"injected terminal runtime error")
+        .expect("runtime error diagnostic was not printed");
+    assert!(entered < restored);
+    assert!(restored < diagnostic);
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn ctrl_z_restores_terminal_then_sigcont_redraws_the_review() {
     let fixture = WatchFixture::new();

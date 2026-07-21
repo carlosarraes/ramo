@@ -167,20 +167,20 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 
 | Capability | Status | Rust evidence | Verification evidence |
 |---|---|---|---|
-| File reload plan seam | verified | `ReloadPlan::Files` | `tests/input_loading.rs::identical_files_produce_an_empty_changeset_with_a_reload_plan` |
-| VCS reload plan seam | implemented | `ReloadPlan::Vcs` from native adapters | plan construction covered by Git/JJ/SL loader tests; observation and reload execution remain slice 4 |
-| Filesystem observation with debounce | missing | — | — |
-| Polling fallback | missing | — | — |
-| Serialized reload and stale-result protection | missing | — | — |
-| Selection/viewport preservation on reload | missing | — | — |
-| Manual `r` reload | missing | — | — |
-| Error display retains last valid review | missing | — | — |
+| File reload plan seam | verified | `ReloadPlan::Files`, `ReloadPlan::PatchFile`, `ReviewLoader::reload` | `tests/reload.rs::patch_file_reload_reads_replacement_contents`, `difftool_reload_preserves_the_display_path` |
+| VCS reload plan seam | verified | `ReloadPlan::Vcs` records the selected native adapter | Git/JJ/SL loader tests plus `tests/watch.rs::git_is_hybrid_while_jj_and_sapling_are_poll_only` |
+| Filesystem observation with debounce | verified | `src/watch/observer.rs`, `WatchCoordinator` | `tests/watch.rs::native_observer_sees_an_atomic_replacement_of_an_exact_file`, `bursts_coalesce_and_inflight_hints_get_one_trailing_generation`; `tests/pty_watch.rs::watch_mode_refreshes_after_an_atomic_save` |
+| Polling fallback | verified | content fingerprint safety polls; two-second degraded interval | `tests/watch.rs::polling_fallback_reloads_only_when_the_content_fingerprint_changes`, `unavailable_native_observation_degrades_to_two_second_polling` |
+| Serialized reload and stale-result protection | verified | single-loop `WatchRuntime`, generation acceptance, trailing dirty bit | `tests/watch.rs::bursts_coalesce_and_inflight_hints_get_one_trailing_generation` |
+| Selection/viewport preservation on reload | verified | `ReviewController::replace_files` plus semantic anchors | `tests/reload.rs::replacing_files_preserves_selected_file_and_viewport_anchor` |
+| Manual `r` reload | verified | `ReviewEffect::Reload` routes to `WatchRuntime::manual_reload` | `tests/pty_watch.rs::manual_r_reloads_a_direct_file_without_watch_mode` |
+| Error display retains last valid review | verified | `WatchUpdate::Error` never replaces files | `tests/pty_watch.rs::reload_error_keeps_the_last_valid_review_visible`, `tests/watch.rs::failed_reload_keeps_the_applied_fingerprint_and_can_retry` |
 | TTY replacement after piped input | verified | `src/runtime.rs::replace_stdin_with_tty` | `tests/runtime_resolution.rs::only_piped_stdin_needs_a_tty_replacement`, `tests/pty_pager.rs::patch_pager_enters_review_ui_and_quits_cleanly` |
-| Terminal restoration on normal app error | implemented | `src/runtime.rs::run_review` restores before propagating | normal-return restoration is PTY-verified; injected app-error coverage remains staged |
-| Panic restoration, suspend/resume, editor job control | missing | — | — |
-| `$EDITOR` file/line launch | missing | — | — |
-| Pi integration | implemented | `src/pi_extension.rs` | filesystem integration test missing |
-| tmux pane discovery/send | implemented | `src/tmux.rs`, stable selection routing | new key mapping is tested; live tmux integration remains staged |
+| Terminal restoration on normal app error | verified | `TerminalSession` RAII plus explicit pre-propagation restore | `tests/pty_watch.rs::runtime_error_after_terminal_entry_restores_before_printing_the_error` |
+| Panic restoration, suspend/resume, editor job control | verified | `src/terminal.rs`, owned suspend/resume boundary | panic ordering and Ctrl-Z/SIGCONT PTY tests in `tests/pty_watch.rs` |
+| `$EDITOR` file/line launch | verified | `src/process/editor.rs`, literal `CommandRequest` argv | `tests/editor.rs`; `tests/pty_watch.rs::editor_key_launches_literal_file_and_line_argv_then_resumes_the_review` |
+| Pi integration | verified | Rust installer writes embedded `src/pi_prompt.md`; no extension runtime | `tests/integrations.rs::pi_install_writes_a_markdown_prompt_and_no_typescript`, `pi_uninstall_preserves_unrelated_prompt_files` |
+| tmux pane discovery/send | implemented | injected `TmuxClient`, stable selection routing | exact literal argv/stdin and failure tests in `tests/integrations.rs`; live tmux smoke remains staged |
 | OSC 52 clipboard | verified | `src/clipboard.rs`, shared selection projection | CJK mouse-selection PTY test asserts exact OSC 52 payload |
 | Linux support | implemented | native build/test | cross-platform CI evidence incomplete |
 | macOS support | implemented | Unix paths present | CI evidence incomplete |

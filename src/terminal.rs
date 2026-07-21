@@ -15,6 +15,7 @@ static PANIC_HOOK: Once = Once::new();
 pub struct TerminalSession {
     terminal: DefaultTerminal,
     active: bool,
+    mouse_capture: bool,
 }
 
 impl TerminalSession {
@@ -23,6 +24,7 @@ impl TerminalSession {
         Ok(Self {
             terminal: enter_terminal()?,
             active: true,
+            mouse_capture: false,
         })
     }
 
@@ -32,7 +34,7 @@ impl TerminalSession {
 
     pub fn suspend(&mut self) -> io::Result<()> {
         if self.active {
-            restore_terminal()?;
+            restore_terminal(self.mouse_capture)?;
             self.active = false;
         }
         Ok(())
@@ -41,8 +43,30 @@ impl TerminalSession {
     pub fn resume(&mut self) -> io::Result<()> {
         if !self.active {
             self.terminal = enter_terminal()?;
-            execute!(stdout(), EnableMouseCapture)?;
             self.active = true;
+            if self.mouse_capture
+                && let Err(error) = execute!(stdout(), EnableMouseCapture)
+            {
+                let _ = restore_terminal(false);
+                self.active = false;
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn enable_mouse_capture(&mut self) -> io::Result<()> {
+        if !self.mouse_capture {
+            execute!(stdout(), EnableMouseCapture)?;
+            self.mouse_capture = true;
+        }
+        Ok(())
+    }
+
+    pub fn disable_mouse_capture(&mut self) -> io::Result<()> {
+        if self.mouse_capture {
+            execute!(stdout(), DisableMouseCapture)?;
+            self.mouse_capture = false;
         }
         Ok(())
     }
@@ -62,7 +86,7 @@ impl TerminalSession {
 
     pub fn restore(&mut self) -> io::Result<()> {
         if self.active {
-            let result = restore_terminal();
+            let result = restore_terminal(self.mouse_capture);
             self.active = false;
             result
         } else {
@@ -109,14 +133,18 @@ fn enter_terminal() -> io::Result<DefaultTerminal> {
     match Terminal::new(backend) {
         Ok(terminal) => Ok(terminal),
         Err(error) => {
-            let _ = restore_terminal();
+            let _ = restore_terminal(false);
             Err(error)
         }
     }
 }
 
-fn restore_terminal() -> io::Result<()> {
-    let mouse_result = execute!(stdout(), DisableMouseCapture);
+fn restore_terminal(mouse_capture: bool) -> io::Result<()> {
+    let mouse_result = if mouse_capture {
+        execute!(stdout(), DisableMouseCapture)
+    } else {
+        Ok(())
+    };
     let raw_result = disable_raw_mode();
     let screen_result = execute!(stdout(), LeaveAlternateScreen, Show);
     mouse_result.and(raw_result).and(screen_result)
@@ -126,7 +154,7 @@ fn install_panic_hook() {
     PANIC_HOOK.call_once(|| {
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            let _ = restore_terminal();
+            let _ = restore_terminal(true);
             previous(info);
         }));
     });

@@ -121,3 +121,36 @@ fn tmux_plain_paste_and_failures_are_operation_specific() {
     assert!(error.contains("tmux load buffer failed with status 9"));
     assert!(error.contains("permission denied"));
 }
+
+#[test]
+fn pi_install_writes_a_markdown_prompt_and_no_typescript() {
+    let home = tempfile::tempdir().unwrap();
+    let installed = pdiff::pi_extension::install_at(home.path()).unwrap();
+    assert_eq!(installed, home.path().join(".pi/agent/prompts/pdiff.md"));
+    let text = std::fs::read_to_string(&installed).unwrap();
+    assert!(text.contains("pdiff diff --staged"));
+    assert!(text.contains("pdiff show"));
+    assert!(text.contains("--output"));
+    assert!(!text.contains("registerCommand"));
+    assert!(
+        !home
+            .path()
+            .join(".pi/agent/extensions/pdiff/index.ts")
+            .exists()
+    );
+
+    pdiff::pi_extension::uninstall_at(home.path()).unwrap();
+    assert!(!installed.exists());
+}
+
+#[test]
+fn pi_uninstall_preserves_unrelated_prompt_files() {
+    let home = tempfile::tempdir().unwrap();
+    let installed = pdiff::pi_extension::install_at(home.path()).unwrap();
+    let other = installed.parent().unwrap().join("other.md");
+    std::fs::write(&other, "keep me").unwrap();
+
+    pdiff::pi_extension::uninstall_at(home.path()).unwrap();
+    assert!(!installed.exists());
+    assert_eq!(std::fs::read_to_string(other).unwrap(), "keep me");
+}

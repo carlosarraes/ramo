@@ -65,7 +65,20 @@ PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
 
 Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `pdiff pager` settings fall back safely.
 
-Watch execution, normalized agent notes, STML, live sessions, editor job control, and final cross-platform release closure remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+Normalized agent notes, STML, live sessions, and final cross-platform release closure remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+
+## Watch, reload, and editor integration
+
+Use `--watch` with direct files or native repository reviews:
+
+```bash
+pdiff diff before.rs after.rs --watch
+pdiff diff --watch
+```
+
+Direct files and Git working trees use native filesystem events with a quiet debounce and safety polling. Jujutsu and Sapling use bounded polling. Atomic-save bursts coalesce into one serialized reload; stale generations are rejected, and failures leave the last valid review visible. Press `r` for an immediate reload even when `--watch` is not enabled.
+
+Press `e` to open the selected file at its selected line through `$EDITOR`. `vi`, `vim`, and `nvim` receive `+line`; VS Code and Cursor receive `--goto file:line`; Helix receives `file:line`. Commands are parsed into literal argv without a shell. Terminal editors temporarily return terminal ownership and redraw afterward. On Unix, `Ctrl-z` suspends `pdiff`; resuming the job restores the review.
 
 ## Current controls
 
@@ -88,7 +101,8 @@ The review UI is a continuous file stream. `auto` uses split layout at 160 colum
 | `V`, `y` | Select lines and copy through OSC 52 |
 | `Ctrl-t`, `Ctrl-Shift-t` | Send selection to tmux / choose a new target |
 | `c` | Create a review note |
-| `e`, `r` | Request editor open / reload |
+| `e`, `r` | Open in `$EDITOR` / reload now |
+| `Ctrl-z` | Suspend and return terminal ownership on Unix |
 | `q` | Quit |
 
 The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel events scroll code horizontally. Left-click selects sidebar files or collapsed context. The scrollbar and sidebar divider are draggable. Dragged text uses terminal-cell-aware selection, including full-width Unicode characters, and copies through the same OSC 52 path as `V`/`y`.
@@ -133,7 +147,7 @@ pdiff install pi
 pdiff uninstall pi
 ```
 
-The installed `/pdiff` command selects a review target and returns exported comments to Pi. Its filesystem-level integration tests and normalized target handling remain tracked in the parity ledger.
+The installed `/pdiff` prompt accepts `staged`, `branch <name>`, or `commit <sha>`, then directs Pi to run this native executable and return its Markdown review comments. Installation writes `~/.pi/agent/prompts/pdiff.md`; it installs no TypeScript extension or runtime helper.
 
 ## Development
 
@@ -148,3 +162,4 @@ The approved architecture and execution plan are in:
 - [`docs/superpowers/specs/2026-07-20-hunk-feature-parity-design.md`](docs/superpowers/specs/2026-07-20-hunk-feature-parity-design.md)
 - [`docs/superpowers/plans/2026-07-20-foundation-cli-implementation-plan.md`](docs/superpowers/plans/2026-07-20-foundation-cli-implementation-plan.md)
 - [`docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md`](docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md)
+- [`docs/superpowers/plans/2026-07-21-watch-process-implementation-plan.md`](docs/superpowers/plans/2026-07-21-watch-process-implementation-plan.md)

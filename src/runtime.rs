@@ -119,7 +119,15 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     if std::env::var_os("PDIFF_TEST_PANIC_AFTER_TERMINAL").is_some() {
         panic!("injected terminal panic");
     }
-    let app_result = app.run_with_services(&mut terminal, watch_runtime.as_mut(), &editor_base);
+    #[cfg(debug_assertions)]
+    let inject_runtime_error = std::env::var_os("PDIFF_TEST_ERROR_AFTER_TERMINAL").is_some();
+    #[cfg(not(debug_assertions))]
+    let inject_runtime_error = false;
+    let app_result = if inject_runtime_error {
+        Err(io::Error::other("injected terminal runtime error"))
+    } else {
+        app.run_with_services(&mut terminal, watch_runtime.as_mut(), &editor_base)
+    };
     let restore_result = terminal.restore();
     restore_result?;
     let annotations = app_result?;
