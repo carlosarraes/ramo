@@ -129,6 +129,7 @@ fn direct_hunk_keymap_has_no_menu_binding() {
             key(KeyCode::Char('t')),
             AppAction::Review(ReviewAction::OpenThemeSelector),
         ),
+        (key(KeyCode::Char('A')), AppAction::OpenAgentSkill),
         (
             key(KeyCode::Char('/')),
             AppAction::Review(ReviewAction::FocusFilter),
@@ -155,6 +156,22 @@ fn direct_hunk_keymap_has_no_menu_binding() {
     assert_eq!(
         map_key_event(key(KeyCode::Char('M')), InputMode::Normal, false),
         None
+    );
+}
+
+#[test]
+fn agent_skill_dialog_owns_copy_and_close_keys() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('y')), InputMode::AgentSkill, false),
+        Some(AppAction::CopyAgentSkill)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::AgentSkill, false),
+        Some(AppAction::CopyAgentSkill)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Esc), InputMode::AgentSkill, false),
+        Some(AppAction::Cancel)
     );
 }
 

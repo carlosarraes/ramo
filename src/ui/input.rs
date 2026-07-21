@@ -10,6 +10,7 @@ pub enum InputMode {
     Note,
     Theme,
     Help,
+    AgentSkill,
     SavePrompt,
 }
 
@@ -27,6 +28,8 @@ pub enum AppAction {
     YankSelection,
     SendSelection { reset_target: bool },
     Suspend,
+    OpenAgentSkill,
+    CopyAgentSkill,
     DisableSavePrompt,
     Discard,
 }
@@ -38,6 +41,11 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
         InputMode::Theme => map_theme(event),
         InputMode::Help => match event.code {
             KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => Some(AppAction::Cancel),
+            _ => None,
+        },
+        InputMode::AgentSkill => match event.code {
+            KeyCode::Char('y') | KeyCode::Enter => Some(AppAction::CopyAgentSkill),
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('A') => Some(AppAction::Cancel),
             _ => None,
         },
         InputMode::SavePrompt => match event.code {
@@ -152,6 +160,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('s') => review(ReviewAction::ToggleSidebar),
         KeyCode::Char('t') => review(ReviewAction::OpenThemeSelector),
         KeyCode::Char('a') => review(ReviewAction::ToggleAgentNotes),
+        KeyCode::Char('A') => Some(AppAction::OpenAgentSkill),
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
         KeyCode::Char('V') => Some(AppAction::BeginSelection),
         KeyCode::Char('y') => Some(AppAction::YankSelection),

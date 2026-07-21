@@ -735,6 +735,9 @@ impl App {
             InputMode::Help => {
                 frame.render_widget(DialogOverlay::help(&self.review_theme, true), area);
             }
+            InputMode::AgentSkill => {
+                frame.render_widget(DialogOverlay::agent_skill(&self.review_theme), area);
+            }
             InputMode::Theme => {
                 if let Some(selection) = &self.theme_selection {
                     frame.render_widget(
@@ -998,6 +1001,17 @@ impl App {
                 }
             }
             AppAction::Suspend => self.suspend_requested = true,
+            AppAction::OpenAgentSkill => self.input_mode = InputMode::AgentSkill,
+            AppAction::CopyAgentSkill => {
+                self.toast = Some(
+                    match crate::clipboard::copy_to_clipboard(
+                        crate::ui::dialogs::AGENT_SKILL_PROMPT,
+                    ) {
+                        Ok(()) => "copied agent skill guidance".into(),
+                        Err(error) => format!("copy failed: {error}"),
+                    },
+                );
+            }
             AppAction::DisableSavePrompt => {
                 let mut current = self.current_view_preferences();
                 current.prompt_save_view_preferences = false;
@@ -1110,7 +1124,7 @@ impl App {
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
             }
-            InputMode::Help | InputMode::Filter | InputMode::SavePrompt => {
+            InputMode::Help | InputMode::AgentSkill | InputMode::Filter | InputMode::SavePrompt => {
                 self.input_mode = InputMode::Normal;
             }
             InputMode::Normal => {

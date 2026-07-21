@@ -205,6 +205,7 @@ The review UI is a continuous file stream. `auto` uses split layout at 160 colum
 | `1` / `2` / `0` | Split/stack/auto layout |
 | `s`, `l`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
 | `a` | Reveal/hide AI and agent notes |
+| `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
 | `/` | Focus the file filter; `Tab` returns to review |
 | `t`, `?` | Theme selector and controls help |

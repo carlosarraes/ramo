@@ -6,6 +6,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
 use super::themes::AppTheme;
 
+pub const AGENT_SKILL_PROMPT: &str = "Load the pdiff skill and use it for this review. Run `pdiff skill path` to get the native skill path.";
+
 pub fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);
@@ -40,6 +42,7 @@ pub fn help_text(can_refresh: bool) -> String {
          1 / 2 / 0   split / stack / auto\n\
          s / t       sidebar / theme selector\n\
          a / z       AI notes / unchanged context\n\
+         A           agent skill setup\n\
          l / w / m   lines / wrap / hunk headers\n\
          e           open file in editor\n\
          \nReview\n\
@@ -105,6 +108,9 @@ pub enum DialogOverlay<'a> {
         theme: &'a AppTheme,
         can_refresh: bool,
     },
+    AgentSkill {
+        theme: &'a AppTheme,
+    },
     Theme {
         theme: &'a AppTheme,
         ids: &'a [&'a str],
@@ -122,6 +128,9 @@ pub enum DialogOverlay<'a> {
 impl<'a> DialogOverlay<'a> {
     pub fn help(theme: &'a AppTheme, can_refresh: bool) -> Self {
         Self::Help { theme, can_refresh }
+    }
+    pub fn agent_skill(theme: &'a AppTheme) -> Self {
+        Self::AgentSkill { theme }
     }
     pub fn theme(theme: &'a AppTheme, ids: &'a [&'a str], selected: usize) -> Self {
         Self::Theme {
@@ -151,6 +160,16 @@ impl Widget for DialogOverlay<'_> {
                     help_text(can_refresh),
                 );
             }
+            Self::AgentSkill { theme } => render_dialog(
+                centered_rect(78, 11, area),
+                buffer,
+                theme,
+                "Agent skill",
+                format!(
+                    "{}\n\ny / Enter copy   Esc close",
+                    AGENT_SKILL_PROMPT.replace("review. Run", "review.\n\nRun")
+                ),
+            ),
             Self::Theme {
                 theme,
                 ids,

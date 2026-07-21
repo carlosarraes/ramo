@@ -373,3 +373,26 @@ fn cjk_mouse_selection_copies_whole_terminal_cells_through_osc52() {
     process.send("q");
     assert_eq!(process.wait(), 0);
 }
+
+#[test]
+fn direct_agent_skill_dialog_copies_native_guidance_and_closes() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    disable_save_prompt(&config_home);
+    let fixture = fixture();
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
+    );
+    process.read_until("println!");
+    process.send("A");
+    let dialog = process.read_until("Agent skill");
+    assert!(dialog.contains("pdiff skill path"));
+    let mut sequence = Vec::new();
+    pdiff::clipboard::write_osc52(&mut sequence, pdiff::ui::dialogs::AGENT_SKILL_PROMPT).unwrap();
+    process.send("y");
+    process.read_raw_until(&sequence);
+    process.send("\x1bqq");
+    assert_eq!(process.wait(), 0);
+}

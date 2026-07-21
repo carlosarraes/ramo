@@ -24,10 +24,10 @@
 
 ## Task 3: Add the direct agent-skill dialog
 
-- [ ] Add an `A` direct binding, centered dialog, Escape behavior, and `y`/Enter OSC 52 copy action for the native `pdiff skill path` prompt.
-- [ ] Update help and README controls without adding a menu or dropdown.
-- [ ] Add input, render, and PTY clipboard evidence.
-- [ ] Commit `feat: add native agent skill dialog`.
+- [x] Add an `A` direct binding, centered dialog, Escape behavior, and `y`/Enter OSC 52 copy action for the native `pdiff skill path` prompt.
+- [x] Update help and README controls without adding a menu or dropdown.
+- [x] Add input, render, and PTY clipboard evidence.
+- [x] Commit `feat: add native agent skill dialog`.
 
 ## Task 4: Add performance and memory-shape evidence
 

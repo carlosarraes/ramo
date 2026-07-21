@@ -122,7 +122,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Help dialog | verified | `DialogOverlay::Help` | dialog/input tests and filter/help PTY test |
 | Theme selector dialog | verified | `DialogOverlay::Theme` | theme/dialog tests and save PTY test |
 | Save-preferences confirmation | verified | `DialogOverlay::Save`, targeted config writer | config persistence and PTY tests |
-| Agent-skill dialog | missing | — | — |
+| Agent-skill dialog | verified | direct `InputMode::AgentSkill` overlay and native OSC 52 copy | `tests/ui_input.rs::agent_skill_dialog_owns_copy_and_close_keys`, `tests/ui_dialogs.rs::overlays_render_centered_and_remain_usable_at_small_sizes`, `tests/pty_ui.rs::direct_agent_skill_dialog_copies_native_guidance_and_closes` |
 
 ### Keyboard actions
 
@@ -139,6 +139,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `s` sidebar | verified | input/state/mouse tests |
 | `t` theme selector | verified | input/dialog and PTY tests |
 | `a` agent notes | verified | canonical external-note visibility toggle | `tests/notes_state.rs`, `tests/pty_notes.rs::agent_notes_toggle_in_the_live_review` |
+| `A` agent-skill setup | verified | direct dialog action with native prompt copy | input, dialog, and `tests/pty_ui.rs::direct_agent_skill_dialog_copies_native_guidance_and_closes` |
 | `z` unchanged context | verified | context controller/app and PTY tests |
 | `l` line numbers | verified | input/state/render tests |
 | `w` wrapping | verified | input/state/geometry tests |
