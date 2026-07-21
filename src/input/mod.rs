@@ -1,5 +1,6 @@
 mod file_pair;
 mod patch;
+mod vcs;
 
 use std::error::Error;
 use std::fmt;
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 use crate::config::ResolvedConfig;
 use crate::core::changeset::Changeset;
 use crate::core::input::{InputKind, ReviewInput};
+use crate::vcs::VcsError;
 use crate::vcs::{CommandRunner, SystemCommandRunner};
 
 pub use patch::normalize_patch_text;
@@ -78,6 +80,9 @@ impl ReviewLoader {
                 display_path,
                 ..
             } => file_pair::load(left, right, display_path.as_deref()),
+            ReviewInput::VcsDiff { .. }
+            | ReviewInput::Show { .. }
+            | ReviewInput::StashShow { .. } => vcs::load(input, _context),
             input => Err(LoadError::UnsupportedInput(input.kind())),
         }
     }
@@ -98,6 +103,7 @@ pub enum LoadError {
         path: PathBuf,
     },
     UnsupportedInput(InputKind),
+    Vcs(VcsError),
 }
 
 impl fmt::Display for LoadError {
@@ -117,8 +123,23 @@ impl fmt::Display for LoadError {
             Self::UnsupportedInput(kind) => {
                 write!(formatter, "input loader for {kind:?} is not available")
             }
+            Self::Vcs(error) => write!(formatter, "{error}"),
         }
     }
 }
 
-impl Error for LoadError {}
+impl Error for LoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Stdin(source) | Self::Io { source, .. } => Some(source),
+            Self::Vcs(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl From<VcsError> for LoadError {
+    fn from(error: VcsError) -> Self {
+        Self::Vcs(error)
+    }
+}

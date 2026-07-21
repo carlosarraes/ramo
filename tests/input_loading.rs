@@ -179,13 +179,11 @@ fn binary_pairs_use_a_placeholder_without_decoding_contents() {
 
 #[test]
 fn unsupported_inputs_fail_before_terminal_startup() {
-    let input = ReviewInput::Show {
-        reference: Some("HEAD".into()),
-        pathspecs: vec![],
+    let input = ReviewInput::Pager {
         options: CommonOptions::default(),
     };
     assert!(matches!(
         ReviewLoader.load(&input, &mut Cursor::new([])).unwrap_err(),
-        LoadError::UnsupportedInput(pdiff::core::input::InputKind::Show)
+        LoadError::UnsupportedInput(pdiff::core::input::InputKind::Pager)
     ));
 }
