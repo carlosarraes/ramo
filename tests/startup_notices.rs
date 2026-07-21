@@ -1,4 +1,4 @@
-use pdiff::startup_notice::resolve_skill_refresh_notice;
+use pdiff::startup_notice::{resolve_skill_refresh_notice, select_remote_update_notice};
 
 #[test]
 fn copied_skill_refresh_notice_is_local_one_time_and_failure_tolerant() {
@@ -26,4 +26,33 @@ fn copied_skill_refresh_notice_is_local_one_time_and_failure_tolerant() {
         resolve_skill_refresh_notice(&unwritable, "0.0.6", false),
         None
     );
+}
+
+#[test]
+fn remote_update_selection_matches_hunks_stable_and_prerelease_priority() {
+    let tags = concat!(
+        "a\trefs/tags/v0.0.6\n",
+        "b\trefs/tags/v0.0.7-beta.1\n",
+        "c\trefs/tags/v0.0.7\n",
+        "d\trefs/tags/not-a-version\n",
+        "e\trefs/heads/v99.0.0\n",
+    );
+
+    assert_eq!(
+        select_remote_update_notice("0.0.6", tags),
+        Some("Update available: 0.0.7 • install the latest pdiff release".into())
+    );
+    assert_eq!(select_remote_update_notice("0.0.7", tags), None);
+    assert_eq!(
+        select_remote_update_notice(
+            "0.0.7",
+            "a\trefs/tags/v0.0.8-beta.2\nb\trefs/tags/v0.0.8-beta.10\n",
+        ),
+        Some("Update available: 0.0.8-beta.10 • install the latest pdiff release".into())
+    );
+    assert_eq!(
+        select_remote_update_notice("0.0.7-beta.1", tags),
+        Some("Update available: 0.0.7 • install the latest pdiff release".into())
+    );
+    assert_eq!(select_remote_update_notice("development", tags), None);
 }

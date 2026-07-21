@@ -1,3 +1,4 @@
+use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -27,6 +28,7 @@ use crate::session::{
     SessionDescriptor, SessionRegistrationClient, SessionSnapshotState, build_registration,
     build_snapshot, session_timestamp,
 };
+use crate::startup_notice::{RemoteUpdatePoll, RemoteUpdateRuntime};
 use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
@@ -129,6 +131,18 @@ enum ReviewMouseDrag {
     Selection { anchor: SelectionPoint, moved: bool },
 }
 
+const STARTUP_NOTICE_DURATION: Duration = Duration::from_secs(7);
+
+fn startup_notice_duration() -> Duration {
+    #[cfg(debug_assertions)]
+    if let Ok(value) = std::env::var("PDIFF_TEST_STARTUP_NOTICE_DURATION_MS")
+        && let Ok(milliseconds) = value.parse::<u64>()
+    {
+        return Duration::from_millis(milliseconds.max(1));
+    }
+    STARTUP_NOTICE_DURATION
+}
+
 fn inclusive_drag_selection(
     anchor: SelectionPoint,
     focus: SelectionPoint,
@@ -184,6 +198,11 @@ pub struct App {
     pub show_comments: bool,
     pub focus_mode: bool,
     pub toast: Option<String>,
+    startup_notice: Option<String>,
+    startup_notice_deadline: Option<Instant>,
+    startup_notice_queue: VecDeque<String>,
+    seen_startup_notices: HashSet<String>,
+    remote_update: Option<RemoteUpdateRuntime>,
     pub tmux_panes: Vec<crate::tmux::TmuxPane>,
     pub tmux_cursor: usize,
     pub tmux_last_target: Option<(String, crate::tmux::PasteMode)>,
@@ -267,6 +286,13 @@ impl App {
         let review_theme =
             theme_registry.resolve(&config.theme, None, config.transparent_background);
         let active_theme_id = review_theme.id.clone();
+        let mut startup_notices = config.startup_notices.iter().cloned();
+        let startup_notice = startup_notices.next();
+        let startup_notice_deadline = startup_notice
+            .as_ref()
+            .map(|_| Instant::now() + startup_notice_duration());
+        let startup_notice_queue = startup_notices.collect();
+        let seen_startup_notices = config.startup_notices.iter().cloned().collect();
         Self {
             files,
             flat_lines,
@@ -304,7 +330,12 @@ impl App {
             show_file_list: true,
             show_comments: false,
             focus_mode: false,
-            toast: config.startup_notices.first().cloned(),
+            toast: None,
+            startup_notice,
+            startup_notice_deadline,
+            startup_notice_queue,
+            seen_startup_notices,
+            remote_update: None,
             tmux_panes: Vec::new(),
             tmux_cursor: 0,
             tmux_last_target: None,
@@ -317,6 +348,10 @@ impl App {
             session_descriptor: None,
             last_session_state: None,
         }
+    }
+
+    pub fn attach_remote_update(&mut self, runtime: RemoteUpdateRuntime) {
+        self.remote_update = Some(runtime);
     }
 
     pub fn attach_session_registration(
@@ -457,6 +492,7 @@ impl App {
                 };
                 self.publish_session_snapshot(viewport);
                 needs_redraw |= self.apply_session_requests(viewport, watch.as_deref_mut());
+                needs_redraw |= self.poll_startup_notices(Instant::now());
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
@@ -552,6 +588,47 @@ impl App {
             Err(error) => error.to_string(),
         });
         Ok(())
+    }
+
+    fn poll_startup_notices(&mut self, now: Instant) -> bool {
+        let mut changed = false;
+        if self
+            .startup_notice_deadline
+            .is_some_and(|deadline| now >= deadline)
+        {
+            self.startup_notice = None;
+            self.startup_notice_deadline = None;
+            changed = true;
+            if let Some(notice) = self.startup_notice_queue.pop_front() {
+                self.startup_notice = Some(notice);
+                self.startup_notice_deadline = Some(now + startup_notice_duration());
+            }
+        }
+        let poll = self
+            .remote_update
+            .as_mut()
+            .map(RemoteUpdateRuntime::poll)
+            .unwrap_or(RemoteUpdatePoll::Complete);
+        match poll {
+            RemoteUpdatePoll::Pending => changed,
+            RemoteUpdatePoll::Ready(notice) => {
+                if !self.seen_startup_notices.insert(notice.clone()) {
+                    return changed;
+                }
+                if self.startup_notice.is_some() {
+                    self.startup_notice_queue.push_back(notice);
+                    changed
+                } else {
+                    self.startup_notice = Some(notice);
+                    self.startup_notice_deadline = Some(now + startup_notice_duration());
+                    true
+                }
+            }
+            RemoteUpdatePoll::Complete => {
+                self.remote_update = None;
+                changed
+            }
+        }
     }
 
     fn apply_watch_update(&mut self, update: WatchUpdate, viewport: Viewport) -> bool {
@@ -725,6 +802,16 @@ impl App {
             let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
             frame.render_widget(
                 Paragraph::new(format!(" {toast}")).style(
+                    Style::default()
+                        .fg(self.review_theme.text)
+                        .bg(self.review_theme.panel_alt),
+                ),
+                status,
+            );
+        } else if let Some(notice) = &self.startup_notice {
+            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+            frame.render_widget(
+                Paragraph::new(format!(" {notice}")).style(
                     Style::default()
                         .fg(self.review_theme.text)
                         .bg(self.review_theme.panel_alt),

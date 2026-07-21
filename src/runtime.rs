@@ -116,7 +116,19 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         return Ok(ExitCode::SUCCESS);
     }
 
-    crate::startup_notice::append_local_startup_notice(&mut resolved_config.startup_notices);
+    let pager_mode =
+        input.kind() == crate::core::input::InputKind::Pager || input.options().pager == Some(true);
+    let remote_update = if pager_mode {
+        resolved_config.startup_notices.clear();
+        None
+    } else {
+        let notice_count = resolved_config.startup_notices.len();
+        crate::startup_notice::append_local_startup_notice(&mut resolved_config.startup_notices);
+        let local_upgrade_notice = resolved_config.startup_notices.len() > notice_count;
+        (!local_upgrade_notice)
+            .then(|| crate::startup_notice::RemoteUpdateRuntime::start(&cwd))
+            .flatten()
+    };
 
     if resolved_config.theme == "auto" {
         let appearance = crate::ui::appearance::detect_terminal_appearance();
@@ -151,8 +163,6 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     let session_descriptor = crate::session::create_session_descriptor(&input, &loaded, &cwd);
 
     replace_stdin_with_tty()?;
-    let pager_mode =
-        input.kind() == crate::core::input::InputKind::Pager || input.options().pager == Some(true);
     let mut app = App::new_with_services(
         loaded.changeset.files,
         &resolved_config,
@@ -160,6 +170,9 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         Box::new(NativeContextSourceLoader::default()),
         config_paths.user,
     );
+    if let Some(remote_update) = remote_update {
+        app.attach_remote_update(remote_update);
+    }
     let session_client = crate::session::ensure_session_daemon()?;
     let (width, height) = crossterm::terminal::size().unwrap_or((100, 24));
     let initial_snapshot = crate::session::build_snapshot(

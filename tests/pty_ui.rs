@@ -450,3 +450,132 @@ fn installed_version_change_surfaces_a_local_copied_skill_notice_once() {
     let state = std::fs::read_to_string(state).unwrap();
     assert!(state.contains(env!("CARGO_PKG_VERSION")));
 }
+
+#[cfg(unix)]
+#[test]
+fn remote_update_notice_uses_an_optional_nonblocking_git_query() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let bin = temp.path().join("bin");
+    let git = bin.join("git");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.7\\n'\n").unwrap();
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config_home = temp.path().join("config");
+    let fixture = fixture();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[
+            ("PATH", &path),
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
+            ("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
+        ],
+    );
+
+    process.read_until("Update available: 0.0.7");
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn slow_remote_update_query_is_killed_without_blocking_the_review() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let bin = temp.path().join("bin");
+    let git = bin.join("git");
+    let pid_path = temp.path().join("git.pid");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::write(
+        &git,
+        "#!/bin/sh\nprintf '%s' \"$$\" > \"$PDIFF_TEST_GIT_PID_PATH\"\nexec sleep 10\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config_home = temp.path().join("config");
+    let fixture = fixture();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[
+            ("PATH", &path),
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
+            ("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
+            ("PDIFF_TEST_UPDATE_NOTICE_TIMEOUT_MS", "50"),
+            ("PDIFF_TEST_GIT_PID_PATH", pid_path.to_str().unwrap()),
+        ],
+    );
+
+    process.read_until("println!");
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !pid_path.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let pid = std::fs::read_to_string(&pid_path)
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    while unsafe { libc::kill(pid, 0) } == 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_ne!(
+        unsafe { libc::kill(pid, 0) },
+        0,
+        "update child survived its timeout"
+    );
+
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn local_and_remote_startup_notices_are_shown_in_order() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let bin = temp.path().join("bin");
+    let git = bin.join("git");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.7\\n'\n").unwrap();
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config_home = temp.path().join("config");
+    let config = config_home.join("pdiff/config.toml");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        config,
+        concat!(
+            "theme = \"custom\"\n",
+            "prompt_save_view_preferences = false\n",
+            "[custom_theme.syntax]\n",
+            "keyword = \"#112233\"\n",
+        ),
+    )
+    .unwrap();
+    let fixture = fixture();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[
+            ("PATH", &path),
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
+            ("PDIFF_TEST_UPDATE_NOTICE_DELAY_MS", "1"),
+            ("PDIFF_TEST_STARTUP_NOTICE_DURATION_MS", "80"),
+        ],
+    );
+
+    process.read_until("Deprecated [custom_theme.syntax]");
+    let after_local = process.mark();
+    process.read_since_until(after_local, "Update available: 0.0.7");
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+}

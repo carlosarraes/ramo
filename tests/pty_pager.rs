@@ -213,6 +213,35 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
     );
 }
 
+#[test]
+fn patch_pager_suppresses_application_startup_notices() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    let config = config_home.join("pdiff/config.toml");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        config,
+        concat!(
+            "theme = \"custom\"\n",
+            "[custom_theme.syntax]\n",
+            "keyword = \"#112233\"\n",
+        ),
+    )
+    .unwrap();
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["pager"],
+        &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
+    );
+    process.send(include_str!("fixtures/simple.patch"));
+    process.send_eof();
+
+    let rendered = process.read_until("println!");
+    assert!(!rendered.contains("Deprecated [custom_theme.syntax]"));
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+}
+
 #[cfg(unix)]
 #[test]
 fn plain_text_pager_does_not_enter_alternate_screen() {
