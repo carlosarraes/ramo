@@ -56,7 +56,7 @@ The existing `src/ui/side_by_side.rs` remains only as a temporary consumer while
 - Consumes: `DiffFile`, `Hunk`, `DiffLine`, `LineType`, `MovedLineKind`, file metadata and stable file ids.
 - Produces crate-private `ReviewRowKey`, `ReviewRow`, `ReviewCell`, `ChangedSpan`, `RowPlan`, and pure `build_row_plan` behind the later `ReviewSnapshot` interface.
 
-- [ ] **Step 1: Write failing row-plan tests**
+- [x] **Step 1: Write failing row-plan tests**
 
 Cover these contracts with crate-private unit tests:
 
@@ -68,13 +68,13 @@ Cover these contracts with crate-private unit tests:
 6. Paired changed lines expose character-emphasis spans computed with `similar::TextDiff::from_chars`; common prefix/suffix stays neutral while changed content is emphasized.
 7. Tabs expand to two spaces and C0/OSC/CSI controls never enter a row's visible text.
 
-- [ ] **Step 2: Run the row tests and verify red**
+- [x] **Step 2: Run the row tests and verify red**
 
 Run: `cargo test --lib review::`
 
 Expected: compilation fails because the `review` module and row types do not exist.
 
-- [ ] **Step 3: Implement immutable row plans**
+- [x] **Step 3: Implement immutable row plans**
 
 Use closed enums rather than renderer-specific callbacks:
 
@@ -84,7 +84,8 @@ pub struct ReviewRowKey {
     pub file_id: String,
     pub hunk_index: Option<usize>,
     pub kind: ReviewRowKind,
-    pub ordinal: usize,
+    pub old_line: Option<u32>,
+    pub new_line: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,13 +102,13 @@ pub enum ReviewRow {
 
 For split pairing, partition each hunk into context rows and adjacent changed blocks. Zip deletions with additions within each block, filling the shorter side with `CellKind::Empty`. Stack mode emits original diff order. Use shared terminal-text sanitization and a fixed two-column tab expansion before emphasis.
 
-- [ ] **Step 4: Run row, parser, and model regressions**
+- [x] **Step 4: Run row, parser, and model regressions**
 
 Run: `cargo test --lib review:: && cargo test --test input_loading && cargo test --lib`
 
 Expected: all pass; normalized input types remain renderer-independent.
 
-- [ ] **Step 5: Commit row planning**
+- [x] **Step 5: Commit row planning**
 
 ```bash
 git add src/review src/lib.rs

@@ -9,6 +9,7 @@ pub mod error;
 pub mod input;
 pub mod pager;
 pub mod pi_extension;
+pub mod review;
 pub mod runtime;
 pub mod tmux;
 pub mod ui;
