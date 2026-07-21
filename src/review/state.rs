@@ -610,6 +610,44 @@ impl ReviewController {
         failure.map_or(Ok(true), Err)
     }
 
+    pub fn replace_files(&mut self, files: Vec<DiffFile>, viewport: Viewport) {
+        self.ensure_geometry(viewport);
+        let anchor = self.geometry.as_ref().map(|geometry| {
+            capture_viewport_anchor(
+                geometry,
+                self.scroll_top,
+                self.selected_file_id.as_deref(),
+                self.selected_hunk_index,
+            )
+        });
+        let selected_file_id = self.selected_file_id.clone();
+        let selected_hunk_index = self.selected_hunk_index;
+
+        self.files = files;
+        self.contexts.clear();
+        self.geometry = None;
+        self.planned_files.clear();
+        self.selected_file_id =
+            selected_file_id.filter(|id| self.files.iter().any(|file| file.id == *id));
+        self.selected_hunk_index = self.selected_file_id.as_ref().map(|id| {
+            let hunk_count = self
+                .files
+                .iter()
+                .find(|file| file.id == *id)
+                .map_or(0, |file| file.hunks.len());
+            selected_hunk_index
+                .unwrap_or(0)
+                .min(hunk_count.saturating_sub(1))
+        });
+        self.dirty = true;
+        self.rebuild(viewport, false);
+
+        if let (Some(geometry), Some(anchor)) = (self.geometry.as_ref(), anchor.as_ref()) {
+            self.scroll_top = restore_viewport_anchor(geometry, anchor);
+            self.refresh_snapshot();
+        }
+    }
+
     pub fn apply(&mut self, action: ReviewAction, viewport: Viewport) -> ReviewEffect {
         self.ensure_geometry(viewport);
         if self.options.pager_mode && application_only(&action) {

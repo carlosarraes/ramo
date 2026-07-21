@@ -108,6 +108,7 @@ pub(super) fn load(
         reload_plan: ReloadPlan::Files {
             left: left.to_path_buf(),
             right: right.to_path_buf(),
+            display_path: display_path.map(Path::to_path_buf),
         },
     })
 }

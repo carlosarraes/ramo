@@ -23,10 +23,15 @@ pub enum ReloadPlan {
     Files {
         left: PathBuf,
         right: PathBuf,
+        display_path: Option<PathBuf>,
+    },
+    PatchFile {
+        path: PathBuf,
     },
     Vcs {
         input: ReviewInput,
         repo_root: PathBuf,
+        vcs: crate::core::input::VcsId,
     },
 }
 
@@ -108,6 +113,26 @@ impl ReviewLoader {
             .map(Box::new)
             .map(LoadOutcome::Review)
     }
+
+    pub fn reload(
+        &self,
+        plan: &ReloadPlan,
+        context: &LoadContext<'_>,
+    ) -> Result<LoadedReview, LoadError> {
+        match plan {
+            ReloadPlan::None => Err(LoadError::NotReloadable),
+            ReloadPlan::Files {
+                left,
+                right,
+                display_path,
+            } => file_pair::load(left, right, display_path.as_deref()),
+            ReloadPlan::PatchFile { path } => patch::load(
+                &crate::core::input::PatchSource::File(path.clone()),
+                &mut std::io::empty(),
+            ),
+            ReloadPlan::Vcs { input, .. } => vcs::load(input, context),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -124,6 +149,7 @@ pub enum LoadError {
     NonUtf8 {
         path: PathBuf,
     },
+    NotReloadable,
     UnsupportedInput(InputKind),
     Vcs(VcsError),
 }
@@ -142,6 +168,8 @@ impl fmt::Display for LoadError {
             Self::NonUtf8 { path } => {
                 write!(formatter, "{} is not valid UTF-8 text", path.display())
             }
+            Self::NotReloadable => formatter
+                .write_str("this review input cannot be reloaded because it came from stdin"),
             Self::UnsupportedInput(kind) => {
                 write!(formatter, "input loader for {kind:?} is not available")
             }

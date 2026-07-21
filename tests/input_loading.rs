@@ -151,7 +151,14 @@ fn identical_files_produce_an_empty_changeset_with_a_reload_plan() {
         )
         .unwrap();
     assert!(loaded.changeset.files.is_empty());
-    assert_eq!(loaded.reload_plan, ReloadPlan::Files { left, right });
+    assert_eq!(
+        loaded.reload_plan,
+        ReloadPlan::Files {
+            left,
+            right,
+            display_path: None,
+        }
+    );
 }
 
 #[test]

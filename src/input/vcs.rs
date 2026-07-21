@@ -46,6 +46,7 @@ pub(super) fn load(
         reload_plan: ReloadPlan::Vcs {
             input: input.clone(),
             repo_root: patch.repo_root,
+            vcs: selected.id,
         },
     })
 }

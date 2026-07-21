@@ -44,9 +44,13 @@ pub(super) fn load(source: &PatchSource, stdin: &mut dyn Read) -> Result<LoadedR
             source_label: source_label.clone(),
         });
     }
+    let reload_plan = match source {
+        PatchSource::Stdin => ReloadPlan::None,
+        PatchSource::File(path) => ReloadPlan::PatchFile { path: path.clone() },
+    };
     Ok(LoadedReview {
         changeset: Changeset::new(source_label, title, files),
-        reload_plan: ReloadPlan::None,
+        reload_plan,
     })
 }
 
