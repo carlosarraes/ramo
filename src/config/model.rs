@@ -33,6 +33,7 @@ pub struct ConfigLayer {
     pub mode: Option<LayoutMode>,
     pub vcs: Option<VcsId>,
     pub theme: Option<String>,
+    pub show_sidebar: Option<bool>,
     pub watch: Option<bool>,
     pub exclude_untracked: Option<bool>,
     pub line_numbers: Option<bool>,
@@ -69,6 +70,7 @@ pub struct ResolvedConfig {
     pub mode: LayoutMode,
     pub vcs: Option<VcsId>,
     pub theme: String,
+    pub show_sidebar: bool,
     pub watch: bool,
     pub exclude_untracked: bool,
     pub line_numbers: bool,
@@ -88,6 +90,7 @@ impl Default for ResolvedConfig {
             mode: LayoutMode::Auto,
             vcs: None,
             theme: "github-dark-default".into(),
+            show_sidebar: true,
             watch: false,
             exclude_untracked: false,
             line_numbers: true,
@@ -114,6 +117,7 @@ impl ResolvedConfig {
         if let Some(value) = &layer.theme {
             self.theme = value.clone();
         }
+        apply(&mut self.show_sidebar, layer.show_sidebar);
         apply(&mut self.watch, layer.watch);
         apply(&mut self.exclude_untracked, layer.exclude_untracked);
         apply(&mut self.line_numbers, layer.line_numbers);
@@ -130,6 +134,35 @@ impl ResolvedConfig {
             layer.transparent_background,
         );
         apply(&mut self.color_moved, layer.color_moved);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewPreferences {
+    pub mode: LayoutMode,
+    pub theme: String,
+    pub show_sidebar: bool,
+    pub line_numbers: bool,
+    pub wrap_lines: bool,
+    pub hunk_headers: bool,
+    pub agent_notes: bool,
+    pub transparent_background: bool,
+    pub prompt_save_view_preferences: bool,
+}
+
+impl From<&ResolvedConfig> for ViewPreferences {
+    fn from(config: &ResolvedConfig) -> Self {
+        Self {
+            mode: config.mode,
+            theme: config.theme.clone(),
+            show_sidebar: config.show_sidebar,
+            line_numbers: config.line_numbers,
+            wrap_lines: config.wrap_lines,
+            hunk_headers: config.hunk_headers,
+            agent_notes: config.agent_notes,
+            transparent_background: config.transparent_background,
+            prompt_save_view_preferences: config.prompt_save_view_preferences,
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use std::io;
+use std::path::PathBuf;
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
@@ -11,7 +12,9 @@ use ratatui::widgets::Paragraph;
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::annotations::model::Annotation;
-use crate::config::ResolvedConfig;
+use crate::config::{
+    ResolvedConfig, ViewPreferenceChanges, ViewPreferences, save_view_preferences,
+};
 use crate::diff::model::{DiffFile, DiffLine, LineType};
 use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
@@ -90,6 +93,8 @@ pub struct App {
     active_theme_id: String,
     transparent_background: bool,
     pager_mode: bool,
+    initial_view_preferences: ViewPreferences,
+    preference_path: Option<PathBuf>,
     pub should_quit: bool,
     pub comment_buf: String,
     pub search_query: String,
@@ -132,6 +137,31 @@ impl App {
         pager_mode: bool,
         context_loader: Box<dyn ContextSourceLoader>,
     ) -> Self {
+        Self::new_with_services(files, config, pager_mode, context_loader, None)
+    }
+
+    pub fn new_with_preference_path(
+        files: Vec<DiffFile>,
+        config: &ResolvedConfig,
+        pager_mode: bool,
+        preference_path: Option<PathBuf>,
+    ) -> Self {
+        Self::new_with_services(
+            files,
+            config,
+            pager_mode,
+            Box::new(NativeContextSourceLoader::default()),
+            preference_path,
+        )
+    }
+
+    pub fn new_with_services(
+        files: Vec<DiffFile>,
+        config: &ResolvedConfig,
+        pager_mode: bool,
+        context_loader: Box<dyn ContextSourceLoader>,
+        preference_path: Option<PathBuf>,
+    ) -> Self {
         let flat_lines = build_flat_lines(&files);
         let file_starts = build_file_starts(&flat_lines);
         let line_counts = files.iter().map(|f| f.line_counts()).collect();
@@ -139,7 +169,7 @@ impl App {
             files.clone(),
             ReviewOptions {
                 layout: config.mode,
-                show_sidebar: !pager_mode,
+                show_sidebar: config.show_sidebar && !pager_mode,
                 line_numbers: config.line_numbers,
                 wrap_lines: config.wrap_lines,
                 hunk_headers: config.hunk_headers,
@@ -177,6 +207,8 @@ impl App {
             active_theme_id,
             transparent_background: config.transparent_background,
             pager_mode,
+            initial_view_preferences: ViewPreferences::from(config),
+            preference_path,
             should_quit: false,
             comment_buf: String::new(),
             search_query: String::new(),
@@ -323,6 +355,16 @@ impl App {
             let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
             frame.render_widget(
                 Paragraph::new(format!(" Filter: {}", self.filter_buffer)).style(
+                    Style::default()
+                        .fg(self.review_theme.text)
+                        .bg(self.review_theme.panel_alt),
+                ),
+                status,
+            );
+        } else if let Some(toast) = &self.toast {
+            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+            frame.render_widget(
+                Paragraph::new(format!(" {toast}")).style(
                     Style::default()
                         .fg(self.review_theme.text)
                         .bg(self.review_theme.panel_alt),
@@ -493,7 +535,7 @@ impl App {
         match action {
             AppAction::Review(action) => {
                 let effect = self.review_controller.apply(action, viewport);
-                self.apply_review_effect(effect);
+                self.apply_review_effect(effect, viewport);
                 if let Some(anchor) = self.review_keyboard_anchor
                     && let Some((_, focus)) = self.review_controller.selected_line_range(viewport)
                 {
@@ -579,14 +621,19 @@ impl App {
                     self.request_tmux_send(text, false);
                 }
             }
-            AppAction::DisableSavePrompt | AppAction::Discard => {
+            AppAction::DisableSavePrompt => {
+                let mut current = self.current_view_preferences();
+                current.prompt_save_view_preferences = false;
+                self.save_and_quit(current);
+            }
+            AppAction::Discard => {
                 self.input_mode = InputMode::Normal;
                 self.should_quit = true;
             }
         }
     }
 
-    fn apply_review_effect(&mut self, effect: ReviewEffect) {
+    fn apply_review_effect(&mut self, effect: ReviewEffect, viewport: Viewport) {
         match effect {
             ReviewEffect::FocusFilter => self.input_mode = InputMode::Filter,
             ReviewEffect::OpenHelp => self.input_mode = InputMode::Help,
@@ -608,8 +655,61 @@ impl App {
                 });
             }
             ReviewEffect::Reload => self.toast = Some("Reload requested".into()),
-            ReviewEffect::Quit => self.should_quit = true,
+            ReviewEffect::Quit => self.request_quit(viewport),
             ReviewEffect::None | ReviewEffect::Redraw => {}
+        }
+    }
+
+    fn current_view_preferences(&self) -> ViewPreferences {
+        let review = self.review_controller.view_preferences();
+        ViewPreferences {
+            mode: review.layout,
+            theme: self.active_theme_id.clone(),
+            show_sidebar: review.show_sidebar,
+            line_numbers: review.line_numbers,
+            wrap_lines: review.wrap_lines,
+            hunk_headers: review.hunk_headers,
+            agent_notes: review.agent_notes,
+            transparent_background: self.transparent_background,
+            prompt_save_view_preferences: self
+                .initial_view_preferences
+                .prompt_save_view_preferences,
+        }
+    }
+
+    fn request_quit(&mut self, _viewport: Viewport) {
+        let changes = ViewPreferenceChanges::between(
+            &self.initial_view_preferences,
+            &self.current_view_preferences(),
+        );
+        if self.pager_mode
+            || self.preference_path.is_none()
+            || !self.initial_view_preferences.prompt_save_view_preferences
+            || changes.is_empty()
+        {
+            self.should_quit = true;
+        } else {
+            self.input_mode = InputMode::SavePrompt;
+        }
+    }
+
+    fn save_and_quit(&mut self, current: ViewPreferences) {
+        let Some(path) = self.preference_path.as_deref() else {
+            self.should_quit = true;
+            self.input_mode = InputMode::Normal;
+            return;
+        };
+        let changes = ViewPreferenceChanges::between(&self.initial_view_preferences, &current);
+        match save_view_preferences(path, &changes) {
+            Ok(()) => {
+                self.should_quit = true;
+                self.input_mode = InputMode::Normal;
+            }
+            Err(error) => {
+                self.should_quit = false;
+                self.input_mode = InputMode::SavePrompt;
+                self.toast = Some(error.to_string());
+            }
         }
     }
 
@@ -679,8 +779,7 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             InputMode::SavePrompt => {
-                self.should_quit = true;
-                self.input_mode = InputMode::Normal;
+                self.save_and_quit(self.current_view_preferences());
             }
             _ => {}
         }

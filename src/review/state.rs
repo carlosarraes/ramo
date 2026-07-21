@@ -166,6 +166,16 @@ pub struct ReviewPosition {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReviewViewPreferences {
+    pub layout: LayoutMode,
+    pub show_sidebar: bool,
+    pub line_numbers: bool,
+    pub wrap_lines: bool,
+    pub hunk_headers: bool,
+    pub agent_notes: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReviewPoint {
     pub x: u16,
     pub y: u16,
@@ -267,6 +277,17 @@ impl ReviewController {
     pub fn snapshot(&mut self, viewport: Viewport) -> &ReviewSnapshot {
         self.ensure_geometry(viewport);
         &self.snapshot
+    }
+
+    pub fn view_preferences(&self) -> ReviewViewPreferences {
+        ReviewViewPreferences {
+            layout: self.options.layout,
+            show_sidebar: self.sidebar_override.unwrap_or(self.options.show_sidebar),
+            line_numbers: self.options.line_numbers,
+            wrap_lines: self.options.wrap_lines,
+            hunk_headers: self.options.hunk_headers,
+            agent_notes: self.options.agent_notes,
+        }
     }
 
     pub(crate) fn render_view(&mut self, viewport: Viewport) -> ReviewRenderView<'_> {

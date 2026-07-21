@@ -529,7 +529,7 @@ git commit -m "feat: add cell-correct review interaction"
 - Consumes: initial/resolved preferences, runtime changes, user config path and save-dialog choice.
 - Produces: dirty preference diff, comment-preserving TOML update and quit confirmation behavior.
 
-- [ ] **Step 1: Write failing persistence tests**
+- [x] **Step 1: Write failing persistence tests**
 
 Cover:
 
@@ -540,17 +540,17 @@ Cover:
 5. Save, discard, never-ask and cancel choices have distinct effects; repeated `q` while prompted discards.
 6. Pager mode never persists view changes.
 
-- [ ] **Step 2: Run persistence tests and verify red**
+- [x] **Step 2: Run persistence tests and verify red**
 
 Run: `cargo test --test config_persistence`
 
 Expected: compilation fails because the save layer does not exist.
 
-- [ ] **Step 3: Implement targeted TOML editing**
+- [x] **Step 3: Implement targeted TOML editing**
 
 Add `toml_edit` and update only keys owned by the user-global view layer. Never rewrite repository or command-specific configuration during interactive preference saving. Preserve unrelated formatting/comments. Surface a typed `ConfigSaveError` through the app without leaving raw mode.
 
-- [ ] **Step 4: Verify dialog behavior under PTY**
+- [x] **Step 4: Verify dialog behavior under PTY**
 
 Add PTY cases that change layout/theme, press `q`, observe the centered save prompt, then exercise save/discard/cancel. Assert no top menu text and exactly one alternate-screen restore on actual exit.
 
@@ -558,7 +558,7 @@ Run: `cargo test --test config_persistence && cargo test --test pty_ui -- --noca
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit preference persistence**
+- [x] **Step 5: Commit preference persistence**
 
 ```bash
 git add Cargo.toml Cargo.lock src/config src/app.rs src/runtime.rs tests/config_persistence.rs tests/pty_ui.rs

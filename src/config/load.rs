@@ -11,6 +11,7 @@ const PREFERENCE_KEYS: &[&str] = &[
     "mode",
     "vcs",
     "theme",
+    "show_sidebar",
     "watch",
     "exclude_untracked",
     "line_numbers",

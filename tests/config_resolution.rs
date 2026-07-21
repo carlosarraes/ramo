@@ -7,7 +7,11 @@ fn builtin_user_repo_command_and_cli_layers_merge_in_order() {
     let user = temp.path().join("user.toml");
     let repo = temp.path().join("repo/.pdiff/config.toml");
     std::fs::create_dir_all(repo.parent().unwrap()).unwrap();
-    std::fs::write(&user, "mode = \"stack\"\nline_numbers = false\n").unwrap();
+    std::fs::write(
+        &user,
+        "mode = \"stack\"\nshow_sidebar = false\nline_numbers = false\n",
+    )
+    .unwrap();
     std::fs::write(&repo, "line_numbers = true\n[diff]\nwrap_lines = true\n").unwrap();
     let input = ReviewInput::VcsDiff {
         range: None,
@@ -25,6 +29,7 @@ fn builtin_user_repo_command_and_cli_layers_merge_in_order() {
     .resolve(&input)
     .unwrap();
     assert_eq!(resolved.mode, LayoutMode::Split);
+    assert!(!resolved.show_sidebar);
     assert!(resolved.line_numbers);
     assert!(resolved.wrap_lines);
 }

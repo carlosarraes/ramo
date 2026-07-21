@@ -57,7 +57,8 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
 
 fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCode, AppError> {
     let cwd = std::env::current_dir()?;
-    let resolved_config = ConfigResolver::new(ConfigPaths::discover(&cwd)).resolve(&input)?;
+    let config_paths = ConfigPaths::discover(&cwd);
+    let resolved_config = ConfigResolver::new(config_paths.clone()).resolve(&input)?;
     let runner = SystemCommandRunner;
     let load_context = LoadContext {
         cwd: &cwd,
@@ -85,11 +86,12 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     replace_stdin_with_tty()?;
     let pager_mode =
         input.kind() == crate::core::input::InputKind::Pager || input.options().pager == Some(true);
-    let app = App::new_with_context_loader(
+    let app = App::new_with_services(
         loaded.changeset.files,
         &resolved_config,
         pager_mode,
         Box::new(NativeContextSourceLoader::default()),
+        config_paths.user,
     );
     let mut terminal = ratatui::init();
     let app_result = app.run(&mut terminal);
