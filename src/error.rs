@@ -4,12 +4,14 @@ use std::fmt;
 use crate::cli::CliError;
 use crate::config::ConfigError;
 use crate::input::LoadError;
+use crate::pager::PagerError;
 
 #[derive(Debug)]
 pub enum AppError {
     Cli(CliError),
     Config(ConfigError),
     Load(LoadError),
+    Pager(PagerError),
     Io(std::io::Error),
 }
 
@@ -17,7 +19,7 @@ impl AppError {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::Cli(_) | Self::Config(_) => 2,
-            Self::Load(_) | Self::Io(_) => 1,
+            Self::Load(_) | Self::Pager(_) | Self::Io(_) => 1,
         }
     }
 }
@@ -28,6 +30,7 @@ impl fmt::Display for AppError {
             Self::Cli(error) => write!(formatter, "{error}"),
             Self::Config(error) => write!(formatter, "{error}"),
             Self::Load(error) => write!(formatter, "{error}"),
+            Self::Pager(error) => write!(formatter, "{error}"),
             Self::Io(error) => write!(formatter, "{error}"),
         }
     }
@@ -50,6 +53,12 @@ impl From<ConfigError> for AppError {
 impl From<LoadError> for AppError {
     fn from(error: LoadError) -> Self {
         Self::Load(error)
+    }
+}
+
+impl From<PagerError> for AppError {
+    fn from(error: PagerError) -> Self {
+        Self::Pager(error)
     }
 }
 

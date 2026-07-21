@@ -7,6 +7,7 @@ pub mod core;
 pub mod diff;
 pub mod error;
 pub mod input;
+pub mod pager;
 pub mod pi_extension;
 pub mod runtime;
 pub mod tmux;

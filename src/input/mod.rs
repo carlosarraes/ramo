@@ -1,4 +1,5 @@
 mod file_pair;
+mod pager;
 mod patch;
 mod vcs;
 
@@ -13,6 +14,7 @@ use crate::core::input::{InputKind, ReviewInput};
 use crate::vcs::VcsError;
 use crate::vcs::{CommandRunner, SystemCommandRunner};
 
+pub use pager::{looks_like_patch, sanitize_terminal_text};
 pub use patch::normalize_patch_text;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +34,12 @@ pub enum ReloadPlan {
 pub struct LoadedReview {
     pub changeset: Changeset,
     pub reload_plan: ReloadPlan,
+}
+
+#[derive(Debug, Clone)]
+pub enum LoadOutcome {
+    Review(Box<LoadedReview>),
+    PlainText(String),
 }
 
 #[derive(Debug, Default)]
@@ -85,6 +93,20 @@ impl ReviewLoader {
             | ReviewInput::StashShow { .. } => vcs::load(input, _context),
             input => Err(LoadError::UnsupportedInput(input.kind())),
         }
+    }
+
+    pub fn load_outcome_with_context(
+        &self,
+        input: &ReviewInput,
+        stdin: &mut dyn Read,
+        context: &LoadContext<'_>,
+    ) -> Result<LoadOutcome, LoadError> {
+        if matches!(input, ReviewInput::Pager { .. }) {
+            return pager::load(stdin);
+        }
+        self.load_with_context(input, stdin, context)
+            .map(Box::new)
+            .map(LoadOutcome::Review)
     }
 }
 

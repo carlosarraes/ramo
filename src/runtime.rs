@@ -9,7 +9,8 @@ use crate::cli::{Action, Invocation};
 use crate::config::{ConfigPaths, ConfigResolver};
 use crate::core::input::{ReviewInput, ReviewOutput};
 use crate::error::AppError;
-use crate::input::{LoadContext, ReviewLoader};
+use crate::input::{LoadContext, LoadOutcome, ReviewLoader};
+use crate::pager::{page_plain_text, resolve_text_pager};
 use crate::pi_extension;
 use crate::vcs::SystemCommandRunner;
 
@@ -64,7 +65,16 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     };
     let stdin = io::stdin();
     let mut stdin_lock = stdin.lock();
-    let loaded = ReviewLoader.load_with_context(&input, &mut stdin_lock, &load_context)?;
+    let outcome = ReviewLoader.load_outcome_with_context(&input, &mut stdin_lock, &load_context)?;
+    let loaded = match outcome {
+        LoadOutcome::Review(loaded) => *loaded,
+        LoadOutcome::PlainText(text) => {
+            let env = std::env::vars().collect();
+            let pager = resolve_text_pager(&env)?;
+            let code = page_plain_text(&text, &pager, io::stdout().is_terminal())?;
+            return Ok(ExitCode::from(code));
+        }
+    };
 
     if loaded.changeset.files.is_empty() {
         eprintln!("No changes to review.");
