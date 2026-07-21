@@ -12,8 +12,7 @@ pub(crate) enum EffectiveLayout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ReviewRowKind {
     HunkHeader,
-    SplitLine,
-    StackLine,
+    DiffLine,
     Placeholder,
 }
 
@@ -80,7 +79,7 @@ pub(crate) enum ReviewRow {
 }
 
 impl ReviewRow {
-    fn key(&self) -> &ReviewRowKey {
+    pub(super) fn key(&self) -> &ReviewRowKey {
         match self {
             Self::HunkHeader { key, .. }
             | Self::Split { key, .. }
@@ -173,7 +172,7 @@ fn build_split_rows(
                 key: row_key(
                     file,
                     Some(hunk_index),
-                    ReviewRowKind::SplitLine,
+                    ReviewRowKind::DiffLine,
                     cell.old_line,
                     cell.new_line,
                 ),
@@ -216,7 +215,7 @@ fn build_split_rows(
                 key: row_key(
                     file,
                     Some(hunk_index),
-                    ReviewRowKind::SplitLine,
+                    ReviewRowKind::DiffLine,
                     left.old_line,
                     right.new_line,
                 ),
@@ -308,7 +307,7 @@ fn push_stack_row(
         key: row_key(
             file,
             Some(hunk_index),
-            ReviewRowKind::StackLine,
+            ReviewRowKind::DiffLine,
             line.old_lineno,
             line.new_lineno,
         ),
@@ -586,6 +585,6 @@ mod tests {
         assert_eq!(cell.moved, Some(MovedLineKind::NewMovedDimmed));
         assert_eq!(cell.text(), "  new link");
         assert!(!cell.text().contains("https://bad"));
-        assert_eq!(key.kind, ReviewRowKind::StackLine);
+        assert_eq!(key.kind, ReviewRowKind::DiffLine);
     }
 }

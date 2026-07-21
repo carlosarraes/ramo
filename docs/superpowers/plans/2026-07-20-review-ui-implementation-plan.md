@@ -130,11 +130,11 @@ git commit -m "refactor: add stable review row plans"
 - Consumes: ordered visible files, their `RowPlan`s, layout, content width, line-number visibility, wrapping, sidebar width, and viewport.
 - Produces crate-private `ReviewGeometry`, `FileSection`, `RowBounds`, `VisibleWindow`, `ViewportAnchor`, binary-search lookup and hit testing behind `ReviewController::snapshot`.
 
-- [ ] **Step 1: Write failing geometry tests from Hunk's invariants**
+- [x] **Step 1: Write failing geometry tests from Hunk's invariants**
 
 Add deterministic cases for:
 
-1. The first file has no in-stream header; every later file adds a one-row separator/header boundary without removing earlier files from the stream.
+1. The first file has no in-stream header; every later file adds one separator row and one header row without removing earlier files from the stream.
 2. `auto` resolves to split at widths `>= 160`, stack below `160`; the sidebar is automatically visible only at widths `>= 220`. Explicit split/stack override only the diff layout, not the responsive sidebar rule.
 3. Split widths reserve one active rail and one center divider. Stack gutters reserve old/new line columns. Width never underflows at tiny terminal sizes.
 4. No-wrap rows have height one. Wrap rows use Unicode terminal-cell width, never byte or scalar count, and return at least one row for empty content.
@@ -143,25 +143,25 @@ Add deterministic cases for:
 7. Capturing a stable row anchor plus intra-row offset and restoring it after split/stack, wrap, line-number, sidebar, and width changes keeps the same semantic row at the same relative viewport location when it still exists.
 8. Missing anchor keys fall back to the selected hunk, selected file, then clamped absolute offset in that order.
 
-- [ ] **Step 2: Run focused geometry tests and verify red**
+- [x] **Step 2: Run focused geometry tests and verify red**
 
 Run: `cargo test --lib review::`
 
 Expected: compilation fails because geometry and anchor APIs are absent.
 
-- [ ] **Step 3: Implement geometry as the single measurement authority**
+- [x] **Step 3: Implement geometry as the single measurement authority**
 
 `ReviewGeometry` owns ordered `FileSection`s and flattened `RowBounds`; each bound stores stable key, absolute top, measured height, file index, hunk index, and row index. Build lookup maps once per geometry. Use `unicode-width` for cell measurements and saturating arithmetic for terminal dimensions.
 
 Cache at most the currently active and immediately previous geometry variant in the controller; do not accumulate every resize width. `VisibleWindow` uses binary search plus an adaptive but bounded overscan range. Rendering, keyboard reveal, sidebar selection, mouse hit testing, selection, scrollbar math, and context expansion all consume these same bounds.
 
-- [ ] **Step 4: Run geometry and strict lint gates**
+- [x] **Step 4: Run geometry and strict lint gates**
 
 Run: `cargo test --lib review:: && cargo clippy --all-targets --all-features -- -D warnings`
 
 Expected: all pass without large retained caches or unchecked dimension casts.
 
-- [ ] **Step 5: Commit shared geometry**
+- [x] **Step 5: Commit shared geometry**
 
 ```bash
 git add Cargo.toml Cargo.lock src/review tests/review_geometry.rs
