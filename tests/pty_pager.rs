@@ -149,8 +149,10 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
     let mut process = PtyProcess::spawn(&cwd, &["pager"], &[]);
     process.send(include_str!("fixtures/simple.patch"));
     process.send_eof();
-    let rendered = process.read_until("NORMAL");
-    assert!(rendered.contains("src/main.rs"));
+    let rendered = process.read_until("println!");
+    assert!(rendered.contains("fn main"));
+    assert!(!rendered.contains("NORMAL"));
+    assert!(!rendered.contains("F10 menu"));
     process.send("q");
     assert_eq!(process.wait(), 0);
     assert_eq!(

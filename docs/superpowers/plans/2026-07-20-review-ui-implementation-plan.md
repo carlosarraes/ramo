@@ -299,7 +299,7 @@ git commit -m "feat: add native themes and lazy highlighting"
 - Consumes: controller snapshot, shared geometry visible window, theme, highlight cache and Ratatui buffer.
 - Produces: reusable `ReviewWidget`, `DiffStreamWidget`, `SidebarWidget`, render metadata/hit regions, and snapshot-style buffer assertions.
 
-- [ ] **Step 1: Write failing render-model and buffer tests**
+- [x] **Step 1: Write failing render-model and buffer tests**
 
 At 80, 160 and 220 columns assert:
 
@@ -314,25 +314,25 @@ At 80, 160 and 220 columns assert:
 9. The bottom status row is absent when inactive and appears only for filter focus/value, dialog hints, warning, mode, or transient feedback. Pager mode omits normal app chrome.
 10. Only rows in `VisibleWindow` are materialized into the buffer for a many-file fixture.
 
-- [ ] **Step 2: Run render tests and verify red**
+- [x] **Step 2: Run render tests and verify red**
 
 Run: `cargo test --test ui_render`
 
 Expected: compilation fails until the new widgets exist.
 
-- [ ] **Step 3: Implement widgets from geometry**
+- [x] **Step 3: Implement widgets from geometry**
 
 Widgets receive immutable snapshots and return hit regions; they do not mutate controller state. Fill each row to its assigned width so transparent and opaque backgrounds behave consistently. Apply syntax foregrounds after semantic row backgrounds, then selection and changed-span backgrounds in that order.
 
 Keep legacy annotation popup/tmux picker rendering behind overlays temporarily, but main stream rows and sidebar must use the new widgets. Delete or stop exporting legacy `side_by_side::render` when no runtime caller remains.
 
-- [ ] **Step 4: Run render and existing PTY regressions**
+- [x] **Step 4: Run render and existing PTY regressions**
 
 Run: `cargo test --test ui_render && cargo test --test pty_pager -- --nocapture && cargo test --all-targets`
 
 Expected: all pass; terminal entry/restoration remains exactly once.
 
-- [ ] **Step 5: Commit the native review renderer**
+- [x] **Step 5: Commit the native review renderer**
 
 ```bash
 git add src/app.rs src/ui tests/ui_render.rs

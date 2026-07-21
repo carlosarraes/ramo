@@ -1,9 +1,9 @@
 mod anchor;
-mod emphasis;
-mod geometry;
+pub(crate) mod emphasis;
+pub(crate) mod geometry;
 mod navigation;
-mod row;
-mod state;
+pub(crate) mod row;
+pub(crate) mod state;
 
 pub use state::{
     HunkTarget, ReviewAction, ReviewController, ReviewEffect, ReviewFileSnapshot, ReviewFileStatus,

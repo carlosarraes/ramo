@@ -196,6 +196,14 @@ pub struct ReviewController {
     snapshot: ReviewSnapshot,
 }
 
+pub(crate) struct ReviewRenderView<'a> {
+    pub files: &'a [DiffFile],
+    pub visible_indices: &'a [usize],
+    pub planned_files: &'a [PlannedFile],
+    pub geometry: &'a ReviewGeometry,
+    pub snapshot: &'a ReviewSnapshot,
+}
+
 impl ReviewController {
     pub fn new(files: Vec<DiffFile>, options: ReviewOptions) -> Self {
         let selected_file_id = files.first().map(|file| file.id.clone());
@@ -223,6 +231,20 @@ impl ReviewController {
     pub fn snapshot(&mut self, viewport: Viewport) -> &ReviewSnapshot {
         self.ensure_geometry(viewport);
         &self.snapshot
+    }
+
+    pub(crate) fn render_view(&mut self, viewport: Viewport) -> ReviewRenderView<'_> {
+        self.ensure_geometry(viewport);
+        ReviewRenderView {
+            files: &self.files,
+            visible_indices: &self.visible_indices,
+            planned_files: &self.planned_files,
+            geometry: self
+                .geometry
+                .as_ref()
+                .expect("geometry exists after ensure_geometry"),
+            snapshot: &self.snapshot,
+        }
     }
 
     pub fn apply(&mut self, action: ReviewAction, viewport: Viewport) -> ReviewEffect {

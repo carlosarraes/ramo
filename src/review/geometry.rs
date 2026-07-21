@@ -104,8 +104,6 @@ pub(crate) struct RowBounds {
     pub row_index: usize,
 }
 
-// Consumed by the viewport renderer in Task 5.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VisibleWindow {
     pub range: Range<usize>,
@@ -165,8 +163,6 @@ impl ReviewGeometry {
         Some(next.saturating_sub(1).min(self.sections.len() - 1))
     }
 
-    // Consumed by the viewport renderer in Task 5.
-    #[allow(dead_code)]
     pub(crate) fn visible_window(
         &self,
         scroll_top: usize,

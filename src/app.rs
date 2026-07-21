@@ -4,9 +4,12 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::annotations::model::Annotation;
+use crate::config::ResolvedConfig;
 use crate::diff::model::{DiffFile, DiffLine, LineType};
-use crate::ui::highlight::Highlighter;
+use crate::review::{ReviewController, ReviewOptions};
+use crate::ui::highlight::{HighlightCache, Highlighter};
 use crate::ui::theme::Theme;
+use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 
 #[derive(Debug, Clone, Copy)]
@@ -40,6 +43,9 @@ pub struct App {
     pub layout: ViewLayout,
     pub theme: Theme,
     pub highlighter: Highlighter,
+    pub review_controller: ReviewController,
+    pub review_theme: AppTheme,
+    pub review_highlights: HighlightCache,
     pub should_quit: bool,
     pub comment_buf: String,
     pub search_query: String,
@@ -60,10 +66,36 @@ pub struct App {
 
 impl App {
     pub fn new(files: Vec<DiffFile>) -> Self {
+        Self::new_with_config(files, &ResolvedConfig::default(), false)
+    }
+
+    pub fn new_with_config(
+        files: Vec<DiffFile>,
+        config: &ResolvedConfig,
+        pager_mode: bool,
+    ) -> Self {
         let flat_lines = build_flat_lines(&files);
         let file_starts = build_file_starts(&flat_lines);
         let line_counts = files.iter().map(|f| f.line_counts()).collect();
         let highlighter = Highlighter::new(&files);
+        let review_controller = ReviewController::new(
+            files.clone(),
+            ReviewOptions {
+                layout: config.mode,
+                show_sidebar: !pager_mode,
+                line_numbers: config.line_numbers,
+                wrap_lines: config.wrap_lines,
+                hunk_headers: config.hunk_headers,
+                agent_notes: config.agent_notes,
+                pager_mode,
+                annotated_hunks: Vec::new(),
+            },
+        );
+        let review_theme = ThemeRegistry::new(config.custom_theme.clone()).resolve(
+            &config.theme,
+            None,
+            config.transparent_background,
+        );
         Self {
             files,
             flat_lines,
@@ -77,6 +109,9 @@ impl App {
             layout: ViewLayout::SideBySide,
             theme: Theme::default(),
             highlighter,
+            review_controller,
+            review_theme,
+            review_highlights: HighlightCache::default(),
             should_quit: false,
             comment_buf: String::new(),
             search_query: String::new(),
@@ -119,24 +154,6 @@ impl App {
 
     fn clamp_cursor(&mut self) {
         self.cursor = self.cursor.min(self.flat_lines.len().saturating_sub(1));
-    }
-
-    fn ensure_visible(&mut self, viewport_height: usize) {
-        if self.cursor < self.scroll_offset {
-            self.scroll_offset = self.cursor;
-        } else if self.rendered_rows_between(self.scroll_offset, self.cursor) > viewport_height {
-            let mut lo = self.scroll_offset;
-            let mut hi = self.cursor;
-            while lo < hi {
-                let mid = lo + (hi - lo) / 2;
-                if self.rendered_rows_between(mid, self.cursor) > viewport_height {
-                    lo = mid + 1;
-                } else {
-                    hi = mid;
-                }
-            }
-            self.scroll_offset = lo;
-        }
     }
 
     pub fn rendered_rows_between(&self, from: usize, to: usize) -> usize {
@@ -211,10 +228,14 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
-        let viewport_height = area.height.saturating_sub(2) as usize;
-        self.ensure_visible(viewport_height);
-
-        crate::ui::side_by_side::render(frame, area, self);
+        frame.render_widget(
+            crate::ui::review::ReviewWidget::new(
+                &mut self.review_controller,
+                &self.review_theme,
+                &mut self.review_highlights,
+            ),
+            area,
+        );
     }
 
     fn handle_key(&mut self, key: KeyEvent, viewport_height: usize) {
