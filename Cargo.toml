@@ -13,6 +13,8 @@ crossterm = { version = "0.28", features = ["use-dev-tty"] }
 clap = { version = "4", features = ["derive"] }
 syntect = "5"
 dirs = "6"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

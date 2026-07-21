@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LayoutMode {
     #[default]
     Auto,
@@ -90,6 +91,17 @@ impl ReviewInput {
             Self::FilePair { .. } => InputKind::Diff,
             Self::Patch { .. } => InputKind::Patch,
             Self::Pager { .. } => InputKind::Pager,
+        }
+    }
+
+    pub fn options(&self) -> &CommonOptions {
+        match self {
+            Self::VcsDiff { options, .. }
+            | Self::Show { options, .. }
+            | Self::StashShow { options, .. }
+            | Self::FilePair { options, .. }
+            | Self::Patch { options, .. }
+            | Self::Pager { options } => options,
         }
     }
 }
