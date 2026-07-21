@@ -1,6 +1,6 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthChar;
 
@@ -418,6 +418,15 @@ fn render_note_card(
                     .bg(theme.note_background),
             )
         } else {
+            if line >= 2
+                && let Some(markup_line) = card
+                    .markup
+                    .as_ref()
+                    .and_then(|markup| markup.lines.get(line.saturating_sub(2)))
+            {
+                render_markup_note_line(x, draw_y, width, markup_line, buffer, theme);
+                continue;
+            }
             let content = if line == 1 {
                 card.location.as_str()
             } else {
@@ -438,6 +447,90 @@ fn render_note_card(
         };
         buffer.set_stringn(x, draw_y, text, usize::from(width), style);
     }
+}
+
+fn render_markup_note_line(
+    x: u16,
+    y: u16,
+    width: u16,
+    line: &crate::markup::StmlLine,
+    buffer: &mut Buffer,
+    theme: &AppTheme,
+) {
+    let base = Style::default().fg(theme.text).bg(theme.note_background);
+    buffer.set_style(Rect::new(x, y, width, 1), base);
+    buffer.set_stringn(
+        x,
+        y,
+        "│ ",
+        2,
+        Style::default()
+            .fg(theme.note_border)
+            .bg(theme.note_background),
+    );
+    let available = usize::from(width.saturating_sub(4));
+    let mut offset = 0usize;
+    for span in &line.spans {
+        if offset >= available {
+            break;
+        }
+        let value = truncate_cells(&span.text, available - offset);
+        let used = unicode_width::UnicodeWidthStr::width(value.as_str());
+        buffer.set_stringn(
+            x.saturating_add(2 + offset as u16),
+            y,
+            value,
+            available - offset,
+            markup_span_style(span, theme),
+        );
+        offset = offset.saturating_add(used);
+    }
+    buffer.set_stringn(
+        x.saturating_add(width.saturating_sub(2)),
+        y,
+        " │",
+        2,
+        Style::default()
+            .fg(theme.note_border)
+            .bg(theme.note_background),
+    );
+}
+
+fn markup_span_style(span: &crate::markup::StmlSpan, theme: &AppTheme) -> Style {
+    let mut style = Style::default()
+        .fg(span
+            .fg
+            .as_deref()
+            .map_or(theme.text, |color| markup_color(color, theme, false)))
+        .bg(span.bg.as_deref().map_or(theme.note_background, |color| {
+            markup_color(color, theme, true)
+        }));
+    let mut modifiers = Modifier::empty();
+    if span.bold {
+        modifiers |= Modifier::BOLD;
+    }
+    if span.italic {
+        modifiers |= Modifier::ITALIC;
+    }
+    if span.underline {
+        modifiers |= Modifier::UNDERLINED;
+    }
+    if span.strike {
+        modifiers |= Modifier::CROSSED_OUT;
+    }
+    if span.dim {
+        modifiers |= Modifier::DIM;
+    }
+    style = style.add_modifier(modifiers);
+    style
+}
+
+fn markup_color(value: &str, theme: &AppTheme, background: bool) -> Color {
+    crate::markup::resolve_stml_color(value, theme).unwrap_or(if background {
+        theme.note_background
+    } else {
+        theme.text
+    })
 }
 
 fn truncate_cells(text: &str, width: usize) -> String {

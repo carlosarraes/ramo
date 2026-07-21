@@ -24,6 +24,7 @@ pub enum StartupAction {
     Review,
     InstallPi,
     UninstallPi,
+    Markup,
 }
 
 pub fn resolve_action(action: &Action) -> StartupAction {
@@ -32,6 +33,7 @@ pub fn resolve_action(action: &Action) -> StartupAction {
         Action::Review(_) => StartupAction::Review,
         Action::InstallPi => StartupAction::InstallPi,
         Action::UninstallPi => StartupAction::UninstallPi,
+        Action::MarkupRender(_) | Action::MarkupGuide => StartupAction::Markup,
     }
 }
 
@@ -52,6 +54,15 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
         }
         Action::UninstallPi => {
             pi_extension::uninstall("pi")?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Action::MarkupGuide => {
+            print!("{}", crate::markup::guide());
+            io::stdout().flush()?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Action::MarkupRender(options) => {
+            crate::markup::render(&options)?;
             Ok(ExitCode::SUCCESS)
         }
         Action::Review(input) => run_review(input, invocation.output),

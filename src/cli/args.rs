@@ -47,6 +47,40 @@ pub enum Command {
     Install(IntegrationArgs),
     /// Uninstall a pdiff integration.
     Uninstall(IntegrationArgs),
+    /// Render or inspect native terminal markup without opening the review UI.
+    Markup {
+        #[command(subcommand)]
+        command: MarkupCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MarkupCommand {
+    /// Render an STML file, or '-' for standard input.
+    Render(MarkupRenderArgs),
+    /// Print the embedded STML authoring guide.
+    Guide,
+}
+
+#[derive(Debug, Args)]
+pub struct MarkupRenderArgs {
+    #[arg(value_name = "FILE", default_value = "-")]
+    pub file: PathBuf,
+    #[arg(long, default_value_t = crate::markup::STML_REFERENCE_WIDTH)]
+    pub width: u16,
+    #[arg(long)]
+    pub theme: Option<String>,
+    #[arg(long, value_enum, default_value_t = MarkupColorArg::Auto)]
+    pub color: MarkupColorArg,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum MarkupColorArg {
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Debug, Subcommand)]

@@ -108,10 +108,17 @@ pub(crate) struct NoteCard {
     pub title: String,
     pub location: String,
     pub lines: Vec<String>,
+    pub markup: Option<Box<NoteMarkup>>,
     pub tags: Vec<String>,
     pub author: Option<String>,
     pub placement: NoteBoxLayout,
     pub human: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NoteMarkup {
+    pub lines: Vec<crate::markup::StmlLine>,
+    pub notes: Vec<String>,
 }
 
 impl NoteCard {
@@ -699,6 +706,23 @@ fn external_card(
             body.push_str(" confidence");
         }
     }
+    let markup = note
+        .markup
+        .as_deref()
+        .map(|markup| crate::markup::layout_stml_cached(markup, placement.content_width));
+    let markup_lines = markup
+        .as_ref()
+        .filter(|result| !result.lines.is_empty())
+        .map(|result| result.lines.clone());
+    let lines = markup_lines.as_ref().map_or_else(
+        || wrap_note_text(&body, usize::from(placement.content_width)),
+        |lines| {
+            lines
+                .iter()
+                .map(|line| line.spans.iter().map(|span| span.text.as_str()).collect())
+                .collect()
+        },
+    );
     NoteCard {
         id: stable_note_id(file, note),
         target,
@@ -709,7 +733,13 @@ fn external_card(
             NoteSource::Named(ref value) => format!("{value} note"),
         }),
         location: annotation_range_label(note, Some(file)),
-        lines: wrap_note_text(&body, usize::from(placement.content_width)),
+        lines,
+        markup: markup_lines.map(|lines| {
+            Box::new(NoteMarkup {
+                lines,
+                notes: markup.map_or_else(Vec::new, |result| result.errors.clone()),
+            })
+        }),
         tags: note.tags.clone(),
         author: note.author.clone(),
         placement,
@@ -733,6 +763,7 @@ fn human_card(
         title: "Your note".into(),
         location,
         lines: wrap_note_text(&note.body, usize::from(placement.content_width)),
+        markup: None,
         tags: Vec::new(),
         author: None,
         placement,
@@ -759,6 +790,7 @@ fn draft_card(
         title: "Draft note".into(),
         location: target_location(file, &draft.target),
         lines: wrap_note_text(&body, usize::from(placement.content_width)),
+        markup: None,
         tags: Vec::new(),
         author: None,
         placement,

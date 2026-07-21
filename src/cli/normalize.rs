@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use super::args::{
-    Cli, Command, DiffArgs, DifftoolArgs, LayoutArg, ReviewFlags, ShowArgs, StashCommand,
-    StashShowArgs,
+    Cli, Command, DiffArgs, DifftoolArgs, LayoutArg, MarkupColorArg, MarkupCommand, ReviewFlags,
+    ShowArgs, StashCommand, StashShowArgs,
 };
 use super::{Action, CliError, Invocation};
 use crate::core::input::{CommonOptions, LayoutMode, PatchSource, ReviewInput, ReviewOutput};
+use crate::markup::{MarkupColor, MarkupRenderOptions};
 
 pub fn normalize(cli: Cli, stdin_is_terminal: bool) -> Result<Invocation, CliError> {
     let output = ReviewOutput {
@@ -45,6 +46,20 @@ pub fn normalize(cli: Cli, stdin_is_terminal: bool) -> Result<Invocation, CliErr
         },
         (Some(Command::Install(args)), None) => integration_action(args.target, true)?,
         (Some(Command::Uninstall(args)), None) => integration_action(args.target, false)?,
+        (Some(Command::Markup { command }), None) => match command {
+            MarkupCommand::Render(args) => Action::MarkupRender(MarkupRenderOptions {
+                file: args.file,
+                width: args.width,
+                theme: args.theme,
+                color: match args.color {
+                    MarkupColorArg::Auto => MarkupColor::Auto,
+                    MarkupColorArg::Always => MarkupColor::Always,
+                    MarkupColorArg::Never => MarkupColor::Never,
+                },
+                json: args.json,
+            }),
+            MarkupCommand::Guide => Action::MarkupGuide,
+        },
         (Some(_), Some(_)) => unreachable!("conflicting input returned above"),
     };
 

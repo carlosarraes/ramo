@@ -229,6 +229,56 @@ fn inline_agent_notes_render_inside_the_measured_review_stream() {
 }
 
 #[test]
+fn inline_agent_markup_replaces_plain_fallback_and_keeps_semantic_span_style() {
+    let mut annotated = file("src/markup.rs", FileChangeKind::Modified, 4);
+    annotated.agent = Some(
+        pdiff::notes::parse_agent_context(
+            "agent.json",
+            br#"{"files":[{"path":"src/markup.rs","annotations":[{
+              "newRange":[2,2],
+              "summary":"Plain fallback must be hidden",
+              "markup":"<h2>Refactor</h2><badge color=success>PASS</badge> native <color fg=#0f0>HEX</color>"
+            }]}]}"#,
+        )
+        .unwrap()
+        .files
+        .remove(0),
+    );
+    let (buffer, _) = render(
+        100,
+        18,
+        vec![annotated],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            agent_notes: true,
+            ..ReviewOptions::default()
+        },
+    );
+    let frame = text(&buffer);
+    assert!(frame.contains("Refactor"), "{frame}");
+    assert!(frame.contains(" PASS  native"), "{frame}");
+    assert!(!frame.contains("Plain fallback must be hidden"), "{frame}");
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let (y, row) = frame
+        .lines()
+        .enumerate()
+        .find(|(_, row)| row.contains("PASS"))
+        .unwrap();
+    let x = row.find("PASS").unwrap() as u16;
+    assert_eq!(buffer[(x, y as u16)].bg, theme.added_sign);
+    assert!(
+        buffer[(x, y as u16)]
+            .modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    );
+    let hex_x = row.find("HEX").unwrap() as u16;
+    assert_eq!(
+        buffer[(hex_x, y as u16)].fg,
+        ratatui::style::Color::Rgb(0, 255, 0)
+    );
+}
+
+#[test]
 fn moved_rows_keep_moved_paint_while_changed_characters_use_stronger_backgrounds() {
     let mut moved = file("src/moved.rs", FileChangeKind::Modified, 2);
     moved.hunks[0].lines[0].moved = Some(MovedLineKind::OldMoved);

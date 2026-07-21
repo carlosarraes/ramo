@@ -463,7 +463,7 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> (&str, bool) {
 }
 
 fn sanitize(text: &str) -> String {
-    sanitize_terminal_text(text, false).replace('\t', "")
+    sanitize_terminal_text(text, false)
 }
 
 fn is_void(tag: &str) -> bool {

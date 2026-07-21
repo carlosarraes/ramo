@@ -8,6 +8,7 @@ use std::fmt;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 
 use crate::core::input::{ReviewInput, ReviewOutput};
+use crate::markup::MarkupRenderOptions;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
@@ -15,6 +16,8 @@ pub enum Action {
     Review(ReviewInput),
     InstallPi,
     UninstallPi,
+    MarkupRender(MarkupRenderOptions),
+    MarkupGuide,
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -209,25 +209,25 @@ git commit -m "feat: parse bounded terminal markup"
 - Test: `tests/markup_cli.rs`
 - Test: `tests/ui_render.rs`
 
-- [ ] **Step 1: Write layout and black-box CLI tests**
+- [x] **Step 1: Write layout and black-box CLI tests**
 
 Cover cell-aware wrapping, style preservation, explicit breaks, headings, badge/kbd padding, lists with hanging indents, spacers/rules, code clipping, bordered boxes/cards, padding/background fill, fixed/percentage widths, rows/gaps, narrow-row stacking diagnostics, unknown-tag fallback, exact-width Unicode output, deterministic repetition, JSON output, color modes, stdin/file input, invalid widths/themes/files, and guide snippets that all validate at reference width 56.
 
-- [ ] **Step 2: Confirm markup commands are missing**
+- [x] **Step 2: Confirm markup commands are missing**
 
 Run: `cargo test --test stml_layout --test markup_cli -- --nocapture`
 
-- [ ] **Step 3: Port the symbolic terminal-cell layout engine**
+- [x] **Step 3: Port the symbolic terminal-cell layout engine**
 
 Define `StmlStyle`, `StmlSpan`, `StmlLine`, and `StmlLayoutResult`. Support Hunk's block tags (`box`, `card`, `section`, `col`, `row`, `text`, `p`, headings, lists/items, rules, spacers, code/pre) and inline tags (`b`, `i`, `u`, `s`, `dim`, `c`/`color`/`span`, `kbd`, `badge`, `a`/`link`, `br`). Resolve widths with `unicode-width`; clip without splitting wide cells; keep colors symbolic until rendering.
 
 Use a bounded content-sensitive LRU for repeated inline layouts; do not retain unbounded note markup.
 
-- [ ] **Step 4: Render STML inside note cards**
+- [x] **Step 4: Render STML inside note cards**
 
 Resolve semantic tokens (`accent`, `success`, `warning`, `danger`, `info`, `muted`, `subtle`, `heading`, `badge-text`), ANSI names, and validated hex colors through `AppTheme`. Use the exact content width from note geometry; parse/layout notes appear as non-fatal note metadata and never shift geometry after render.
 
-- [ ] **Step 5: Add native markup commands and embedded guide**
+- [x] **Step 5: Add native markup commands and embedded guide**
 
 Add:
 
@@ -238,11 +238,11 @@ pdiff markup guide
 
 `render` writes plain/ANSI lines, emits layout notes on stderr, and never enters the alternate screen. JSON is stable `{ "width", "lines", "notes" }`. The embedded guide names `pdiff`, not Hunk, and every fenced STML example is tested.
 
-- [ ] **Step 6: Run layout, CLI, render, and full review regressions**
+- [x] **Step 6: Run layout, CLI, render, and full review regressions**
 
 Run: `cargo test --test stml_layout --test markup_cli --test ui_render --test pty_notes --test cli_contract`
 
-- [ ] **Step 7: Commit STML and commands**
+- [x] **Step 7: Commit STML and commands**
 
 ```bash
 git add src/markup src/cli src/runtime.rs src/ui/review.rs tests/stml_layout.rs tests/markup_cli.rs tests/ui_render.rs

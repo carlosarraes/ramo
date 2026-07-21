@@ -358,10 +358,13 @@ fn pager_mode_rejects_application_only_actions_but_keeps_navigation() {
         ReviewAction::FocusFilter,
         ReviewAction::OpenHelp,
         ReviewAction::OpenThemeSelector,
-        ReviewAction::StartNote,
     ] {
         assert_eq!(controller.apply(action, view), ReviewEffect::None);
     }
+    assert_eq!(
+        controller.apply(ReviewAction::StartNote, view),
+        ReviewEffect::StartNote
+    );
     assert_eq!(
         controller.apply(
             ReviewAction::Scroll {
