@@ -13,6 +13,9 @@ use crate::watch::WatchRuntime;
 
 use super::{build_snapshot, session_timestamp};
 
+const MAX_SESSION_NOTE_TEXT_BYTES: usize = 64 * 1024;
+const MAX_SESSION_NOTE_MARKUP_BYTES: usize = 64 * 1024;
+
 pub fn apply_session_request(
     controller: &mut ReviewController,
     request_id: &str,
@@ -422,6 +425,22 @@ fn parse_comment(value: &Value, id: String) -> Result<LiveNoteInput, String> {
                 .ok_or_else(|| "hunk numbers are positive and 1-based".to_owned())
         })
         .transpose()?;
+    let summary = required_string(value, "summary")?.to_owned();
+    let rationale = optional_string(value, "rationale");
+    let markup = optional_string(value, "markup");
+    if summary.len() + rationale.as_ref().map_or(0, String::len) > MAX_SESSION_NOTE_TEXT_BYTES {
+        return Err(format!(
+            "live note summary and rationale exceed {MAX_SESSION_NOTE_TEXT_BYTES} bytes"
+        ));
+    }
+    if markup
+        .as_ref()
+        .is_some_and(|markup| markup.len() > MAX_SESSION_NOTE_MARKUP_BYTES)
+    {
+        return Err(format!(
+            "live note markup exceeds {MAX_SESSION_NOTE_MARKUP_BYTES} bytes"
+        ));
+    }
     Ok(LiveNoteInput {
         id,
         file_path: required_string(value, "filePath")?.to_owned(),
@@ -433,9 +452,9 @@ fn parse_comment(value: &Value, id: String) -> Result<LiveNoteInput, String> {
                 .and_then(Value::as_u64)
                 .ok_or_else(|| "comment line must be a positive integer".to_owned())?,
         )?,
-        summary: required_string(value, "summary")?.to_owned(),
-        rationale: optional_string(value, "rationale"),
-        markup: optional_string(value, "markup"),
+        summary,
+        rationale,
+        markup,
         author: optional_string(value, "author"),
         created_at: session_timestamp(),
     })

@@ -27,22 +27,22 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `pdiff patch [file|-]` | verified | `src/input/patch.rs::load` | `tests/input_loading.rs::patch_stdin_loads_a_changeset`, `patch_file_uses_its_path_as_source_context` |
 | `pdiff pager` diff detection and text fallback | verified | `src/input/pager.rs`, `src/pager.rs` | `tests/pager.rs`, `tests/pty_pager.rs::patch_pager_enters_review_ui_and_quits_cleanly`, `plain_text_pager_does_not_enter_alternate_screen` |
 | `pdiff difftool <left> <right> [path]` | verified | `src/input/file_pair.rs::load` | `tests/cli_parse.rs::difftool_preserves_display_path_and_watch`, `tests/input_loading.rs::binary_pairs_use_a_placeholder_without_decoding_contents` |
-| `pdiff session list` | missing | — | — |
-| `pdiff session get` | missing | — | — |
-| `pdiff session context` | missing | — | — |
-| `pdiff session review` | missing | — | — |
-| `pdiff session navigate` | missing | — | — |
-| `pdiff session reload` | missing | — | — |
-| `pdiff session comment add` | missing | — | — |
-| `pdiff session comment apply` | missing | — | — |
-| `pdiff session comment list` | missing | — | — |
-| `pdiff session comment rm` | missing | — | — |
-| `pdiff session comment clear` | missing | — | — |
-| `pdiff daemon serve` | missing | — | — |
-| `pdiff mcp serve` alias | missing | — | — |
+| `pdiff session list` | verified | `src/session/{client,http,daemon}.rs` | `tests/session_daemon.rs::installed_binary_serves_and_cli_commands_use_the_native_daemon_without_a_tui`, `tests/session_e2e.rs::two_live_terminals_route_isolated_commands_and_reconnect_before_idle_exit` |
+| `pdiff session get` | verified | native descriptor projection and selector routing | `tests/session_daemon.rs::registry_list_get_context_review_and_selector_errors_are_structured`, two-PTY ID/path selection in `tests/session_e2e.rs` |
+| `pdiff session context` | verified | `src/session/projection.rs::build_session_context` | isolated selected-hunk/note assertions in `tests/session_e2e.rs` |
+| `pdiff session review` | verified | opt-in bounded patch/note projection | `tests/session_projection.rs::projections_filter_patch_and_notes_and_clearing_requires_user_opt_in`, post-reload PTY export in `tests/pty_session.rs` |
+| `pdiff session navigate` | verified | UI-thread `ReviewController::navigate_session_target` bridge | `tests/session_bridge.rs::navigation_resolves_one_based_hunks_side_lines_and_annotated_directions`, two-PTY isolation in `tests/session_e2e.rs` |
+| `pdiff session reload` | verified | typed loader/config/watch transaction with root bounds | `tests/session_reload.rs`, public CLI-to-PTY reload in `tests/pty_session.rs::live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thread` |
+| `pdiff session comment add` | verified | native live-note bridge | `tests/session_bridge.rs::add_batch_markup_focus_and_failed_target_isolation_are_deterministic`, two-PTY isolation in `tests/session_e2e.rs` |
+| `pdiff session comment apply` | verified | bounded atomic batch bridge | `tests/session_cli.rs::comment_commands_validate_targets_batches_types_and_destructive_confirmation`, `tests/session_bridge.rs::add_batch_markup_focus_and_failed_target_isolation_are_deterministic` |
+| `pdiff session comment list` | verified | source-distinct snapshot projection | `tests/session_bridge.rs::list_remove_and_clear_keep_live_external_and_human_sources_distinct`, live PTY list in `tests/pty_session.rs` |
+| `pdiff session comment rm` | verified | stable live/human note removal | `tests/session_bridge.rs::list_remove_and_clear_keep_live_external_and_human_sources_distinct` |
+| `pdiff session comment clear` | verified | explicit confirmation plus human opt-in | `tests/session_cli.rs::comment_commands_validate_targets_batches_types_and_destructive_confirmation`, `tests/session_projection.rs::projections_filter_patch_and_notes_and_clearing_requires_user_opt_in`, `tests/pty_session.rs` |
+| `pdiff daemon serve` | verified | std-only same-binary loopback broker | `tests/session_daemon.rs::installed_binary_serves_and_cli_commands_use_the_native_daemon_without_a_tui` |
+| `pdiff mcp serve` alias | verified | same native daemon action; legacy HTTP MCP route is a tombstone | `tests/session_cli.rs::selector_conflicts_and_daemon_aliases_are_explicit`, `tests/session_daemon.rs::health_capabilities_and_legacy_tombstone_are_bounded_json_routes` |
 | `pdiff markup render` | verified | `src/markup/{layout,render,command}.rs`, direct runtime dispatch | `tests/markup_cli.rs::render_accepts_files_stdin_plain_text_and_json_without_entering_the_tui`, `render_color_modes_resolve_symbolic_named_and_hex_colors_natively` |
 | `pdiff markup guide` | verified | embedded `src/markup/guide.md` | `tests/markup_cli.rs::guide_is_embedded_and_all_stml_fences_layout_at_reference_width` |
-| `pdiff skill path` | missing | — | — |
+| `pdiff skill path` | verified | embedded, atomically materialized Rust-owned skill asset | `tests/skill_path.rs::skill_path_materializes_the_embedded_pdiff_review_skill_without_a_runtime_bundle` |
 | `pdiff install pi` / `uninstall pi` | verified | `src/pi_extension.rs`, `src/runtime.rs::run` | `tests/runtime_resolution.rs::integrations_do_not_initialize_the_review_ui`, `tests/integrations.rs::pi_install_writes_a_markdown_prompt_and_no_typescript`, `pi_uninstall_preserves_unrelated_prompt_files` |
 | `-v` / `--version` | verified | `src/cli/mod.rs::parse_from` | `tests/cli_contract.rs::version_is_plain_and_successful` |
 | `--input`, `--output`, `--stdout` compatibility | verified | `src/cli/normalize.rs`, `src/runtime.rs::finish_annotations` | `tests/cli_parse.rs::legacy_input_and_output_flags_remain_accepted`, `tests/pty_notes.rs::stdout_export_is_printed_after_the_tui_restores_the_terminal`, explicit output in `human_note_draft_owns_keys_saves_inline_and_exports_markdown` |
@@ -196,15 +196,15 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Markdown review export | verified | normalized human note targets in `ReviewController::export_annotations`, `src/annotations/output.rs` | `tests/annotations.rs::export_contains_human_side_ranges_and_context_but_not_external_notes`, `tests/pty_notes.rs` |
 | Deterministic STML parse/layout/render | verified | bounded parser, terminal-cell layout, symbolic renderer, bounded content-sensitive cache | `tests/stml_parse.rs`, `tests/stml_layout.rs`, `tests/ui_render.rs::inline_agent_markup_replaces_plain_fallback_and_keeps_semantic_span_style` |
 | STML authoring guide | verified | embedded `src/markup/guide.md` | `tests/markup_cli.rs::guide_is_embedded_and_all_stml_fences_layout_at_reference_width` |
-| Loopback same-binary daemon | missing | — |
-| API/daemon capability versions | missing | — |
-| Session registration/reconnection | missing | — |
-| Multi-session selectors and routing | missing | — |
-| Session review/context projections | missing | — |
-| Session navigation/reload | missing | — |
-| Session comment add/apply/list/rm/clear | missing | — |
-| Loopback enforcement, payload bounds, timeouts | missing | — |
-| Stale-daemon replacement | missing | — |
+| Loopback same-binary daemon | verified | `tests/session_daemon.rs::installed_binary_serves_and_cli_commands_use_the_native_daemon_without_a_tui`; release binary inspection gate |
+| API/daemon capability versions | verified | `tests/session_projection.rs::protocol_versions_capabilities_and_selectors_serialize_stably`, `tests/session_daemon.rs::health_capabilities_and_legacy_tombstone_are_bounded_json_routes` |
+| Session registration/reconnection | verified | `tests/session_registration.rs::registration_snapshot_disconnect_and_reconnect_update_the_daemon_registry`, daemon restart with two real TUIs in `tests/session_e2e.rs` |
+| Multi-session selectors and routing | verified | ID/repository/session-path selection, ambiguity, and isolated mutations in `tests/session_e2e.rs::two_live_terminals_route_isolated_commands_and_reconnect_before_idle_exit` |
+| Session review/context projections | verified | `tests/session_projection.rs`, isolated live contexts in `tests/session_e2e.rs` |
+| Session navigation/reload | verified | `tests/session_bridge.rs`, `tests/session_reload.rs`, `tests/pty_session.rs`, and two-PTY routing in `tests/session_e2e.rs` |
+| Session comment add/apply/list/rm/clear | verified | `tests/session_bridge.rs`, `tests/pty_session.rs`, and isolated two-PTY note counts in `tests/session_e2e.rs` |
+| Loopback enforcement, payload bounds, timeouts | verified | `tests/session_daemon.rs::session_api_enforces_method_content_type_body_limit_host_and_origin`, `tests/session_registration.rs::frames_are_versioned_big_endian_json_and_strictly_bounded` |
+| Stale-daemon replacement | verified | `tests/session_daemon.rs::cli_replaces_a_stale_compatible_pdiff_daemon_with_the_same_binary`; foreign-port refusal in `cli_does_not_replace_a_foreign_service_on_the_configured_port` |
 
 ## Performance and release closure
 
@@ -216,6 +216,6 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Large patch/many-file/non-ASCII benchmarks | missing | — |
 | Navigation/resize/watch memory checks | missing | — |
 | Cross-platform CLI/unit CI | missing | — |
-| Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs`, `tests/pty_ui.rs`, `tests/pty_notes.rs`, and `tests/pty_watch.rs` |
+| Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs`, `tests/pty_ui.rs`, `tests/pty_notes.rs`, `tests/pty_watch.rs`, `tests/pty_session.rs`, and two-terminal `tests/session_e2e.rs` |
 | Single-binary install/release documentation | implemented | `README.md`, `install.sh` | release artifact verified locally in slice 2; distributable install smoke remains staged |
 | Every in-scope row verified | missing | this ledger intentionally records remaining work | final audit pending |

@@ -134,11 +134,11 @@
 - Modify: this plan
 - Test: `tests/session_e2e.rs`
 
-- [ ] Add black-box tests with two live PTYs proving list/id/repo/path selection, ambiguity errors, per-session navigation/comment isolation, daemon reconnect, stale replacement, and clean daemon idle exit.
-- [ ] Document every command, selectors, JSON modes, environment configuration, security bounds, skill path, and lifecycle behavior.
-- [ ] Mark ledger rows verified only with named daemon/PTY evidence.
-- [ ] Run the fail-fast slice gate: no JS/TS source, no JS runtime invocation, format, strict clippy, all targets, release build, diff check, ELF/file inspection, and linkage inspection.
-- [ ] Commit `docs: verify native live-session parity`.
+- [x] Add black-box tests with two live PTYs proving list/id/repo/path selection, ambiguity errors, per-session navigation/comment isolation, daemon reconnect, stale replacement, and clean daemon idle exit.
+- [x] Document every command, selectors, JSON modes, environment configuration, security bounds, skill path, and lifecycle behavior.
+- [x] Mark ledger rows verified only with named daemon/PTY evidence.
+- [x] Run the fail-fast slice gate: no JS/TS source, no JS runtime invocation, format, strict clippy, all targets, release build, diff check, ELF/file inspection, and linkage inspection.
+- [x] Commit `docs: verify native live-session parity`.
 
 ---
 

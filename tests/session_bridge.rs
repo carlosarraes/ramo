@@ -102,6 +102,20 @@ fn add_batch_markup_focus_and_failed_target_isolation_are_deterministic() {
         .is_err()
     );
     assert_eq!(controller.live_notes().len(), before);
+
+    let oversized = "x".repeat(64 * 1024 + 1);
+    let error = apply_session_request(
+        &mut controller,
+        "oversized",
+        &serde_json::json!({
+            "action":"comment-add","filePath":"src/lib.rs","side":"new","line":2,
+            "summary":oversized,"reveal":false
+        }),
+        view(),
+    )
+    .unwrap_err();
+    assert!(error.contains("exceed 65536 bytes"));
+    assert_eq!(controller.live_notes().len(), before);
 }
 
 #[test]

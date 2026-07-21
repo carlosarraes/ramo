@@ -65,7 +65,7 @@ PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
 
 Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `pdiff pager` settings fall back safely.
 
-The loopback live-session API and final cross-platform release closure remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
 
 ## Agent context and inline notes
 
@@ -133,6 +133,61 @@ pdiff diff --watch
 Direct files and Git working trees use native filesystem events with a quiet debounce and safety polling. Jujutsu and Sapling use bounded polling. Atomic-save bursts coalesce into one serialized reload; stale generations are rejected, and failures leave the last valid review visible. Press `r` for an immediate reload even when `--watch` is not enabled.
 
 Press `e` to open the selected file at its selected line through `$EDITOR`. `vi`, `vim`, and `nvim` receive `+line`; VS Code and Cursor receive `--goto file:line`; Helix receives `file:line`. Commands are parsed into literal argv without a shell. Terminal editors temporarily return terminal ownership and redraw afterward. On Unix, `Ctrl-z` suspends `pdiff`; resuming the job restores the review.
+
+## Live review sessions
+
+Every interactive review registers with a loopback broker served by the same `pdiff` executable. A second terminal or an agent can inspect and control the live TUI without a browser, Node.js, Bun, or a separate MCP process:
+
+```bash
+pdiff session list
+pdiff session get SESSION_ID
+pdiff session context SESSION_ID --json
+pdiff session review SESSION_ID --include-patch --include-notes --json
+```
+
+`list` discovers sessions. `get` returns registration metadata, `context` returns the selected file/hunk and note state, and `review` returns the structured file/hunk model. Review exports omit raw patches and notes by default; request them explicitly with `--include-patch` and `--include-notes`. Every session command has human-readable output by default and stable compact JSON with `--json`.
+
+Select a session by its ID or canonical repository root. A repository selector must match exactly one live review:
+
+```bash
+pdiff session context --repo .
+pdiff session navigate SESSION_ID --file src/lib.rs --hunk 2
+pdiff session navigate SESSION_ID --file src/lib.rs --new-line 42
+pdiff session navigate SESSION_ID --next-comment
+```
+
+Hunk numbers are positive and 1-based at the CLI. Navigation also accepts `--old-line`, `--new-line`, and `--prev-comment`. Session paths are a third deterministic selector in the wire protocol; reload exposes it as `--session-path PATH`. Empty, conflicting, missing, and ambiguous selectors fail instead of choosing an arbitrary terminal.
+
+Replace a live review’s source without changing its session ID:
+
+```bash
+pdiff session reload SESSION_ID -- diff main...HEAD -- src
+pdiff session reload --repo . -- show HEAD~1
+pdiff session reload --session-path /dev/pts/7 --source ./nested -- patch review.patch
+```
+
+The command after `--` is parsed by the normal typed review CLI. Pager and stdin-backed patch inputs are rejected because they cannot be repeated. Reload is transactional: loading and config resolution must succeed before the visible review or watch plan changes. Selection falls back safely if its target disappears, while human and live comments whose stable file targets remain are preserved.
+
+Live comments use the same native note geometry and STML renderer as in-process agent notes:
+
+```bash
+pdiff session comment add SESSION_ID --file src/lib.rs --new-line 42 \
+  --summary "Check this retry" --rationale "The final attempt still sleeps" \
+  --markup '<badge color=warning>RETRY</badge>' --author Pi --focus
+pdiff session comment list SESSION_ID --type live --json
+pdiff session comment rm SESSION_ID COMMENT_ID
+pdiff session comment clear SESSION_ID --file src/lib.rs --yes
+```
+
+`comment list --type` accepts `live`, `agent`, `ai`, `user`, or `all`. `comment apply SESSION_ID --stdin` accepts a JSON array (or `{ "comments": [...] }`) of at most 100 comments; `--focus` reveals and selects the first. Clearing requires `--yes`, removes only live comments by default, and touches human notes only with `--include-user` or `--all`.
+
+The broker binds only to loopback and validates HTTP `Host`/`Origin` authority. Configure it with `PDIFF_SESSION_HOST` and `PDIFF_SESSION_PORT` (default `127.0.0.1:47657`); `HUNK_MCP_HOST` and `HUNK_MCP_PORT` remain compatibility aliases. Non-loopback hosts are rejected. HTTP bodies are limited to 256 KiB, internal frames to 1 MiB, text fields to 64 KiB, and ordinary/reload operations to 5/30-second waits.
+
+Reload filesystem reads are confined to the initial session’s canonical repository root, including symlink resolution. `--source`, direct files, patch files, and `--agent-context` paths outside that root are rejected; `--agent-context -` is not accepted for session reload. Sessions initially opened from stdin or from files outside a repository cannot be remotely reloaded. No session input is evaluated as shell text.
+
+The broker starts on demand, prunes sessions silent for 45 seconds, and exits after 60 idle seconds. Live TUIs reconnect after a broker restart. A stale compatible pdiff broker is shut down and replaced; an unrelated service on the configured port is never killed. Normal TUI exit unregisters immediately. `pdiff daemon serve` runs the broker in the foreground, and `pdiff mcp serve` is a command-compatible alias; the old browser/MCP endpoint is intentionally gone in favor of these native session commands.
+
+`pdiff skill path` atomically materializes the embedded `pdiff-review` agent skill in the platform data directory and prints its path. The skill instructs agents to use this same native command surface.
 
 ## Current controls
 
