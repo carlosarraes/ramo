@@ -78,6 +78,7 @@ pub struct DiffFile {
     pub path: String,
     pub previous_path: Option<String>,
     pub summary: Option<String>,
+    pub agent: Option<crate::notes::AgentFileContext>,
     pub patch: String,
     pub hunks: Vec<Hunk>,
     pub change_kind: FileChangeKind,
@@ -125,6 +126,7 @@ impl DiffFile {
             path: path.into(),
             previous_path: None,
             summary: None,
+            agent: None,
             patch: String::new(),
             hunks: vec![Hunk {
                 old_start: 1,

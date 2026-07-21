@@ -52,6 +52,7 @@ fn file(path: &str, previous_path: Option<&str>, hunk_count: usize) -> DiffFile 
         path: path.into(),
         previous_path: previous_path.map(str::to_owned),
         summary: None,
+        agent: None,
         patch: String::new(),
         hunks,
         change_kind: previous_path.map_or(FileChangeKind::Modified, |_| FileChangeKind::Renamed),

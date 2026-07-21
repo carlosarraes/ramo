@@ -48,6 +48,7 @@ pub(super) fn load(
             repo_root: patch.repo_root,
             vcs: selected.id,
         },
+        agent_context: crate::notes::AgentContextSource::None,
     })
 }
 

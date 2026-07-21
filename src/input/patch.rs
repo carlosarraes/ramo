@@ -51,6 +51,7 @@ pub(super) fn load(source: &PatchSource, stdin: &mut dyn Read) -> Result<LoadedR
     Ok(LoadedReview {
         changeset: Changeset::new(source_label, title, files),
         reload_plan,
+        agent_context: crate::notes::AgentContextSource::None,
     })
 }
 

@@ -39,6 +39,7 @@ pub enum ReloadPlan {
 pub struct LoadedReview {
     pub changeset: Changeset,
     pub reload_plan: ReloadPlan,
+    pub agent_context: crate::notes::AgentContextSource,
 }
 
 #[derive(Debug, Clone)]
@@ -83,9 +84,22 @@ impl ReviewLoader {
         &self,
         input: &ReviewInput,
         stdin: &mut dyn Read,
-        _context: &LoadContext<'_>,
+        context: &LoadContext<'_>,
     ) -> Result<LoadedReview, LoadError> {
-        match input {
+        let review_uses_stdin = matches!(
+            input,
+            ReviewInput::Patch {
+                source: crate::core::input::PatchSource::Stdin,
+                ..
+            } | ReviewInput::Pager { .. }
+        );
+        let (agent_context, agent_source) = crate::notes::context::resolve_agent_context(
+            input.options().agent_context.as_deref(),
+            context.cwd,
+            stdin,
+            review_uses_stdin,
+        )?;
+        let mut loaded = match input {
             ReviewInput::Patch { source, .. } => patch::load(source, stdin),
             ReviewInput::FilePair {
                 left,
@@ -95,9 +109,14 @@ impl ReviewLoader {
             } => file_pair::load(left, right, display_path.as_deref()),
             ReviewInput::VcsDiff { .. }
             | ReviewInput::Show { .. }
-            | ReviewInput::StashShow { .. } => vcs::load(input, _context),
+            | ReviewInput::StashShow { .. } => vcs::load(input, context),
             input => Err(LoadError::UnsupportedInput(input.kind())),
+        }?;
+        if let Some(agent_context) = &agent_context {
+            loaded.changeset.apply_agent_context(agent_context);
         }
+        loaded.agent_context = agent_source;
+        Ok(loaded)
     }
 
     pub fn load_outcome_with_context(
@@ -107,7 +126,22 @@ impl ReviewLoader {
         context: &LoadContext<'_>,
     ) -> Result<LoadOutcome, LoadError> {
         if matches!(input, ReviewInput::Pager { .. }) {
-            return pager::load(stdin);
+            let (agent_context, agent_source) = crate::notes::context::resolve_agent_context(
+                input.options().agent_context.as_deref(),
+                context.cwd,
+                stdin,
+                true,
+            )?;
+            return match pager::load(stdin)? {
+                LoadOutcome::Review(mut loaded) => {
+                    if let Some(agent_context) = &agent_context {
+                        loaded.changeset.apply_agent_context(agent_context);
+                    }
+                    loaded.agent_context = agent_source;
+                    Ok(LoadOutcome::Review(loaded))
+                }
+                plain => Ok(plain),
+            };
         }
         self.load_with_context(input, stdin, context)
             .map(Box::new)
@@ -119,7 +153,16 @@ impl ReviewLoader {
         plan: &ReloadPlan,
         context: &LoadContext<'_>,
     ) -> Result<LoadedReview, LoadError> {
-        match plan {
+        self.reload_with_agent(plan, &crate::notes::AgentContextSource::None, context)
+    }
+
+    pub fn reload_with_agent(
+        &self,
+        plan: &ReloadPlan,
+        agent_source: &crate::notes::AgentContextSource,
+        context: &LoadContext<'_>,
+    ) -> Result<LoadedReview, LoadError> {
+        let mut loaded = match plan {
             ReloadPlan::None => Err(LoadError::NotReloadable),
             ReloadPlan::Files {
                 left,
@@ -131,7 +174,12 @@ impl ReviewLoader {
                 &mut std::io::empty(),
             ),
             ReloadPlan::Vcs { input, .. } => vcs::load(input, context),
+        }?;
+        if let Some(agent_context) = crate::notes::context::reload_agent_context(agent_source)? {
+            loaded.changeset.apply_agent_context(&agent_context);
         }
+        loaded.agent_context = agent_source.clone();
+        Ok(loaded)
     }
 }
 
@@ -150,6 +198,7 @@ pub enum LoadError {
         path: PathBuf,
     },
     NotReloadable,
+    AgentContext(crate::notes::AgentContextError),
     UnsupportedInput(InputKind),
     Vcs(VcsError),
 }
@@ -170,6 +219,7 @@ impl fmt::Display for LoadError {
             }
             Self::NotReloadable => formatter
                 .write_str("this review input cannot be reloaded because it came from stdin"),
+            Self::AgentContext(error) => write!(formatter, "{error}"),
             Self::UnsupportedInput(kind) => {
                 write!(formatter, "input loader for {kind:?} is not available")
             }
@@ -182,6 +232,7 @@ impl Error for LoadError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Stdin(source) | Self::Io { source, .. } => Some(source),
+            Self::AgentContext(source) => Some(source),
             Self::Vcs(source) => Some(source),
             _ => None,
         }
@@ -191,5 +242,11 @@ impl Error for LoadError {
 impl From<VcsError> for LoadError {
     fn from(error: VcsError) -> Self {
         Self::Vcs(error)
+    }
+}
+
+impl From<crate::notes::AgentContextError> for LoadError {
+    fn from(error: crate::notes::AgentContextError) -> Self {
+        Self::AgentContext(error)
     }
 }

@@ -5,6 +5,7 @@ use crate::config::ResolvedConfig;
 use crate::core::changeset::Changeset;
 use crate::diff::model::DiffFile;
 use crate::input::{LoadContext, LoadedReview, ReloadPlan, ReviewLoader};
+use crate::notes::AgentContextSource;
 use crate::vcs::SystemCommandRunner;
 
 use super::{Coverage, NativeObserver, WatchCoordinator, WatchPlan};
@@ -43,6 +44,7 @@ pub enum WatchUpdate {
 
 pub struct WatchRuntime {
     reload_plan: ReloadPlan,
+    agent_context: AgentContextSource,
     cwd: PathBuf,
     config: ResolvedConfig,
     coordinator: WatchCoordinator,
@@ -104,6 +106,7 @@ impl WatchRuntime {
         };
         Self {
             reload_plan: initial.reload_plan.clone(),
+            agent_context: initial.agent_context.clone(),
             cwd,
             config,
             coordinator: WatchCoordinator::with_safety_interval(
@@ -156,7 +159,8 @@ impl WatchRuntime {
             config: &self.config,
             runner: &runner,
         };
-        let loaded = ReviewLoader.reload(&self.reload_plan, &context);
+        let loaded =
+            ReviewLoader.reload_with_agent(&self.reload_plan, &self.agent_context, &context);
         let accepted = self.coordinator.accept_result(generation);
         self.coordinator.finish(generation, now);
         if !accepted {
@@ -174,6 +178,7 @@ impl WatchRuntime {
         }
         self.applied_fingerprint = next_fingerprint;
         self.reload_plan = loaded.reload_plan;
+        self.agent_context = loaded.agent_context;
         if loaded.changeset.files.is_empty() {
             WatchUpdate::Empty { generation }
         } else {
@@ -203,22 +208,41 @@ impl WatchRuntime {
 
 fn fingerprint(changeset: &Changeset) -> u64 {
     let mut value = 0xcbf2_9ce4_8422_2325_u64;
-    for part in std::iter::once(changeset.source_label.as_bytes())
-        .chain(std::iter::once(changeset.title.as_bytes()))
-        .chain(changeset.files.iter().flat_map(|file| {
-            [
-                file.id.as_bytes(),
-                file.path.as_bytes(),
-                file.patch.as_bytes(),
-            ]
-        }))
-    {
+    let mut hash = |part: &[u8]| {
         for byte in part {
             value ^= u64::from(*byte);
             value = value.wrapping_mul(0x0000_0100_0000_01b3);
         }
         value ^= 0xff;
         value = value.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    hash(changeset.source_label.as_bytes());
+    hash(changeset.title.as_bytes());
+    hash(changeset.agent_summary.as_deref().unwrap_or("").as_bytes());
+    for file in &changeset.files {
+        hash(file.id.as_bytes());
+        hash(file.path.as_bytes());
+        hash(file.patch.as_bytes());
+        let Some(agent) = &file.agent else {
+            hash(b"no-agent-context");
+            continue;
+        };
+        hash(agent.path.as_bytes());
+        hash(agent.summary.as_deref().unwrap_or("").as_bytes());
+        for note in &agent.annotations {
+            hash(note.id.as_deref().unwrap_or("").as_bytes());
+            hash(note.summary.as_bytes());
+            hash(note.rationale.as_deref().unwrap_or("").as_bytes());
+            hash(note.markup.as_deref().unwrap_or("").as_bytes());
+            hash(note.source.as_str().as_bytes());
+            for range in [note.old_range, note.new_range].into_iter().flatten() {
+                hash(&range.start.to_le_bytes());
+                hash(&range.end.to_le_bytes());
+            }
+            for tag in &note.tags {
+                hash(tag.as_bytes());
+            }
+        }
     }
     value
 }

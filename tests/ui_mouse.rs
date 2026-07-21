@@ -24,6 +24,7 @@ fn file(path: &str, start: u32, lines: usize) -> DiffFile {
         path: path.into(),
         previous_path: None,
         summary: None,
+        agent: None,
         patch: String::new(),
         hunks: vec![Hunk {
             old_start: start,

@@ -39,6 +39,25 @@ impl Changeset {
                 total
             })
     }
+
+    pub fn apply_agent_context(&mut self, context: &crate::notes::AgentContext) {
+        self.agent_summary.clone_from(&context.summary);
+        let mut remaining = std::mem::take(&mut self.files);
+        let mut ordered = Vec::with_capacity(remaining.len());
+        for agent_file in &context.files {
+            let Some(index) = remaining.iter().position(|file| {
+                file.path == agent_file.path
+                    || file.previous_path.as_deref() == Some(agent_file.path.as_str())
+            }) else {
+                continue;
+            };
+            let mut file = remaining.remove(index);
+            file.agent = Some(agent_file.clone());
+            ordered.push(file);
+        }
+        ordered.extend(remaining);
+        self.files = ordered;
+    }
 }
 
 pub fn stable_file_id(path: &str, previous_path: Option<&str>) -> String {

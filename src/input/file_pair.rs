@@ -110,6 +110,7 @@ pub(super) fn load(
             right: right.to_path_buf(),
             display_path: display_path.map(Path::to_path_buf),
         },
+        agent_context: crate::notes::AgentContextSource::None,
     })
 }
 
@@ -147,6 +148,7 @@ fn binary_file(
         path: display_path.into(),
         previous_path,
         summary: None,
+        agent: None,
         patch: "Binary file contents differ\n".into(),
         hunks: Vec::new(),
         change_kind: if left_absent {

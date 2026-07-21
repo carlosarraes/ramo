@@ -22,6 +22,7 @@ fn file() -> DiffFile {
         path: "src/lib.rs".into(),
         previous_path: None,
         summary: None,
+        agent: None,
         patch: String::new(),
         hunks: vec![Hunk {
             old_start: 1,

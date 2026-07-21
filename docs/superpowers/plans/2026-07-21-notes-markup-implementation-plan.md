@@ -29,35 +29,35 @@
 - Test: `tests/agent_context.rs`
 - Test: existing loader suites
 
-- [ ] **Step 1: Write failing schema, ordering, matching, and reload tests**
+- [x] **Step 1: Write failing schema, ordering, matching, and reload tests**
 
 Cover version/default summary, current/previous-path matching, context file order with unmatched files stable, optional metadata, string-only tags, invalid file objects, missing summaries, invalid ranges, malformed JSON, non-UTF-8 files, file-size and annotation-count limits, terminal-control sanitization, `--agent-context -` conflicts with patch stdin, and file-backed context reload.
 
-- [ ] **Step 2: Confirm the normalized contract is absent**
+- [x] **Step 2: Confirm the normalized contract is absent**
 
 Run: `cargo test --test agent_context -- --nocapture`
 
 Expected: compilation fails because `pdiff::notes` and attached file notes do not exist.
 
-- [ ] **Step 3: Add bounded serde models and contextual errors**
+- [x] **Step 3: Add bounded serde models and contextual errors**
 
 Add `serde_json`. Define `AgentContext`, `AgentFileContext`, `ReviewNote`, `NoteSource`, `NoteConfidence`, and `LineRange`. Deserialize through private raw structs, then validate and sanitize into the public model. Preserve `id`, `oldRange`, `newRange`, `summary`, `rationale`, `markup`, `tags`, `confidence`, `source`, `title`, `author`, `createdAt`, `updatedAt`, and `editable`. Reject empty paths/summaries and invalid ranges with the source path in the error.
 
 Use explicit limits: 1 MiB sidecar, 2,000 files, 10,000 annotations total, 64 KiB markup per note, and 64 KiB combined summary/rationale text per note.
 
-- [ ] **Step 4: Attach context once at the normalized loader boundary**
+- [x] **Step 4: Attach context once at the normalized loader boundary**
 
 Add `agent: Option<AgentFileContext>` to `DiffFile`; set it to `None` in every native loader/test constructor. Add `Changeset::apply_agent_context` to set `agent_summary`, attach by current path then previous path, and stable-sort matching files in sidecar order while retaining unmatched relative order.
 
 Extend reload plans with a resolved `AgentContextSource` so file-backed sidecars are re-read on manual/watch reload. `-` is allowed only when the review itself does not consume stdin and produces a non-reloadable context snapshot. Emit a distinct ambiguity error for patch stdin plus agent-context stdin.
 
-- [ ] **Step 5: Run loader and reload regression suites**
+- [x] **Step 5: Run loader and reload regression suites**
 
 Run: `cargo test --test agent_context --test input_loading --test reload --test git_loading --test jj_loading --test sl_loading`
 
 Expected: all pass; existing inputs without context remain byte-for-byte equivalent at the normalized model boundary.
 
-- [ ] **Step 6: Commit agent-context normalization**
+- [x] **Step 6: Commit agent-context normalization**
 
 ```bash
 git add Cargo.toml Cargo.lock src/notes src/lib.rs src/core/changeset.rs src/diff/model.rs src/input tests/agent_context.rs tests/input_loading.rs tests/reload.rs tests/git_loading.rs tests/jj_loading.rs tests/sl_loading.rs

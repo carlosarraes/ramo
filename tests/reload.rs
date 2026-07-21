@@ -32,6 +32,7 @@ fn review_file(path: &str) -> DiffFile {
         path: path.into(),
         previous_path: None,
         summary: None,
+        agent: None,
         patch: String::new(),
         hunks: vec![Hunk {
             old_start: 1,
