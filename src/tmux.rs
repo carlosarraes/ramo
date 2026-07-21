@@ -21,6 +21,7 @@ pub struct TmuxPane {
 pub struct TmuxClient<E> {
     executor: E,
     self_pane: Option<String>,
+    server: Option<String>,
 }
 
 impl<E> TmuxClient<E> {
@@ -32,6 +33,15 @@ impl<E> TmuxClient<E> {
         Self {
             executor,
             self_pane,
+            server: None,
+        }
+    }
+
+    pub fn with_server(executor: E, server: String) -> Self {
+        Self {
+            executor,
+            self_pane: None,
+            server: Some(server),
         }
     }
 
@@ -43,8 +53,7 @@ impl<E> TmuxClient<E> {
 impl<E: CommandExecutor> TmuxClient<E> {
     pub fn list_panes(&mut self) -> io::Result<Vec<TmuxPane>> {
         let output = self.executor.execute(CommandRequest {
-            argv: strings(&[
-                "tmux",
+            argv: self.argv(&[
                 "list-panes",
                 "-a",
                 "-F",
@@ -75,7 +84,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
 
     pub fn pane_exists(&mut self, id: &str) -> io::Result<bool> {
         let output = self.executor.execute(CommandRequest {
-            argv: strings(&["tmux", "display-message", "-p", "-t", id, "#{pane_id}"]),
+            argv: self.argv(&["display-message", "-p", "-t", id, "#{pane_id}"]),
             stdin: None,
             inherit_stdio: false,
         })?;
@@ -84,13 +93,13 @@ impl<E: CommandExecutor> TmuxClient<E> {
 
     pub fn send_to_pane(&mut self, target: &str, text: &str, mode: PasteMode) -> io::Result<()> {
         let load = self.executor.execute(CommandRequest {
-            argv: strings(&["tmux", "load-buffer", "-b", "pdiff-send", "-"]),
+            argv: self.argv(&["load-buffer", "-b", "pdiff-send", "-"]),
             stdin: Some(text.as_bytes().to_vec()),
             inherit_stdio: false,
         })?;
         require_success("load buffer", &load)?;
 
-        let mut argv = strings(&["tmux", "paste-buffer"]);
+        let mut argv = self.argv(&["paste-buffer"]);
         if mode == PasteMode::Bracketed {
             argv.extend(strings(&["-p", "-r"]));
         }
@@ -101,6 +110,15 @@ impl<E: CommandExecutor> TmuxClient<E> {
             inherit_stdio: false,
         })?;
         require_success("paste buffer", &paste)
+    }
+
+    fn argv(&self, values: &[&str]) -> Vec<OsString> {
+        let mut argv = vec![OsString::from("tmux")];
+        if let Some(server) = &self.server {
+            argv.extend([OsString::from("-L"), OsString::from(server)]);
+        }
+        argv.extend(values.iter().map(OsString::from));
+        argv
     }
 }
 

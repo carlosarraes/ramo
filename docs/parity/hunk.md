@@ -77,7 +77,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | One normalized `Changeset` model | verified | `src/core/changeset.rs` | `src/core/changeset.rs::tests` |
 | Stable file identity across reloads/renames | verified | `stable_file_id`, `DiffFile::id` | `file_ids_are_stable_across_reloads`, `test_renamed_file_has_stable_previous_path` |
 | Added/deleted/renamed/copied/modified metadata | verified | `FileChangeKind`, `parse_file` | parser tests for all five forms |
-| Patch chunk retained per file | implemented | `DiffFile::patch`, `format_patch` | indirect parser coverage; explicit chunk-boundary test missing |
+| Patch chunk retained per file | verified | `DiffFile::patch`, `format_patch` | `tests/input_loading.rs::each_file_retains_only_its_own_exact_patch_chunk` |
 | ANSI CSI, OSC, and CRLF normalization | verified | `src/input/patch.rs::normalize_patch_text` | `tests/input_loading.rs::terminal_controls_and_crlf_are_removed_before_parsing` |
 | Empty versus malformed patch diagnostics | verified | `LoadError` | `tests/input_loading.rs::empty_and_malformed_patch_inputs_have_distinct_errors` |
 | Direct file comparison without external diff | verified | `similar::TextDiff` in `src/input/file_pair.rs` | `direct_files_are_diffed_without_an_external_program` |
@@ -117,7 +117,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Binary/large/untracked/rename file UI | verified | typed placeholders and sidebar statuses | state and render tests |
 | Inline AI/agent/user note cards | verified | controller-owned `HumanNote`, normalized external notes, canonical `ReviewRow::Note` geometry | `tests/notes_state.rs`, `tests/ui_render.rs::inline_agent_notes_render_inside_the_measured_review_stream`, `tests/pty_notes.rs` |
 | Wide-character selection/copy correctness | verified | `review::selection` terminal-cell projection | `tests/review_selection.rs`, `tests/ui_render.rs::stable_selection_projection_is_painted_on_the_selected_terminal_cells` |
-| Restrained contextual bottom status | implemented | status renders only for filter/toast feedback | save-error app test; dedicated PTY styling assertion remains staged |
+| Restrained contextual bottom status | verified | status renders only for filter/toast feedback | `tests/pty_watch.rs::reload_error_keeps_the_last_valid_review_visible`, filter/help ownership in `tests/pty_ui.rs` |
 | No top menu bar/dropdowns | verified | intentional product exclusion; no menu components | source inspection plus pager/UI PTY absence assertions |
 | Help dialog | verified | `DialogOverlay::Help` | dialog/input tests and filter/help PTY test |
 | Theme selector dialog | verified | `DialogOverlay::Theme` | theme/dialog tests and save PTY test |
@@ -150,7 +150,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Tab focus toggle | verified | filter-aware typed input and PTY test |
 | `?` help | verified | input/dialog and PTY tests |
 | `q` quit | verified | typed quit/save reduction | pager/UI PTY restoration tests |
-| Existing Vim selection/yank/tmux actions on new bindings | implemented | stable review selection projection plus OSC 52/tmux routing | selection/input/render tests; live tmux integration remains staged |
+| Existing Vim selection/yank/tmux actions on new bindings | verified | stable review selection projection plus OSC 52/tmux routing | selection/input/render tests and `tests/integrations.rs::real_tmux_server_receives_the_exact_native_buffer` |
 
 ### Mouse actions
 
@@ -180,7 +180,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Panic restoration, suspend/resume, editor job control | verified | `src/terminal.rs`, owned suspend/resume boundary | panic ordering and Ctrl-Z/SIGCONT PTY tests in `tests/pty_watch.rs` |
 | `$EDITOR` file/line launch | verified | `src/process/editor.rs`, literal `CommandRequest` argv | `tests/editor.rs`; `tests/pty_watch.rs::editor_key_launches_literal_file_and_line_argv_then_resumes_the_review` |
 | Pi integration | verified | Rust installer writes embedded `src/pi_prompt.md`; no extension runtime | `tests/integrations.rs::pi_install_writes_a_markdown_prompt_and_no_typescript`, `pi_uninstall_preserves_unrelated_prompt_files` |
-| tmux pane discovery/send | implemented | injected `TmuxClient`, stable selection routing | exact literal argv/stdin and failure tests in `tests/integrations.rs`; live tmux smoke remains staged |
+| tmux pane discovery/send | verified | injected `TmuxClient`, stable selection routing | exact literal argv/stdin/failure tests plus isolated `tests/integrations.rs::real_tmux_server_receives_the_exact_native_buffer` |
 | OSC 52 clipboard | verified | `src/clipboard.rs`, shared selection projection | CJK mouse-selection PTY test asserts exact OSC 52 payload |
 | Linux support | implemented | native build/test | cross-platform CI evidence incomplete |
 | macOS support | implemented | Unix paths present | CI evidence incomplete |

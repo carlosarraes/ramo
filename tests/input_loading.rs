@@ -22,6 +22,35 @@ fn patch_stdin_loads_a_changeset() {
 }
 
 #[test]
+fn each_file_retains_only_its_own_exact_patch_chunk() {
+    let patch = concat!(
+        "diff --git a/src/a.rs b/src/a.rs\n",
+        "--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-old a\n+new a\n",
+        "diff --git a/src/b.rs b/src/b.rs\n",
+        "--- a/src/b.rs\n+++ b/src/b.rs\n@@ -2 +2 @@\n-old b\n+new b\n",
+    );
+    let loaded = ReviewLoader
+        .load(
+            &ReviewInput::Patch {
+                source: PatchSource::Stdin,
+                options: CommonOptions::default(),
+            },
+            &mut Cursor::new(patch),
+        )
+        .unwrap();
+
+    assert_eq!(loaded.changeset.files.len(), 2);
+    assert_eq!(
+        loaded.changeset.files[0].patch,
+        "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-old a\n+new a\n"
+    );
+    assert_eq!(
+        loaded.changeset.files[1].patch,
+        "diff --git a/src/b.rs b/src/b.rs\n--- a/src/b.rs\n+++ b/src/b.rs\n@@ -2 +2 @@\n-old b\n+new b\n"
+    );
+}
+
+#[test]
 fn direct_files_are_diffed_without_an_external_program() {
     let temp = tempfile::tempdir().unwrap();
     let left = temp.path().join("before.txt");

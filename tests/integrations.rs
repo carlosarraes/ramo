@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io;
 
+use pdiff::process::command::SystemCommandExecutor;
 use pdiff::process::command::{CommandExecutor, CommandRequest, CommandResult};
 use pdiff::tmux::{PasteMode, TmuxClient};
 
@@ -120,6 +121,52 @@ fn tmux_plain_paste_and_failures_are_operation_specific() {
         .to_string();
     assert!(error.contains("tmux load buffer failed with status 9"));
     assert!(error.contains("permission denied"));
+}
+
+#[cfg(unix)]
+#[test]
+fn real_tmux_server_receives_the_exact_native_buffer() {
+    if std::process::Command::new("tmux")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+    let socket = format!("pdiff-test-{}", std::process::id());
+    let session = "pdiff-native-smoke";
+    let start = std::process::Command::new("tmux")
+        .args(["-L", &socket, "new-session", "-d", "-s", session, "cat"])
+        .output()
+        .unwrap();
+    assert!(
+        start.status.success(),
+        "{}",
+        String::from_utf8_lossy(&start.stderr)
+    );
+
+    let result = (|| {
+        let mut tmux = TmuxClient::with_server(SystemCommandExecutor, socket.clone());
+        let pane = tmux.list_panes()?.into_iter().next().unwrap();
+        tmux.send_to_pane(&pane.id, "native tmux smoke", PasteMode::Plain)?;
+        for _ in 0..50 {
+            let output = std::process::Command::new("tmux")
+                .args(["-L", &socket, "capture-pane", "-p", "-t", &pane.id])
+                .output()?;
+            let text = String::from_utf8_lossy(&output.stdout);
+            if text.contains("native tmux smoke") {
+                return Ok::<_, io::Error>(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        Err(io::Error::other(
+            "tmux pane did not receive the native buffer",
+        ))
+    })();
+    let _ = std::process::Command::new("tmux")
+        .args(["-L", &socket, "kill-server"])
+        .status();
+    result.unwrap();
 }
 
 #[test]
