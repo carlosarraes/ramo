@@ -82,6 +82,7 @@ impl PtyProcess {
         self.raw.len()
     }
 
+    #[cfg(target_os = "linux")]
     fn process_id(&self) -> u32 {
         self.child
             .as_ref()

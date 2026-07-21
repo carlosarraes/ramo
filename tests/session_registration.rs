@@ -211,9 +211,10 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
         .request(serde_json::json!({"action":"list"}), Duration::from_secs(1))
         .unwrap();
     assert_eq!(listed["sessions"][0]["inputKind"], "patch");
+    let expected_cwd = temp.path().canonicalize().unwrap();
     assert_eq!(
         listed["sessions"][0]["cwd"],
-        temp.path().to_string_lossy().as_ref()
+        expected_cwd.to_string_lossy().as_ref()
     );
     std::io::Write::write_all(&mut writer, b"q").unwrap();
     std::io::Write::flush(&mut writer).unwrap();
