@@ -203,6 +203,11 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     );
     assert!(navigated.status.success());
     let context = cli(binary, port, &["session", "context", &session_id, "--json"]);
+    assert!(
+        context.status.success(),
+        "{}",
+        String::from_utf8_lossy(&context.stderr)
+    );
     let context: serde_json::Value = serde_json::from_slice(&context.stdout).unwrap();
     assert_eq!(context["context"]["selectedHunk"]["index"], 1);
 

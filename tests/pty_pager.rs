@@ -110,7 +110,11 @@ impl PtyProcess {
             match self.chunks.recv_timeout(remaining) {
                 Ok(chunk) => self.raw.extend(chunk),
                 Err(RecvTimeoutError::Timeout) => {
-                    panic!("PTY output deadline waiting for {needle}")
+                    let clean = ramo::input::sanitize_terminal_text(
+                        &String::from_utf8_lossy(&self.raw),
+                        false,
+                    );
+                    panic!("PTY output deadline waiting for {needle}; output: {clean:?}")
                 }
                 Err(RecvTimeoutError::Disconnected) => {
                     panic!("PTY output ended before {needle}")
@@ -134,7 +138,12 @@ impl PtyProcess {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.chunks.recv_timeout(remaining) {
                 Ok(chunk) => self.raw.extend(chunk),
-                Err(error) => panic!("PTY raw-output deadline waiting for {needle:?}: {error}"),
+                Err(error) => {
+                    let output = String::from_utf8_lossy(&self.raw);
+                    panic!(
+                        "PTY raw-output deadline waiting for {needle:?}: {error}; output: {output:?}"
+                    )
+                }
             }
         }
     }
