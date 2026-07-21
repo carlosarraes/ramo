@@ -92,6 +92,24 @@ fn nearest_checkout_wins_and_same_root_prefers_jj_then_sl_then_git() {
     assert_eq!(explicit.repo_root, temp.path().join("nested"));
 }
 
+#[test]
+fn upstream_mercurial_marker_is_not_misdetected_as_sapling() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join(".hg")).unwrap();
+    std::fs::write(temp.path().join(".hg/requires"), "revlogv1\n").unwrap();
+    assert_ne!(
+        pdiff::vcs::detect::select_vcs(temp.path(), None).map(|value| value.id),
+        Some(VcsId::Sl)
+    );
+    std::fs::write(temp.path().join(".hg/requires"), "revlogv1\ntreestate\n").unwrap();
+    assert_eq!(
+        pdiff::vcs::detect::select_vcs(temp.path(), None)
+            .unwrap()
+            .id,
+        VcsId::Sl
+    );
+}
+
 struct FailingRunner {
     kind: FailureKind,
 }

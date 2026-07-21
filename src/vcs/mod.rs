@@ -2,8 +2,10 @@ mod command;
 pub mod detect;
 pub mod git;
 pub mod jj;
+pub mod sl;
 pub mod source;
 mod types;
+mod untracked;
 
 use std::error::Error;
 use std::fmt;

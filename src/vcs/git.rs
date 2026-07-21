@@ -1,8 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use similar::TextDiff;
-
 use crate::core::changeset::stable_file_id;
 use crate::core::input::{ReviewInput, VcsId};
 use crate::diff::model::{
@@ -16,7 +14,6 @@ use super::{SourceEndpoint, SourceEndpoints, VcsAdapter, VcsError, VcsLoadContex
 
 const LARGE_DIFF_FILE_MAX_BYTES: u64 = 1_000_000;
 const LARGE_DIFF_FILE_MAX_LINES: usize = 20_000;
-const LARGE_DIFF_FILE_SNIFF_BYTES: usize = 256 * 1024;
 
 const PREFIX_ARGS: &[&str] = &[
     "-c",
@@ -489,9 +486,8 @@ fn load_untracked_files(
     status
         .split('\0')
         .filter_map(|record| record.strip_prefix("?? "))
-        .filter(|path| is_reviewable_untracked(repo_root, path))
-        .enumerate()
-        .map(|(index, path)| build_untracked_file(repo_root, path, index))
+        .filter(|path| super::untracked::is_reviewable_path(repo_root, path))
+        .map(|path| super::untracked::build_filesystem_untracked_file(repo_root, path))
         .collect()
 }
 
@@ -750,146 +746,6 @@ fn run_git_text(
 ) -> Result<String, VcsError> {
     let output = run_command(input, context, spec)?;
     decode_stdout(input, output.stdout)
-}
-
-fn is_reviewable_untracked(repo_root: &Path, path: &str) -> bool {
-    let absolute = repo_root.join(path);
-    let Ok(metadata) = fs::symlink_metadata(&absolute) else {
-        return true;
-    };
-    if metadata.is_dir() {
-        return false;
-    }
-    if !metadata.file_type().is_symlink() {
-        return true;
-    }
-    fs::metadata(absolute)
-        .map(|target| !target.is_dir())
-        .unwrap_or(true)
-}
-
-fn build_untracked_file(repo_root: &Path, path: &str, _index: usize) -> Result<DiffFile, VcsError> {
-    let absolute = repo_root.join(path);
-    if let Some((stats, stats_truncated)) = inspect_large_untracked(&absolute)? {
-        return Ok(DiffFile {
-            id: stable_file_id(path, None),
-            path: path.into(),
-            previous_path: None,
-            patch: String::new(),
-            hunks: Vec::new(),
-            change_kind: FileChangeKind::Added,
-            is_binary: false,
-            is_untracked: true,
-            is_too_large: true,
-            stats_truncated,
-            language: None,
-            stats,
-            old_source: SourceSpec::None,
-            new_source: SourceSpec::File(absolute),
-        });
-    }
-    let bytes = fs::read(&absolute).map_err(|source| VcsError::User {
-        message: format!(
-            "failed to read untracked file {}: {source}",
-            absolute.display()
-        ),
-        help: vec!["Retry after the working tree stops changing.".into()],
-    })?;
-    if bytes.iter().take(8 * 1024).any(|byte| *byte == 0) {
-        return Ok(DiffFile {
-            id: stable_file_id(path, None),
-            path: path.into(),
-            previous_path: None,
-            patch: format!("Binary file skipped: {path}\n"),
-            hunks: Vec::new(),
-            change_kind: FileChangeKind::Added,
-            is_binary: true,
-            is_untracked: true,
-            is_too_large: false,
-            stats_truncated: false,
-            language: None,
-            stats: FileStats::default(),
-            old_source: SourceSpec::None,
-            new_source: SourceSpec::File(absolute),
-        });
-    }
-    let Ok(text) = String::from_utf8(bytes) else {
-        return Ok(DiffFile {
-            id: stable_file_id(path, None),
-            path: path.into(),
-            previous_path: None,
-            patch: format!("Binary file skipped: {path}\n"),
-            hunks: Vec::new(),
-            change_kind: FileChangeKind::Added,
-            is_binary: true,
-            is_untracked: true,
-            is_too_large: false,
-            stats_truncated: false,
-            language: None,
-            stats: FileStats::default(),
-            old_source: SourceSpec::None,
-            new_source: SourceSpec::File(absolute),
-        });
-    };
-    let body = TextDiff::from_lines("", &text)
-        .unified_diff()
-        .context_radius(3)
-        .header("/dev/null", &format!("b/{path}"))
-        .to_string();
-    let patch = format!("diff --git a/{path} b/{path}\nnew file mode 100644\n{body}");
-    let mut parsed = parse_unified_diff(&patch);
-    let mut file = parsed.pop().ok_or_else(|| VcsError::User {
-        message: format!("failed to construct a diff for untracked file {path}"),
-        help: vec!["Review the file path and try again.".into()],
-    })?;
-    file.is_untracked = true;
-    file.old_source = SourceSpec::None;
-    file.new_source = SourceSpec::File(absolute);
-    Ok(file)
-}
-
-fn inspect_large_untracked(path: &Path) -> Result<Option<(FileStats, bool)>, VcsError> {
-    use std::io::Read;
-
-    let metadata = fs::metadata(path).map_err(|source| VcsError::User {
-        message: format!(
-            "failed to inspect untracked file {}: {source}",
-            path.display()
-        ),
-        help: vec!["Retry after the working tree stops changing.".into()],
-    })?;
-    let read_limit = if metadata.len() > LARGE_DIFF_FILE_MAX_BYTES {
-        LARGE_DIFF_FILE_MAX_BYTES as usize
-    } else {
-        LARGE_DIFF_FILE_SNIFF_BYTES
-    };
-    let mut bytes = Vec::new();
-    fs::File::open(path)
-        .and_then(|file| {
-            file.take(read_limit as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| ())
-        })
-        .map_err(|source| VcsError::User {
-            message: format!(
-                "failed to inspect untracked file {}: {source}",
-                path.display()
-            ),
-            help: vec!["Retry after the working tree stops changing.".into()],
-        })?;
-    let mut lines = bytes.iter().filter(|byte| **byte == b'\n').count();
-    if bytes.last().is_some_and(|byte| *byte != b'\n') {
-        lines += 1;
-    }
-    let complete = bytes.len() as u64 >= metadata.len();
-    let should_skip = should_skip_large(lines, metadata.len());
-    Ok(should_skip.then_some((
-        FileStats {
-            additions: lines,
-            deletions: 0,
-        },
-        !complete,
-    )))
 }
 
 fn translate_error(input: &ReviewInput, executable: &str, error: VcsError) -> VcsError {

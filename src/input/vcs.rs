@@ -5,7 +5,8 @@ use crate::diff::parser::parse_unified_diff;
 use crate::vcs::detect::{VcsDetection, select_vcs};
 use crate::vcs::git::GitAdapter;
 use crate::vcs::jj::JjAdapter;
-use crate::vcs::{SourceEndpoint, SourceEndpoints, VcsAdapter, VcsError, VcsLoadContext};
+use crate::vcs::sl::SaplingAdapter;
+use crate::vcs::{SourceEndpoint, SourceEndpoints, VcsAdapter, VcsLoadContext};
 
 use super::{LoadContext, LoadError, LoadedReview, ReloadPlan};
 
@@ -28,13 +29,7 @@ pub(super) fn load(
     let patch = match selected.id {
         VcsId::Git => GitAdapter.load(input, &vcs_context)?,
         VcsId::Jj => JjAdapter.load(input, &vcs_context)?,
-        vcs => {
-            return Err(VcsError::UnsupportedOperation {
-                vcs,
-                operation: input.kind(),
-            }
-            .into());
-        }
+        VcsId::Sl => SaplingAdapter.load(input, &vcs_context)?,
     };
     let mut files = if patch.vcs == VcsId::Git {
         crate::vcs::git::parse_git_patch(&patch.patch_text)
