@@ -190,7 +190,9 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
     });
     let address = format!("127.0.0.1:{port}").parse().unwrap();
     let client = ramo::session::SessionClient::new(address);
-    let deadline = Instant::now() + Duration::from_secs(2);
+    // A cold Windows runner may need more than two seconds to start both the
+    // PTY review and its detached session broker.
+    let deadline = Instant::now() + Duration::from_secs(5);
     while client
         .request(
             serde_json::json!({"action":"list"}),
