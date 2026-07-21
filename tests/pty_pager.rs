@@ -72,7 +72,10 @@ impl PtyProcess {
     }
 
     fn send_eof(&mut self) {
+        #[cfg(unix)]
         self.send("\u{4}");
+        #[cfg(windows)]
+        self.send("\u{1a}\r\n");
     }
 
     fn raw(&self) -> &[u8] {
