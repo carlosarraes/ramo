@@ -18,6 +18,8 @@ struct PtyProcess {
     writer: Option<Box<dyn Write + Send>>,
     chunks: Receiver<Vec<u8>>,
     raw: Vec<u8>,
+    #[cfg(windows)]
+    cursor_queries_answered: usize,
 }
 
 impl PtyProcess {
@@ -75,6 +77,8 @@ impl PtyProcess {
             writer: Some(writer),
             chunks,
             raw: Vec::new(),
+            #[cfg(windows)]
+            cursor_queries_answered: 0,
         }
     }
 
@@ -103,12 +107,30 @@ impl PtyProcess {
         &self.raw
     }
 
+    fn answer_terminal_queries(&mut self) {
+        #[cfg(windows)]
+        {
+            let query_count = self
+                .raw
+                .windows(b"\x1b[6n".len())
+                .filter(|bytes| *bytes == b"\x1b[6n")
+                .count();
+            while self.cursor_queries_answered < query_count {
+                self.send("\x1b[1;1R");
+                self.cursor_queries_answered += 1;
+            }
+        }
+    }
+
     fn read_until(&mut self, needle: &str) -> String {
         let deadline = Instant::now() + DEADLINE;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.chunks.recv_timeout(remaining) {
-                Ok(chunk) => self.raw.extend(chunk),
+                Ok(chunk) => {
+                    self.raw.extend(chunk);
+                    self.answer_terminal_queries();
+                }
                 Err(RecvTimeoutError::Timeout) => {
                     let clean = ramo::input::sanitize_terminal_text(
                         &String::from_utf8_lossy(&self.raw),
@@ -137,7 +159,10 @@ impl PtyProcess {
         {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.chunks.recv_timeout(remaining) {
-                Ok(chunk) => self.raw.extend(chunk),
+                Ok(chunk) => {
+                    self.raw.extend(chunk);
+                    self.answer_terminal_queries();
+                }
                 Err(error) => {
                     let output = String::from_utf8_lossy(&self.raw);
                     panic!(
