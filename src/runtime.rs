@@ -76,16 +76,14 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
             println!("{}", path.display());
             Ok(ExitCode::SUCCESS)
         }
-        Action::Session(_) => Err(io::Error::new(
-            io::ErrorKind::ConnectionRefused,
-            "the native pdiff session broker is not running",
-        )
-        .into()),
-        Action::DaemonServe => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "native pdiff session serving is not available in this build",
-        )
-        .into()),
+        Action::Session(command) => {
+            crate::session::run_session_command(command)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Action::DaemonServe => {
+            crate::session::run_daemon_from_environment()?;
+            Ok(ExitCode::SUCCESS)
+        }
         Action::Review(input) => run_review(input, invocation.output),
     }
 }

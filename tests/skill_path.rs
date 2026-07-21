@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 
 #[test]
-fn skill_path_materializes_the_embedded_pdff_review_skill_without_a_runtime_bundle() {
+fn skill_path_materializes_the_embedded_pdiff_review_skill_without_a_runtime_bundle() {
     let temp = tempfile::tempdir().unwrap();
     let output = Command::cargo_bin("pdiff")
         .unwrap()

@@ -66,13 +66,13 @@
 - Test: `tests/session_daemon.rs`
 - Test: `tests/session_security.rs`
 
-- [ ] Write failing tests for loopback recognition, host/origin checks, JSON content type, methods, body/frame limits, capabilities, health, `/mcp` tombstone, address conflicts, idle shutdown, and structured errors.
-- [ ] Resolve only loopback IPv4/IPv6/localhost configurations and reject wildcard, DNS, mapped non-loopback, zero, and malformed ports before bind/connect.
-- [ ] Implement a threaded `TcpListener` with bounded header/body parsing, response size limits, read/write deadlines, and no shell or path execution from payloads.
-- [ ] Store sessions in an `Arc<Mutex<...>>` registry with connection generations, last-seen timestamps, pending request ids, stale pruning, and selector ambiguity/not-found diagnostics.
-- [ ] Implement HTTP actions and blocking CLI client calls with explicit 5/30-second timeouts and stable text/JSON formatting.
-- [ ] Add compatible-daemon discovery, same-binary launch from `current_exe`, readiness wait, stale-version shutdown/replacement, and clear foreign-port diagnostics.
-- [ ] Run `cargo test --test session_daemon --test session_security` and commit `feat: serve native loopback sessions`.
+- [x] Write failing tests for loopback recognition, host/origin checks, JSON content type, methods, body/frame limits, capabilities, health, `/mcp` tombstone, address conflicts, idle shutdown, and structured errors.
+- [x] Resolve only loopback IPv4/IPv6/localhost configurations and reject wildcard, DNS, mapped non-loopback, zero, and malformed ports before bind/connect.
+- [x] Implement a threaded `TcpListener` with bounded header/body parsing, response size limits, read/write deadlines, and no shell or path execution from payloads.
+- [x] Store sessions in an `Arc<Mutex<...>>` registry with connection generations, last-seen timestamps, pending request ids, stale pruning, and selector ambiguity/not-found diagnostics.
+- [x] Implement HTTP actions and blocking CLI client calls with explicit 5/30-second timeouts and stable text/JSON formatting.
+- [x] Add compatible-daemon discovery, same-binary launch from `current_exe`, readiness wait, stale-version shutdown/replacement, and clear foreign-port diagnostics.
+- [x] Run `cargo test --test session_daemon --test session_security` and commit `feat: serve native loopback sessions`.
 
 ## Task 4: Register and reconnect normal TUI sessions
 
