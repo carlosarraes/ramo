@@ -420,6 +420,7 @@ mod tests {
             id: "file:src/lib.rs".into(),
             path: "src/lib.rs".into(),
             previous_path: None,
+            summary: None,
             patch: String::new(),
             hunks: vec![Hunk {
                 old_start: 1,

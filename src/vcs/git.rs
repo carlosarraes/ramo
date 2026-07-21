@@ -429,6 +429,7 @@ fn large_tracked_placeholder(file: LargeTrackedFile) -> DiffFile {
         id: stable_file_id(&file.path, None),
         path: file.path,
         previous_path: None,
+        summary: None,
         patch: String::new(),
         hunks: Vec::new(),
         change_kind: FileChangeKind::Modified,

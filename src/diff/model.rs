@@ -77,6 +77,7 @@ pub struct DiffFile {
     pub id: String,
     pub path: String,
     pub previous_path: Option<String>,
+    pub summary: Option<String>,
     pub patch: String,
     pub hunks: Vec<Hunk>,
     pub change_kind: FileChangeKind,
@@ -123,6 +124,7 @@ impl DiffFile {
             id: crate::core::changeset::stable_file_id(path, None),
             path: path.into(),
             previous_path: None,
+            summary: None,
             patch: String::new(),
             hunks: vec![Hunk {
                 old_start: 1,

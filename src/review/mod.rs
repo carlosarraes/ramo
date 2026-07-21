@@ -1,10 +1,11 @@
-// These pure planners become reachable through ReviewController in Task 3.
-// Keep the intermediate commits warning-clean without widening their interface.
-#[allow(dead_code)]
 mod anchor;
-#[allow(dead_code)]
 mod emphasis;
-#[allow(dead_code)]
 mod geometry;
-#[allow(dead_code)]
+mod navigation;
 mod row;
+mod state;
+
+pub use state::{
+    HunkTarget, ReviewAction, ReviewController, ReviewEffect, ReviewFileSnapshot, ReviewFileStatus,
+    ReviewOptions, ReviewPosition, ReviewSnapshot, ScrollUnit, SidebarEntrySnapshot, Viewport,
+};

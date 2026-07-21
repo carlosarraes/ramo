@@ -145,6 +145,7 @@ fn binary_file(
         id: stable_file_id(display_path, previous_path.as_deref()),
         path: display_path.into(),
         previous_path,
+        summary: None,
         patch: "Binary file contents differ\n".into(),
         hunks: Vec::new(),
         change_kind: if left_absent {

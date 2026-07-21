@@ -182,7 +182,7 @@ git commit -m "feat: add shared review geometry"
 - Consumes: files, layout preference, view preferences, filter input, viewport size, geometry and stable human-note anchors.
 - Produces: `ReviewController`, `ReviewAction`, visible files, grouped sidebar entries, selected row/file/hunk, scroll state, and transient status.
 
-- [ ] **Step 1: Write failing state and navigation tests**
+- [x] **Step 1: Write failing state and navigation tests**
 
 Verify:
 
@@ -195,13 +195,13 @@ Verify:
 7. Empty filters and no-match filters produce valid zero-row state without panics.
 8. Pager chrome mode allows navigation/wrap/sidebar but suppresses filter, dialogs, notes, and preference persistence.
 
-- [ ] **Step 2: Run controller tests and verify red**
+- [x] **Step 2: Run controller tests and verify red**
 
 Run: `cargo test --test review_state`
 
 Expected: compilation fails because `ReviewController` and typed actions are absent.
 
-- [ ] **Step 3: Implement action reduction and derived state**
+- [x] **Step 3: Implement action reduction and derived state**
 
 Keep the external interface small:
 
@@ -214,13 +214,13 @@ pub fn snapshot(&mut self, viewport: Viewport) -> &ReviewSnapshot;
 
 Group sidebar entries by POSIX-style directory while retaining file order. Show addition/deletion counts and `+` on truncated additions. Metadata labels distinguish added, deleted, renamed, copied, binary, large and untracked files.
 
-- [ ] **Step 4: Run state plus row/geometry regressions**
+- [x] **Step 4: Run state plus row/geometry regressions**
 
 Run: `cargo test --test review_state && cargo test --lib review::`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit review state**
+- [x] **Step 5: Commit review state**
 
 ```bash
 git add src/review tests/review_state.rs
