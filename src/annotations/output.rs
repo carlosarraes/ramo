@@ -21,7 +21,10 @@ pub fn format_markdown(annotations: &[Annotation]) -> String {
     let mut out = String::from("## Review Comments\n\n");
 
     for annotation in annotations {
-        out.push_str(&format!("### {}:{}\n", annotation.file, annotation.display_range));
+        out.push_str(&format!(
+            "### {}:{}\n",
+            annotation.file, annotation.display_range
+        ));
 
         for ctx_line in annotation.diff_context.lines() {
             out.push_str(&format!("> {}\n", ctx_line));

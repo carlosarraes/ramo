@@ -14,7 +14,7 @@ use pdiff::pi_extension;
     name = "pdiff",
     version,
     about = "Terminal diff reviewer with vim motions",
-    disable_version_flag = true,
+    disable_version_flag = true
 )]
 struct Cli {
     #[command(subcommand)]
@@ -83,7 +83,11 @@ fn main() -> io::Result<()> {
         return Ok(());
     } else if let Some(path) = &cli.output {
         output::write_markdown(&annotations, path)?;
-        eprintln!("Wrote {} comment(s) to {}", annotations.len(), path.display());
+        eprintln!(
+            "Wrote {} comment(s) to {}",
+            annotations.len(),
+            path.display()
+        );
         return Ok(());
     }
 
@@ -150,11 +154,18 @@ fn read_diff_input(cli: &Cli) -> io::Result<String> {
 }
 
 fn prompt_save_tty(count: usize) -> io::Result<bool> {
-    let tty = fs::OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+    let tty = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")?;
     let mut writer = io::BufWriter::new(&tty);
     let mut reader = io::BufReader::new(&tty);
 
-    write!(writer, "Save {} comment(s) to pdiff-review.md? [y/N] ", count)?;
+    write!(
+        writer,
+        "Save {} comment(s) to pdiff-review.md? [y/N] ",
+        count
+    )?;
     writer.flush()?;
 
     let mut answer = String::new();

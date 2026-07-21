@@ -175,7 +175,11 @@ impl App {
             rows += 1;
 
             if self.show_comments && flat_idx < to {
-                if let Some(ann) = self.annotations.iter().find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end) {
+                if let Some(ann) = self
+                    .annotations
+                    .iter()
+                    .find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end)
+                {
                     if flat_idx == ann.flat_end {
                         rows += ann.comment.lines().count();
                     }
@@ -340,9 +344,7 @@ impl App {
                     self.request_tmux_send(text, false);
                 }
             }
-            KeyCode::Char('c')
-                if matches!(self.mode, Mode::Normal | Mode::VisualLine { .. }) =>
-            {
+            KeyCode::Char('c') if matches!(self.mode, Mode::Normal | Mode::VisualLine { .. }) => {
                 let range = if matches!(self.mode, Mode::VisualLine { .. }) {
                     self.selection_range().unwrap_or((self.cursor, self.cursor))
                 } else {
@@ -351,13 +353,16 @@ impl App {
 
                 // Check if an existing annotation covers this range
                 // Only edit if the selection exactly matches an existing annotation
-                let existing = self.annotations.iter().position(|ann| {
-                    ann.flat_start == range.0 && ann.flat_end == range.1
-                });
+                let existing = self
+                    .annotations
+                    .iter()
+                    .position(|ann| ann.flat_start == range.0 && ann.flat_end == range.1);
                 if let Some(idx) = existing {
                     self.comment_buf = self.annotations[idx].comment.clone();
-                    self.comment_selection =
-                        Some((self.annotations[idx].flat_start, self.annotations[idx].flat_end));
+                    self.comment_selection = Some((
+                        self.annotations[idx].flat_start,
+                        self.annotations[idx].flat_end,
+                    ));
                     self.editing_annotation = Some(idx);
                 } else {
                     self.comment_buf.clear();
@@ -554,9 +559,7 @@ impl App {
         if self.search_matches.is_empty() {
             return;
         }
-        let pos = self
-            .search_matches
-            .partition_point(|&m| m <= self.cursor);
+        let pos = self.search_matches.partition_point(|&m| m <= self.cursor);
         let idx = if pos < self.search_matches.len() {
             pos
         } else {
@@ -657,7 +660,11 @@ impl App {
         }
         let line_count = text.lines().count();
         self.toast = Some(match crate::clipboard::copy_to_clipboard(&text) {
-            Ok(()) => format!("yanked {} line{}", line_count, if line_count == 1 { "" } else { "s" }),
+            Ok(()) => format!(
+                "yanked {} line{}",
+                line_count,
+                if line_count == 1 { "" } else { "s" }
+            ),
             Err(e) => format!("yank failed: {}", e),
         });
     }
@@ -796,11 +803,17 @@ impl App {
         let mut code = String::new();
 
         for i in start..=end {
-            let Some(line) = self.get_line(i) else { continue };
+            let Some(line) = self.get_line(i) else {
+                continue;
+            };
             if self.line_hidden_on_side(line) {
                 continue;
             }
-            let lineno = if is_left { line.old_lineno } else { line.new_lineno };
+            let lineno = if is_left {
+                line.old_lineno
+            } else {
+                line.new_lineno
+            };
             if let Some(n) = lineno {
                 min_line = Some(min_line.map_or(n, |m| m.min(n)));
                 max_line = Some(max_line.map_or(n, |m| m.max(n)));
@@ -830,7 +843,9 @@ impl App {
         let end = end.min(self.flat_lines.len().saturating_sub(1));
         let mut out = String::new();
         for i in start..=end {
-            let Some(line) = self.get_line(i) else { continue };
+            let Some(line) = self.get_line(i) else {
+                continue;
+            };
             if self.line_hidden_on_side(line) {
                 continue;
             }
@@ -842,9 +857,8 @@ impl App {
 
     fn next_interesting_line(&self, from: usize, forward: bool) -> Option<usize> {
         let skippable = |i: usize| {
-            self.get_line(i).is_some_and(|l| {
-                l.content.trim().is_empty() || self.line_hidden_on_side(l)
-            })
+            self.get_line(i)
+                .is_some_and(|l| l.content.trim().is_empty() || self.line_hidden_on_side(l))
         };
         if forward {
             (from + 1..self.flat_lines.len()).find(|&i| !skippable(i))
@@ -857,7 +871,8 @@ impl App {
         if let Some(line) = self.get_line(self.cursor) {
             if self.line_hidden_on_side(line) {
                 let visible = |i: usize| {
-                    self.get_line(i).is_some_and(|l| !self.line_hidden_on_side(l))
+                    self.get_line(i)
+                        .is_some_and(|l| !self.line_hidden_on_side(l))
                 };
                 let forward = (self.cursor + 1..self.flat_lines.len()).find(|&i| visible(i));
                 let backward = (0..self.cursor).rev().find(|&i| visible(i));

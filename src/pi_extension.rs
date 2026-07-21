@@ -12,7 +12,12 @@ fn resolve_dir(target: &str) -> io::Result<PathBuf> {
 
     dirs::home_dir()
         .map(|h| h.join(".pi").join("agent").join("extensions").join("pdiff"))
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not determine home directory"))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "Could not determine home directory",
+            )
+        })
 }
 
 pub fn install(target: &str) -> io::Result<()> {

@@ -65,7 +65,12 @@ impl Highlighter {
         Self { cache }
     }
 
-    pub fn get_spans(&self, file_idx: usize, hunk_idx: usize, line_idx: usize) -> Vec<Span<'static>> {
+    pub fn get_spans(
+        &self,
+        file_idx: usize,
+        hunk_idx: usize,
+        line_idx: usize,
+    ) -> Vec<Span<'static>> {
         match self.cache.get(&(file_idx, hunk_idx, line_idx)) {
             Some(fragments) => fragments
                 .iter()
@@ -77,11 +82,7 @@ impl Highlighter {
 }
 
 fn syntect_to_ratatui_style(style: highlighting::Style) -> Style {
-    let fg = Color::Rgb(
-        style.foreground.r,
-        style.foreground.g,
-        style.foreground.b,
-    );
+    let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
 
     let mut s = Style::default().fg(fg);
     if style.font_style.contains(highlighting::FontStyle::BOLD) {
@@ -90,7 +91,10 @@ fn syntect_to_ratatui_style(style: highlighting::Style) -> Style {
     if style.font_style.contains(highlighting::FontStyle::ITALIC) {
         s = s.add_modifier(Modifier::ITALIC);
     }
-    if style.font_style.contains(highlighting::FontStyle::UNDERLINE) {
+    if style
+        .font_style
+        .contains(highlighting::FontStyle::UNDERLINE)
+    {
         s = s.add_modifier(Modifier::UNDERLINED);
     }
     s
