@@ -8,6 +8,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 const DEADLINE: Duration = Duration::from_secs(5);
 
 struct PtyProcess {
+    _daemon: ramo::session::SessionDaemonHandle,
     _master: Box<dyn portable_pty::MasterPty + Send>,
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     writer: Option<Box<dyn Write + Send>>,
@@ -17,6 +18,11 @@ struct PtyProcess {
 
 impl PtyProcess {
     fn spawn(cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
+        let daemon = ramo::session::spawn_session_daemon(ramo::session::SessionDaemonOptions {
+            address: ramo::session::SessionAddress::loopback_ephemeral(),
+            ..ramo::session::SessionDaemonOptions::default()
+        })
+        .unwrap();
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 24,
@@ -31,6 +37,8 @@ impl PtyProcess {
             command.arg(argument);
         }
         command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
+        command.env("RAMO_SESSION_HOST", daemon.address().ip().to_string());
+        command.env("RAMO_SESSION_PORT", daemon.address().port().to_string());
         for (key, value) in env {
             command.env(key, value);
         }
@@ -49,6 +57,7 @@ impl PtyProcess {
         });
 
         Self {
+            _daemon: daemon,
             _master: pair.master,
             child: Some(child),
             writer: Some(writer),
