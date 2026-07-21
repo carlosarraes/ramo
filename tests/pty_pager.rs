@@ -89,6 +89,21 @@ impl PtyProcess {
         }
     }
 
+    fn read_until_raw(&mut self, needle: &[u8]) {
+        let deadline = Instant::now() + DEADLINE;
+        while !self
+            .raw
+            .windows(needle.len())
+            .any(|window| window == needle)
+        {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.chunks.recv_timeout(remaining) {
+                Ok(chunk) => self.raw.extend(chunk),
+                Err(error) => panic!("PTY raw-output deadline waiting for {needle:?}: {error}"),
+            }
+        }
+    }
+
     fn wait(&mut self) -> u32 {
         self.writer.take();
         let mut child = self.child.take().expect("PTY child is running");
@@ -101,7 +116,14 @@ impl PtyProcess {
             Ok(result) => result.unwrap().exit_code(),
             Err(error) => {
                 let _ = killer.kill();
-                panic!("PTY child exit deadline: {error}");
+                while let Ok(chunk) = self.chunks.try_recv() {
+                    self.raw.extend(chunk);
+                }
+                let clean = pdiff::input::sanitize_terminal_text(
+                    &String::from_utf8_lossy(&self.raw),
+                    false,
+                );
+                panic!("PTY child exit deadline: {error}; output: {clean:?}");
             }
         };
         self.drain_output();
@@ -149,6 +171,7 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
     let mut process = PtyProcess::spawn(&cwd, &["pager"], &[]);
     process.send(include_str!("fixtures/simple.patch"));
     process.send_eof();
+    process.read_until_raw(b"\x1b[?1049h");
     let rendered = process.read_until("println!");
     assert!(rendered.contains("fn main"));
     assert!(!rendered.contains("NORMAL"));

@@ -89,7 +89,7 @@ impl Default for ResolvedConfig {
         Self {
             mode: LayoutMode::Auto,
             vcs: None,
-            theme: "github-dark-default".into(),
+            theme: "auto".into(),
             show_sidebar: true,
             watch: false,
             exclude_untracked: false,

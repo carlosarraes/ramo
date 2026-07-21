@@ -91,7 +91,7 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
 fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCode, AppError> {
     let cwd = std::env::current_dir()?;
     let config_paths = ConfigPaths::discover(&cwd);
-    let resolved_config = ConfigResolver::new(config_paths.clone()).resolve(&input)?;
+    let mut resolved_config = ConfigResolver::new(config_paths.clone()).resolve(&input)?;
     let runner = SystemCommandRunner;
     let load_context = LoadContext {
         cwd: &cwd,
@@ -114,6 +114,18 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     if loaded.changeset.files.is_empty() {
         eprintln!("No changes to review.");
         return Ok(ExitCode::SUCCESS);
+    }
+
+    if resolved_config.theme == "auto" {
+        let appearance = crate::ui::appearance::detect_terminal_appearance();
+        resolved_config.theme = match appearance {
+            Some(crate::ui::themes::TerminalAppearance::Light) => {
+                crate::ui::themes::DEFAULT_LIGHT_THEME_ID.into()
+            }
+            Some(crate::ui::themes::TerminalAppearance::Dark) | None => {
+                crate::ui::themes::DEFAULT_DARK_THEME_ID.into()
+            }
+        };
     }
 
     let reloadable = !matches!(loaded.reload_plan, crate::input::ReloadPlan::None);

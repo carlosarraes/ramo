@@ -223,7 +223,7 @@ User preferences live at the platform config path (for example `~/.config/pdiff/
 
 ```toml
 mode = "auto"
-theme = "github-dark-default"
+theme = "auto"
 show_sidebar = true
 line_numbers = true
 wrap_lines = false
@@ -234,6 +234,8 @@ prompt_save_view_preferences = true
 ```
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.
+
+The default `theme = "auto"` sends one bounded OSC 11 background query to the controlling terminal, chooses the matching light or dark GitHub default, and falls back to the dark default after 150 ms or an unrecognized response. Explicit and custom themes skip the probe. `COLORFGBG` is used as a fallback hint where a terminal cannot answer OSC 11.
 
 All of this ships in the same Rust executable. `pdiff` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
 

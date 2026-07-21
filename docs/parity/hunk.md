@@ -67,7 +67,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Unknown/malformed config diagnostics | verified | `src/config/load.rs::validate_keys` | `tests/config_resolution.rs::malformed_and_unknown_config_errors_name_the_file_and_key` |
 | Save changed view preferences on quit | verified | `src/config/save.rs`, `App::request_quit` | `tests/config_persistence.rs`, `tests/pty_ui.rs` |
 | Built-in and custom theme definitions | verified | `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs` |
-| Terminal background auto-detection | missing | — | — |
+| Terminal background auto-detection | verified | bounded native OSC 11 controlling-TTY probe plus `COLORFGBG` fallback | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `real_pty_query_accepts_a_response_and_timeout_still_starts` |
 | Legacy Hunk theme aliases/syntax translation | verified | `ThemeRegistry` alias normalization and scope mapping | `tests/themes.rs` |
 
 ## Input and normalized model

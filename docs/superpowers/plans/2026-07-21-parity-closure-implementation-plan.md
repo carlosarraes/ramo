@@ -16,11 +16,11 @@
 
 ## Task 2: Add terminal background auto-detection
 
-- [ ] Write parser/classification/timeout tests for OSC 11 `rgb:` and `#rrggbb` responses.
-- [ ] Implement a bounded 150 ms native terminal probe that reads the controlling console/TTY rather than piped patch stdin, restores input mode on every path, and falls back predictably.
-- [ ] Make the built-in theme default `auto` and pass the detected light/dark appearance into initial theme resolution without affecting explicit/custom themes.
-- [ ] Add PTY evidence that a synthetic OSC 11 response selects the light/dark default and a timeout still starts.
-- [ ] Commit `feat: detect terminal background natively`.
+- [x] Write parser/classification/timeout tests for OSC 11 `rgb:` and `#rrggbb` responses.
+- [x] Implement a bounded 150 ms native terminal probe that reads the controlling console/TTY rather than piped patch stdin, restores input mode on every path, and falls back predictably.
+- [x] Make the built-in theme default `auto` and pass the detected light/dark appearance into initial theme resolution without affecting explicit/custom themes.
+- [x] Add PTY evidence that a synthetic OSC 11 response selects the light/dark default and a timeout still starts.
+- [x] Commit `feat: detect terminal background natively`.
 
 ## Task 3: Add the direct agent-skill dialog
 

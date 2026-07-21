@@ -1,3 +1,4 @@
+pub mod appearance;
 pub mod dialogs;
 pub mod highlight;
 pub mod input;

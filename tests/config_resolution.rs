@@ -114,6 +114,7 @@ fn missing_files_are_ignored() {
     .resolve(&patch_input(CommonOptions::default()))
     .unwrap();
     assert_eq!(resolved.mode, LayoutMode::Auto);
+    assert_eq!(resolved.theme, "auto");
     assert!(resolved.line_numbers);
 }
 
