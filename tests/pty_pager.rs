@@ -1,3 +1,5 @@
+mod support;
+
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -8,7 +10,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 const DEADLINE: Duration = Duration::from_secs(5);
 
 struct PtyProcess {
-    session: ramo::session::SessionClient,
+    _daemon: support::TestSessionDaemon,
     _master: Box<dyn portable_pty::MasterPty + Send>,
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     writer: Option<Box<dyn Write + Send>>,
@@ -18,9 +20,8 @@ struct PtyProcess {
 
 impl PtyProcess {
     fn spawn(cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
-        let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let session = ramo::session::SessionClient::new(reservation.local_addr().unwrap());
-        drop(reservation);
+        let daemon = support::TestSessionDaemon::spawn();
+        let session = daemon.client();
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 24,
@@ -55,7 +56,7 @@ impl PtyProcess {
         });
 
         Self {
-            session,
+            _daemon: daemon,
             _master: pair.master,
             child: Some(child),
             writer: Some(writer),
@@ -160,7 +161,6 @@ impl Drop for PtyProcess {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let _ = self.session.shutdown();
     }
 }
 
