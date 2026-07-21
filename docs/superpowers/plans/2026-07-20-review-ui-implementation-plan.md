@@ -384,7 +384,7 @@ Expected: compilation fails on typed focus/dialog/input APIs.
 
 - [x] **Step 3: Implement action mapping and centered overlays**
 
-`map_key_event` is pure and returns `Option<AppAction>`. `App` applies it after mode precedence. Help content lists only real pdiff bindings and explicitly contains no menu instructions. Theme selection previews without persistence until Enter. Dialog bounds use saturating centered rectangles and remain usable on small terminals.
+`map_key_event` is pure and returns `Option<AppAction>`. `App` applies it after mode precedence. Help content lists only real ramo bindings and explicitly contains no menu instructions. Theme selection previews without persistence until Enter. Dialog bounds use saturating centered rectangles and remain usable on small terminals.
 
 - [x] **Step 4: Run all controller/render/input tests**
 

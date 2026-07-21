@@ -2,18 +2,18 @@
 
 ## Goal
 
-Evolve `pdiff` into a small, self-contained Rust diff-review executable that matches Hunk's user-visible capabilities and command shapes while retaining `pdiff`'s existing review workflow. The only intentional Hunk UI omission is its top menu bar and dropdown-menu chrome.
+Evolve `ramo` into a small, self-contained Rust diff-review executable that matches Hunk's user-visible capabilities and command shapes while retaining `ramo`'s existing review workflow. The only intentional Hunk UI omission is its top menu bar and dropdown-menu chrome.
 
 ## Product constraints
 
 - The implementation is 100% Rust.
-- Installation produces one `pdiff` executable. It must not require Node.js, Bun, TypeScript, a browser runtime, or a separately installed helper service.
-- `pdiff daemon serve` and all session-broker behavior execute from that same binary.
+- Installation produces one `ramo` executable. It must not require Node.js, Bun, TypeScript, a browser runtime, or a separately installed helper service.
+- `ramo daemon serve` and all session-broker behavior execute from that same binary.
 - Git, Jujutsu, and Sapling executables are optional external tools. A VCS executable is required only when a user invokes a workflow backed by that VCS.
-- The executable remains named `pdiff`; Hunk command shapes are exposed beneath that name.
+- The executable remains named `ramo`; Hunk command shapes are exposed beneath that name.
 - Linux, macOS, and Windows are supported. PTY-only features may use platform-specific implementations behind common Rust interfaces.
-- Existing `pdiff` features remain available unless they conflict with Hunk parity. On a conflict, the Hunk-compatible command or key wins and the existing action receives a new non-conflicting binding.
-- Existing `git diff | pdiff`, `--input`, `--output`, and `--stdout` usage remains compatible.
+- Existing `ramo` features remain available unless they conflict with Hunk parity. On a conflict, the Hunk-compatible command or key wins and the existing action receives a new non-conflicting binding.
+- Existing `git diff | ramo`, `--input`, `--output`, and `--stdout` usage remains compatible.
 - Hunk's top menu bar, dropdown menus, and menu-specific shortcuts are not ported. Their underlying actions remain accessible through direct shortcuts, dialogs, or command-line options.
 
 ## Scope and source of truth
@@ -71,17 +71,17 @@ Each loader produces the same `Changeset` model. Rendering, navigation, agent co
 
 ### Review inputs
 
-The following Hunk-compatible commands will be supported under `pdiff`:
+The following Hunk-compatible commands will be supported under `ramo`:
 
-- `pdiff diff [target] [-- <pathspec...>]`
-- `pdiff diff --staged [-- <pathspec...>]`
-- `pdiff diff --cached [-- <pathspec...>]`
-- `pdiff diff <left-file> <right-file>`
-- `pdiff show [target] [-- <pathspec...>]`
-- `pdiff stash show [ref]`
-- `pdiff patch [file|-]`
-- `pdiff pager`
-- `pdiff difftool <left> <right> [path]`
+- `ramo diff [target] [-- <pathspec...>]`
+- `ramo diff --staged [-- <pathspec...>]`
+- `ramo diff --cached [-- <pathspec...>]`
+- `ramo diff <left-file> <right-file>`
+- `ramo show [target] [-- <pathspec...>]`
+- `ramo stash show [ref]`
+- `ramo patch [file|-]`
+- `ramo pager`
+- `ramo difftool <left> <right> [path]`
 
 Common review flags match Hunk:
 
@@ -103,45 +103,45 @@ Git diff flags include `--staged` and its `--cached` alias. Invalid layouts, par
 
 The same executable exposes:
 
-- `pdiff session list`
-- `pdiff session get`
-- `pdiff session context`
-- `pdiff session review`
-- `pdiff session navigate`
-- `pdiff session reload`
-- `pdiff session comment add`
-- `pdiff session comment apply`
-- `pdiff session comment list`
-- `pdiff session comment rm`
-- `pdiff session comment clear`
-- `pdiff daemon serve`
-- `pdiff mcp serve` as the compatibility alias accepted by Hunk
-- `pdiff markup render`
-- `pdiff markup guide`
-- `pdiff skill path`
+- `ramo session list`
+- `ramo session get`
+- `ramo session context`
+- `ramo session review`
+- `ramo session navigate`
+- `ramo session reload`
+- `ramo session comment add`
+- `ramo session comment apply`
+- `ramo session comment list`
+- `ramo session comment rm`
+- `ramo session comment clear`
+- `ramo daemon serve`
+- `ramo mcp serve` as the compatibility alias accepted by Hunk
+- `ramo markup render`
+- `ramo markup guide`
+- `ramo skill path`
 
 Session selectors, navigation targets, note filters, destructive confirmations, batch stdin input, and `--json` output match the Hunk CLI contract. Text output remains human-readable; JSON output uses stable versioned structures.
 
 ### Existing compatibility commands
 
-- Bare piped input is normalized to `pdiff patch -`.
-- `pdiff --input <patch>` remains an alias for patch-file input.
-- `pdiff --output <path>` and `pdiff --stdout` continue to export human review notes as Markdown after a TUI review.
-- `pdiff install pi` and `pdiff uninstall pi` remain supported.
-- `pdiff --version`, `pdiff -v`, and top-level help remain supported.
+- Bare piped input is normalized to `ramo patch -`.
+- `ramo --input <patch>` remains an alias for patch-file input.
+- `ramo --output <path>` and `ramo --stdout` continue to export human review notes as Markdown after a TUI review.
+- `ramo install pi` and `ramo uninstall pi` remain supported.
+- `ramo --version`, `ramo -v`, and top-level help remain supported.
 
 ## Configuration
 
 Configuration uses TOML and applies layers in this order:
 
 1. built-in defaults;
-2. user config at the platform config directory under `pdiff/config.toml`;
-3. repository `.pdiff/config.toml`;
+2. user config at the platform config directory under `ramo/config.toml`;
+3. repository `.ramo/config.toml`;
 4. command-specific section;
 5. pager-specific section when applicable;
 6. CLI flags.
 
-Supported preferences include VCS selection, theme, layout mode, watch, untracked-file policy, line numbers, wrapping, hunk headers, agent-note visibility, copied decorations, save-preference prompting, transparent background, and moved-line coloring. `menu_bar` is intentionally absent because `pdiff` has no menu bar.
+Supported preferences include VCS selection, theme, layout mode, watch, untracked-file policy, line numbers, wrapping, hunk headers, agent-note visibility, copied decorations, save-preference prompting, transparent background, and moved-line coloring. `menu_bar` is intentionally absent because `ramo` has no menu bar.
 
 Runtime changes to persistent view preferences trigger a quit confirmation that can save, discard, permanently disable the prompt, or cancel. Updates preserve unrelated TOML sections and comments.
 
@@ -166,7 +166,7 @@ The adapter owns native command construction and emits normalized patch text plu
 
 Direct file comparison handles text, empty files, `/dev/null`, and binary files. Patch loading accepts files and stdin, strips terminal control sequences, normalizes line endings and Git patch variants, preserves rename/copy metadata, and creates placeholders for binary or intentionally skipped large content.
 
-Pager mode detects patch-like stdin. Diff input opens a minimal-chrome diff viewer; non-diff text is delegated to a configurable text pager without shell evaluation. Recursive `pdiff pager` resolution is prevented. Exit status, signals, and terminal ownership are propagated correctly.
+Pager mode detects patch-like stdin. Diff input opens a minimal-chrome diff viewer; non-diff text is delegated to a configurable text pager without shell evaluation. Recursive `ramo pager` resolution is prevented. Exit status, signals, and terminal ownership are propagated correctly.
 
 ### Changeset model
 
@@ -246,11 +246,11 @@ Agent-context JSON contains a changeset summary, ordered file entries, and hunk/
 
 Human notes created with `c` are editable inline and remain distinct from external live agent notes. The existing Markdown review export serializes human notes, including selected ranges and side information. Live notes are manipulated through session commands and can be listed separately or together with AI/agent/user notes.
 
-STML is parsed and laid out by a deterministic terminal-cell engine. For the same markup and width it always returns the same symbolic-color lines, allowing note heights to be known before widgets mount. `pdiff markup render` previews text or JSON output, and `pdiff markup guide` prints the embedded authoring guide.
+STML is parsed and laid out by a deterministic terminal-cell engine. For the same markup and width it always returns the same symbolic-color lines, allowing note heights to be known before widgets mount. `ramo markup render` previews text or JSON output, and `ramo markup guide` prints the embedded authoring guide.
 
 ## Live-session broker
 
-Normal review sessions register with one loopback-only daemon. If no compatible daemon exists, a session starts `pdiff daemon serve` from the current executable and waits for readiness. The daemon brokers commands to multiple live TUI sessions; sessions do not expose separate public ports.
+Normal review sessions register with one loopback-only daemon. If no compatible daemon exists, a session starts `ramo daemon serve` from the current executable and waits for readiness. The daemon brokers commands to multiple live TUI sessions; sessions do not expose separate public ports.
 
 The protocol has explicit API and daemon compatibility versions, capability discovery, bounded payloads, timeouts, stale-daemon replacement, session reconnection, and clean shutdown. Session selectors support session id, session path, and canonical repository root. The daemon stores only live routing and projections; the TUI remains authoritative for review state.
 
@@ -263,7 +263,7 @@ Security properties are part of the contract:
 - require explicit confirmation for destructive comment clearing;
 - prevent one session's identifiers from mutating another session.
 
-## Existing `pdiff` integrations
+## Existing `ramo` integrations
 
 Pi installation continues to install a command that lets the user choose a staged, branch, commit, or other supported review target and returns exported comments to Pi. It will be updated to use the normalized command layer instead of constructing legacy-only input.
 
@@ -314,19 +314,19 @@ This product is too broad for one safe implementation patch. Work proceeds throu
 6. **Sessions:** same-binary daemon, registration, protocol, projections, complete session CLI, security limits, and multi-session tests.
 7. **Parity closure:** performance/windowing, cross-platform hardening, documentation/install updates, exhaustive manifest audit, and end-to-end verification.
 
-Each slice gets a detailed TDD implementation plan and leaves `pdiff` usable. Temporary compatibility shims are removed once all consumers use the normalized model.
+Each slice gets a detailed TDD implementation plan and leaves `ramo` usable. Temporary compatibility shims are removed once all consumers use the normalized model.
 
 ## Acceptance criteria
 
 The migration is complete only when:
 
-1. one Rust-built `pdiff` executable provides every in-scope command and workflow without a JS runtime;
+1. one Rust-built `ramo` executable provides every in-scope command and workflow without a JS runtime;
 2. every Hunk-compatible command and option has black-box coverage;
 3. every Hunk keyboard action except menu-only actions has PTY coverage;
 4. Git, jj, sl, direct-file, patch, pager, difftool, and watch inputs are verified;
 5. responsive split/stack review, sidebar navigation, filtering, context expansion, themes, notes, mouse, and editor flows are verified;
 6. agent context, STML, the daemon, and every session command are verified end to end;
-7. legacy `pdiff` review export, Pi, tmux, bare-pipe, and input/output flags remain verified;
+7. legacy `ramo` review export, Pi, tmux, bare-pipe, and input/output flags remain verified;
 8. terminal restoration, failure paths, security bounds, and supported platforms are covered at the appropriate level;
 9. `docs/parity/hunk.md` contains no in-scope `missing` or merely `implemented` entries;
 10. release documentation describes the command surface, configuration, controls, and installation of the single binary.

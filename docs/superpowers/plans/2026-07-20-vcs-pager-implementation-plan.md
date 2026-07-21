@@ -10,9 +10,9 @@
 
 ## Global Constraints
 
-- The shipped product is 100% Rust and one native `pdiff` executable; do not add Node.js, Bun, TypeScript, JavaScript, WebView, or an embedded JS engine.
+- The shipped product is 100% Rust and one native `ramo` executable; do not add Node.js, Bun, TypeScript, JavaScript, WebView, or an embedded JS engine.
 - Git, Jujutsu, and Sapling are optional external executables. Only a workflow backed by that VCS may require its executable.
-- Preserve existing `pdiff` patch, file-pair, Vim-selection, comment, tmux, clipboard, and Pi integration behavior.
+- Preserve existing `ramo` patch, file-pair, Vim-selection, comment, tmux, clipboard, and Pi integration behavior.
 - Hunk's top menu bar and dropdown menus remain intentionally excluded.
 - Match Hunk at `/home/carraes/github/hunk` commit `53fcb2c`; do not import or execute its TypeScript.
 - All process invocations use argv with `shell(false)` semantics, bounded captured output, ignored stdin, and explicit accepted exit codes.
@@ -69,8 +69,8 @@
 // tests/vcs_contract.rs
 use std::path::Path;
 
-use pdiff::core::input::VcsId;
-use pdiff::vcs::{CommandSpec, VcsOperation};
+use ramo::core::input::VcsId;
+use ramo::vcs::{CommandSpec, VcsOperation};
 
 #[test]
 fn vcs_ids_are_closed_and_display_native_executable_names() {
@@ -107,7 +107,7 @@ fn vcs_config_is_typed_and_rejects_unknown_providers() {
     let resolved = ConfigResolver::new(ConfigPaths { user: Some(valid), repo: None })
         .resolve(&patch_input(CommonOptions::default()))
         .unwrap();
-    assert_eq!(resolved.vcs, Some(pdiff::core::input::VcsId::Jj));
+    assert_eq!(resolved.vcs, Some(ramo::core::input::VcsId::Jj));
 
     let invalid = temp.path().join("invalid.toml");
     std::fs::write(&invalid, "vcs = \"mercurial\"\n").unwrap();
@@ -122,7 +122,7 @@ fn vcs_config_is_typed_and_rejects_unknown_providers() {
 
 Run: `cargo test --test vcs_contract && cargo test --test config_resolution vcs_config_is_typed`
 
-Expected: compilation fails because `pdiff::vcs`, `VcsId`, and the typed `ResolvedConfig::vcs` do not exist.
+Expected: compilation fails because `ramo::vcs`, `VcsId`, and the typed `ResolvedConfig::vcs` do not exist.
 
 - [x] **Step 3: Add the contracts and bounded command runner**
 
@@ -316,7 +316,7 @@ git commit -m "refactor: define native vcs loading contracts"
 ```rust
 #[test]
 fn git_args_force_parseable_prefixes_and_preserve_pathspec_boundaries() {
-    let args = pdiff::vcs::git::build_git_diff_args(
+    let args = ramo::vcs::git::build_git_diff_args(
         Some("main...HEAD"), true, &["src/lib.rs".into()], &[], false,
     );
     assert_eq!(&args[..8], ["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.srcPrefix=a/", "-c", "diff.dstPrefix=b/"]);
@@ -330,7 +330,7 @@ fn nearest_checkout_wins_and_same_root_prefers_jj_then_sl_then_git() {
     std::fs::create_dir_all(temp.path().join(".git")).unwrap();
     std::fs::create_dir_all(temp.path().join("nested/.jj")).unwrap();
     std::fs::create_dir_all(temp.path().join("nested/src")).unwrap();
-    let selected = pdiff::vcs::detect::select_vcs(temp.path().join("nested/src").as_path(), None).unwrap();
+    let selected = ramo::vcs::detect::select_vcs(temp.path().join("nested/src").as_path(), None).unwrap();
     assert_eq!(selected.id, VcsId::Jj);
     assert_eq!(selected.repo_root, temp.path().join("nested"));
 }
@@ -375,7 +375,7 @@ pub fn build_git_diff_args(
 
 In `src/vcs/detect.rs`, walk `Path::ancestors()`, recognize `.git` as either a directory or worktree file, `.jj`, `.sl`, and Sapling `.hg/requires` containing a line equal to `treestate`. Calculate ancestor distance and select the lowest distance; break equal-root ties in `[Jj, Sl, Git]` order. An explicit `VcsId` chooses that adapter but still lets its loader produce the missing-repository diagnostic.
 
-Add `VcsError` to `src/vcs/mod.rs` with `Spawn`, `Exit`, `OutputTooLarge`, `UnsupportedOperation`, `NotRepository`, `InvalidRevision`, `MissingStash`, `InvalidUtf8`, and `Io` variants. Its `Display` text names `pdiff`, the native VCS, the input value, and one concrete corrective action. `GitAdapter::load` initially returns `UnsupportedOperation` after selecting the correct builder; Task 3 replaces that branch with repository loading.
+Add `VcsError` to `src/vcs/mod.rs` with `Spawn`, `Exit`, `OutputTooLarge`, `UnsupportedOperation`, `NotRepository`, `InvalidRevision`, `MissingStash`, `InvalidUtf8`, and `Io` variants. Its `Display` text names `ramo`, the native VCS, the input value, and one concrete corrective action. `GitAdapter::load` initially returns `UnsupportedOperation` after selecting the correct builder; Task 3 replaces that branch with repository loading.
 
 - [x] **Step 4: Run the complete contract suite**
 
@@ -414,8 +414,8 @@ impl GitFixture {
     fn new() -> Self {
         let fixture = Self::non_repository();
         fixture.git(["init", "-q"]);
-        fixture.git(["config", "user.name", "Pdiff Test"]);
-        fixture.git(["config", "user.email", "pdiff@example.invalid"]);
+        fixture.git(["config", "user.name", "Ramo Test"]);
+        fixture.git(["config", "user.email", "ramo@example.invalid"]);
         fixture
     }
 
@@ -671,7 +671,7 @@ fn source_reader_bounds_text_and_returns_none_for_expected_missing_sides() {
 #[test]
 fn deterministic_git_ansi_colors_become_moved_line_classes() {
     let patch = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n\x1b[1;35m-old\x1b[m\n\x1b[1;36m+new\x1b[m\n";
-    let files = pdiff::vcs::git::parse_git_patch(patch);
+    let files = ramo::vcs::git::parse_git_patch(patch);
     assert_eq!(files[0].hunks[0].lines[0].moved, Some(MovedLineKind::OldMoved));
     assert_eq!(files[0].hunks[0].lines[1].moved, Some(MovedLineKind::NewMoved));
     assert_eq!(files[0].hunks[0].lines[0].content, "old");
@@ -772,11 +772,11 @@ git commit -m "feat: preserve vcs sources and large diff metadata"
 #[test]
 fn jj_builders_use_git_format_and_fileset_boundary() {
     assert_eq!(
-        pdiff::vcs::jj::build_jj_diff_args(Some("main..@"), &["src/lib.rs".into()]),
+        ramo::vcs::jj::build_jj_diff_args(Some("main..@"), &["src/lib.rs".into()]),
         ["diff", "--git", "-r", "main..@", "--", "src/lib.rs"],
     );
     assert_eq!(
-        pdiff::vcs::jj::build_jj_show_args(None, &[]),
+        ramo::vcs::jj::build_jj_show_args(None, &[]),
         ["diff", "--git", "-r", "@"],
     );
 }
@@ -862,11 +862,11 @@ git commit -m "feat: add native jujutsu reviews"
 #[test]
 fn sl_builders_use_git_format_and_show_change() {
     assert_eq!(
-        pdiff::vcs::sl::build_sl_diff_args(Some("main::."), &["src".into()]),
+        ramo::vcs::sl::build_sl_diff_args(Some("main::."), &["src".into()]),
         ["diff", "--git", "-r", "main::.", "--", "src"],
     );
     assert_eq!(
-        pdiff::vcs::sl::build_sl_show_args(None, &[]),
+        ramo::vcs::sl::build_sl_show_args(None, &[]),
         ["diff", "--git", "--change", "."],
     );
 }
@@ -955,14 +955,14 @@ fn patch_detection_accepts_git_unified_and_hunk_only_inputs_after_ansi_removal()
 }
 
 #[test]
-fn pager_resolution_never_invokes_a_shell_or_recurses_into_pdiff() {
-    let env = Env::from_iter([("PDIFF_TEXT_PAGER", "env LESS=-FRX 'less' -R")]);
+fn pager_resolution_never_invokes_a_shell_or_recurses_into_ramo() {
+    let env = Env::from_iter([("RAMO_TEXT_PAGER", "env LESS=-FRX 'less' -R")]);
     let spec = resolve_text_pager(&env).unwrap();
     assert_eq!(spec.program, "less");
     assert_eq!(spec.args, ["-R"]);
     assert_eq!(spec.env.get("LESS").map(String::as_str), Some("-FRX"));
 
-    let recursive = Env::from_iter([("PDIFF_TEXT_PAGER", "/usr/bin/pdiff pager")]);
+    let recursive = Env::from_iter([("RAMO_TEXT_PAGER", "/usr/bin/ramo pager")]);
     assert_eq!(resolve_text_pager(&recursive).unwrap().display, "less -R");
 }
 
@@ -974,7 +974,7 @@ fn sanitizer_removes_osc_controls_but_can_preserve_sgr_styles() {
 }
 ```
 
-Add loader cases asserting patch-like pager stdin becomes a normal `LoadedReview`, ordinary text becomes `LoadOutcome::PlainText`, and empty ordinary text is valid plain output. Add command-resolution cases for quotes, backslashes, leading `NAME=value`, `env NAME=value`, `PDIFF_TEXT_PAGER` precedence over `PAGER`, invalid quoting, `.exe`/`.cmd` recursion checks, and strings containing `;`, `|`, `$()`, and redirects as literal argv rather than operators.
+Add loader cases asserting patch-like pager stdin becomes a normal `LoadedReview`, ordinary text becomes `LoadOutcome::PlainText`, and empty ordinary text is valid plain output. Add command-resolution cases for quotes, backslashes, leading `NAME=value`, `env NAME=value`, `RAMO_TEXT_PAGER` precedence over `PAGER`, invalid quoting, `.exe`/`.cmd` recursion checks, and strings containing `;`, `|`, `$()`, and redirects as literal argv rather than operators.
 
 - [x] **Step 2: Run pager unit tests and verify red**
 
@@ -1001,7 +1001,7 @@ pub struct PagerSpec {
 
 `ReviewLoader::load` returns `LoadOutcome` for all inputs. Existing callers unwrap `Review`; pager reads stdin once, calls `looks_like_patch`, delegates patch input to the shared parser, or returns sanitized source text as `PlainText`.
 
-`resolve_text_pager` reads `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Use `shell_words::split`; consume leading `NAME=value`; support one leading `env` followed by assignments; never invoke a shell. Normalize executable basename by `/` and `\\`, strip `.exe`/`.cmd`, lowercase, and fall back when it equals `pdiff` or the parsed command is empty. An invalid explicit pager produces `PagerError::InvalidCommand` naming the source variable.
+`resolve_text_pager` reads `RAMO_TEXT_PAGER`, then `PAGER`, then `less -R`. Use `shell_words::split`; consume leading `NAME=value`; support one leading `env` followed by assignments; never invoke a shell. Normalize executable basename by `/` and `\\`, strip `.exe`/`.cmd`, lowercase, and fall back when it equals `ramo` or the parsed command is empty. An invalid explicit pager produces `PagerError::InvalidCommand` naming the source variable.
 
 `sanitize_terminal_text(text, preserve_sgr)` normalizes CRLF, removes OSC sequences, all non-SGR CSI, C0 controls except newline/tab, and DEL. When `preserve_sgr` is true, retain only CSI sequences ending in `m` whose parameters contain digits and semicolons.
 
@@ -1052,7 +1052,7 @@ git commit -m "feat: add safe diff-aware pager fallback"
 - Modify: `tests/cli_contract.rs`
 
 **Interfaces:**
-- Consumes: the compiled `pdiff` executable, native temporary Git fixtures, and pager child dispatch.
+- Consumes: the compiled `ramo` executable, native temporary Git fixtures, and pager child dispatch.
 - Produces: end-to-end proof that failures occur before terminal startup, diff pager launches Ratatui, text pager owns the terminal, and exit codes propagate.
 
 - [x] **Step 1: Add failing CLI and PTY tests**
@@ -1063,7 +1063,7 @@ Add `portable-pty = "0.9"` to dev-dependencies. In `tests/cli_vcs.rs`, add:
 #[test]
 fn invalid_git_ref_fails_before_terminal_startup() {
     let repo = GitFixture::with_commit();
-    Command::cargo_bin("pdiff").unwrap().current_dir(repo.path())
+    Command::cargo_bin("ramo").unwrap().current_dir(repo.path())
         .args(["show", "does-not-exist"])
         .assert().failure()
         .stderr(predicate::str::contains("does-not-exist").and(predicate::str::contains("Check the ref")))
@@ -1073,7 +1073,7 @@ fn invalid_git_ref_fails_before_terminal_startup() {
 #[test]
 fn git_show_reaches_the_native_loader_without_terminal_startup_for_an_empty_pathspec() {
     let repo = GitFixture::with_commit();
-    Command::cargo_bin("pdiff").unwrap().current_dir(repo.path())
+    Command::cargo_bin("ramo").unwrap().current_dir(repo.path())
         .args(["show", "HEAD", "--", "absent-path"])
         .assert().success()
         .stderr(predicate::str::contains("No changes to review."))
@@ -1102,7 +1102,7 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
 fn plain_text_pager_does_not_enter_alternate_screen() {
     let temp = tempfile::tempdir().unwrap();
     let helper = write_helper(temp.path(), "capture", "#!/bin/sh\ncat\n");
-    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("PDIFF_TEXT_PAGER", helper.to_str().unwrap())]);
+    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("RAMO_TEXT_PAGER", helper.to_str().unwrap())]);
     process.send("safe\x1b]8;;https://bad\x1b\\text\x1b]8;;\x1b\\\n");
     process.send_eof();
     let output = process.read_until("safetext");
@@ -1115,18 +1115,18 @@ fn plain_text_pager_does_not_enter_alternate_screen() {
 fn pager_nonzero_exit_code_is_propagated() {
     let temp = tempfile::tempdir().unwrap();
     let helper = write_helper(temp.path(), "fail", "#!/bin/sh\ncat >/dev/null\nexit 23\n");
-    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("PDIFF_TEXT_PAGER", helper.to_str().unwrap())]);
+    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("RAMO_TEXT_PAGER", helper.to_str().unwrap())]);
     process.send("ordinary text\n");
     process.send_eof();
     assert_eq!(process.wait(), 23);
 }
 
 #[test]
-fn recursive_pager_setting_uses_fallback_without_spawning_pdiff_again() {
+fn recursive_pager_setting_uses_fallback_without_spawning_ramo_again() {
     let temp = tempfile::tempdir().unwrap();
     write_helper(temp.path(), "less", "#!/bin/sh\ncat\nprintf 'LESS_CALLED\\n'\n");
     let path = format!("{}:{}", temp.path().display(), std::env::var("PATH").unwrap());
-    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("PDIFF_TEXT_PAGER", "pdiff pager"), ("PATH", &path)]);
+    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("RAMO_TEXT_PAGER", "ramo pager"), ("PATH", &path)]);
     process.send("ordinary text\n");
     process.send_eof();
     assert!(process.read_until("LESS_CALLED").contains("ordinary text"));
@@ -1138,7 +1138,7 @@ fn recursive_pager_setting_uses_fallback_without_spawning_pdiff_again() {
 fn ctrl_c_terminated_pager_maps_to_130() {
     let temp = tempfile::tempdir().unwrap();
     let helper = write_helper(temp.path(), "interrupt", "#!/bin/sh\ncat >/dev/null\nkill -INT $$\n");
-    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("PDIFF_TEXT_PAGER", helper.to_str().unwrap())]);
+    let mut process = PtyProcess::spawn(temp.path(), &["pager"], &[("RAMO_TEXT_PAGER", helper.to_str().unwrap())]);
     process.send("ordinary text\n");
     process.send_eof();
     assert_eq!(process.wait(), 130);
@@ -1166,7 +1166,7 @@ struct PtyProcess {
 impl PtyProcess {
     fn spawn(cwd: &std::path::Path, args: &[&str], env: &[(&str, &str)]) -> Self {
         let pair = portable_pty::native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
-        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("pdiff"));
+        let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
         args.iter().for_each(|arg| { command.arg(arg); });
         env.iter().for_each(|(key, value)| { command.env(key, value); });
@@ -1254,13 +1254,13 @@ Expected: the slice-2 rows are still `missing` or `implemented`; record each exa
 Document these command examples after their tests pass:
 
 ```bash
-pdiff diff
-pdiff diff --staged
-pdiff diff main...HEAD -- src
-pdiff show HEAD~1
-pdiff stash show stash@{0}
-git diff --no-color | pdiff pager
-PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
+ramo diff
+ramo diff --staged
+ramo diff main...HEAD -- src
+ramo show HEAD~1
+ramo stash show stash@{0}
+git diff --no-color | ramo pager
+RAMO_TEXT_PAGER="less -R" command-producing-text | ramo pager
 ```
 
 Explain automatic nearest-repository detection, `vcs = "git"|"jj"|"sl"` override, JJ/SL staged rejection, untracked exclusion, 1 MB/20,000-line placeholders, and safe plain-text pager argv parsing. Keep watch, UI replacement, notes, STML, sessions, and release-parity claims explicitly staged.
@@ -1283,21 +1283,21 @@ Expected: every library, integration, CLI, Git, JJ, SL, pager, and PTY test pass
 
 Run: `cargo build --release`
 
-Expected: exit 0 and `target/release/pdiff` exists.
+Expected: exit 0 and `target/release/ramo` exists.
 
-Run on Linux: `file target/release/pdiff && ldd target/release/pdiff`
+Run on Linux: `file target/release/ramo && ldd target/release/ramo`
 
-Run on macOS instead: `file target/release/pdiff && otool -L target/release/pdiff`
+Run on macOS instead: `file target/release/ramo && otool -L target/release/ramo`
 
 Expected: one native executable; no Node, Bun, JavaScript engine, or Hunk runtime dependency is listed.
 
 - [x] **Step 4: Perform real-tool smoke checks**
 
-Run `target/release/pdiff diff` in this worktree inside a PTY, wait for the status line, send `q`, and assert exit 0. Run `target/release/pdiff show HEAD`, `target/release/pdiff diff --staged`, and pipe `printf 'plain text\n'` through `PDIFF_TEXT_PAGER='less -FRX' target/release/pdiff pager`. If `jj` or `sl` is installed, smoke its matching fixture; their deterministic fake-executable integration tests remain the portability authority when absent.
+Run `target/release/ramo diff` in this worktree inside a PTY, wait for the status line, send `q`, and assert exit 0. Run `target/release/ramo show HEAD`, `target/release/ramo diff --staged`, and pipe `printf 'plain text\n'` through `RAMO_TEXT_PAGER='less -FRX' target/release/ramo pager`. If `jj` or `sl` is installed, smoke its matching fixture; their deterministic fake-executable integration tests remain the portability authority when absent.
 
 Expected: each available native path exits normally, owns/restores the terminal once, and shows no TypeScript/runtime process.
 
-Verification record (2026-07-20): the complete format, strict Clippy, all-target test, and release build gate passed. The 4,346,576-byte Linux artifact was identified as one x86-64 ELF and `ldd` listed only `libgcc_s`, `libm`, `libc`, and the platform loader. Release-binary PTY smoke checks for `diff` and `show HEAD`, the staged-empty path, and `PDIFF_TEXT_PAGER='less -FRX'` plain-text paging all exited 0. Neither `jj` nor `sl` was installed; their passing scripted-runner integration suites remain the portable native-command evidence.
+Verification record (2026-07-20): the complete format, strict Clippy, all-target test, and release build gate passed. The 4,346,576-byte Linux artifact was identified as one x86-64 ELF and `ldd` listed only `libgcc_s`, `libm`, `libc`, and the platform loader. Release-binary PTY smoke checks for `diff` and `show HEAD`, the staged-empty path, and `RAMO_TEXT_PAGER='less -FRX'` plain-text paging all exited 0. Neither `jj` nor `sl` was installed; their passing scripted-runner integration suites remain the portable native-command evidence.
 
 - [x] **Step 5: Commit the slice-2 evidence**
 

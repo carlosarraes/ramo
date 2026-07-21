@@ -1,78 +1,93 @@
-# pdiff
+# Ramo
 
-`pdiff` is a review-first terminal diff viewer written entirely in Rust. It is distributed as one native executable with no Node.js, Bun, TypeScript, or browser runtime.
+Ramo is a fast, review-first diff viewer for the terminal. It turns working-tree changes, revision ranges, patches, and direct file comparisons into one keyboard-first review surface.
 
-The project is migrating Hunk's review workflows into Rust while retaining `pdiff`'s Vim selection, Markdown comments, tmux sending, and Pi integration. Hunk's top menu bar and dropdown menus are intentionally excluded; actions remain keyboard-first.
+It is written entirely in Rust and ships as one native `ramo` executable—no Node.js, Bun, TypeScript, browser, or language runtime. Ramo includes Hunk-compatible review workflows while keeping Vim-style selection, Markdown comments, tmux sending, live agent sessions, and optional Pi integration. Hunk's top menu bar and dropdowns are intentionally excluded.
+
+```bash
+# Review everything changed on the current branch since it diverged from main
+ramo diff main...HEAD
+
+# Review staged changes
+ramo diff --staged
+
+# Review any patch-producing command
+gh pr diff 123 --color=never | ramo
+```
+
+Ramo means “branch” in Portuguese—a small nod to where most reviews begin.
 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/carlosarraes/pdiff/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/carlosarraes/ramo/main/install.sh | bash
 ```
 
 Or install the Rust package directly:
 
 ```bash
-cargo install --git https://github.com/carlosarraes/pdiff --locked
+cargo install --git https://github.com/carlosarraes/ramo --locked
 ```
 
 On Windows PowerShell:
 
 ```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/carlosarraes/pdiff/main/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://raw.githubusercontent.com/carlosarraes/ramo/main/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
-The release matrix produces one archive containing one executable for Linux, macOS, and Windows on x86-64 and ARM64. `install.sh` selects the Linux/macOS tarball; `install.ps1` selects the Windows zip and installs `pdiff.exe` under `%LOCALAPPDATA%\Programs\pdiff` by default. Neither installer adds a language runtime.
+The release matrix produces one archive containing one executable for Linux, macOS, and Windows on x86-64 and ARM64. `install.sh` selects the Linux/macOS tarball; `install.ps1` selects the Windows zip and installs `ramo.exe` under `%LOCALAPPDATA%\Programs\ramo` by default. Neither installer adds a language runtime.
+
+After a successful Unix install, the script checks for the legacy binary in the same install directory and asks before removing it. It never removes a similarly named program elsewhere on `PATH`. For unattended migration, set `RAMO_REMOVE_LEGACY=yes` or `RAMO_REMOVE_LEGACY=no`.
 
 ## Verified review inputs
 
 Review patch output from any command:
 
 ```bash
-git diff --no-color | pdiff
-git diff --cached --no-color | pdiff
-gh pr diff 123 --color=never | pdiff
+git diff --no-color | ramo
+git diff --cached --no-color | ramo
+gh pr diff 123 --color=never | ramo
 ```
 
 Review a saved patch or compare two concrete files without an external diff program:
 
 ```bash
-pdiff patch review.patch
-pdiff patch - < review.patch
-pdiff diff before.rs after.rs
+ramo patch review.patch
+ramo patch - < review.patch
+ramo diff before.rs after.rs
 ```
 
 Legacy patch flags remain supported:
 
 ```bash
-pdiff --input review.patch
-pdiff --input review.patch --output pdiff-review.md
-pdiff --input review.patch --stdout
+ramo --input review.patch
+ramo --input review.patch --output ramo-review.md
+ramo --input review.patch --stdout
 ```
 
 Native repository reviews are also verified:
 
 ```bash
-pdiff diff
-pdiff diff --staged
-pdiff diff main...HEAD -- src
-pdiff show HEAD~1
-pdiff stash show 'stash@{0}'
+ramo diff
+ramo diff --staged
+ramo diff main...HEAD -- src
+ramo show HEAD~1
+ramo stash show 'stash@{0}'
 ```
 
-`pdiff` selects the nearest Git, Jujutsu, or Sapling checkout. Set `vcs = "git"`, `vcs = "jj"`, or `vcs = "sl"` in user or `.pdiff/config.toml` configuration when a checkout contains more than one marker. Jujutsu and Sapling support working-copy and show reviews, and reject staged and stash operations with an explicit diagnostic instead of silently changing semantics.
+`ramo` selects the nearest Git, Jujutsu, or Sapling checkout. Set `vcs = "git"`, `vcs = "jj"`, or `vcs = "sl"` in user or `.ramo/config.toml` configuration when a checkout contains more than one marker. Jujutsu and Sapling support working-copy and show reviews, and reject staged and stash operations with an explicit diagnostic instead of silently changing semantics.
 
 Working-copy reviews include untracked files by default; use `--exclude-untracked` to omit them. Tracked and untracked files over 1,000,000 bytes or 20,000 lines become bounded placeholders so a review cannot consume unbounded memory. Press `z` to expand collapsed unchanged context from bounded native old/new source readers.
 
 Use `pager` when a command may produce either a diff or ordinary text:
 
 ```bash
-git diff --no-color | pdiff pager
-PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
+git diff --no-color | ramo pager
+RAMO_TEXT_PAGER="less -R" command-producing-text | ramo pager
 ```
 
-Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `pdiff pager` settings fall back safely.
+Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `RAMO_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `ramo pager` settings fall back safely.
 
 See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
 
@@ -85,8 +100,8 @@ See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; 
 Attach bounded agent findings to any review with `--agent-context`:
 
 ```bash
-pdiff diff --agent-context review-context.json
-pdiff patch changes.patch --agent-context review-context.json
+ramo diff --agent-context review-context.json
+ramo patch changes.patch --agent-context review-context.json
 ```
 
 The sidecar is JSON. Its file order leads the review, renamed files match their current or previous path, and file-backed sidecars reload with the diff:
@@ -118,7 +133,7 @@ The sidecar is JSON. Its file order leads the review, renamed files match their 
 
 Ranges are positive, inclusive, 1-based `[start, end]` pairs named `oldRange` and/or `newRange`. Optional note fields are `id`, `rationale`, `markup`, `tags`, `confidence`, `source`, `title`, `author`, `createdAt`, `updatedAt`, and `editable`. The sidecar is limited to 1 MiB, 2,000 files, and 10,000 annotations; each note allows 64 KiB of markup and 64 KiB of combined summary/rationale text. Text and markup are terminal-control sanitized.
 
-Press `a` to reveal or hide AI/agent notes and `{`/`}` to move between annotated hunks. External notes marked as `source: "user"` remain visible; only notes authored interactively in this `pdiff` process are exported as Markdown. Press `c` to start an inline human note, Enter for a newline, `Ctrl-S` to save, or Escape to cancel. Clicking a saved human note reopens it for editing; saving it empty removes it.
+Press `a` to reveal or hide AI/agent notes and `{`/`}` to move between annotated hunks. External notes marked as `source: "user"` remain visible; only notes authored interactively in this `ramo` process are exported as Markdown. Press `c` to start an inline human note, Enter for a newline, `Ctrl-S` to save, or Escape to cancel. Clicking a saved human note reopens it for editing; saving it empty removes it.
 
 `--agent-context -` reads the sidecar from stdin only when the review itself does not consume stdin. Patch-stdin and pager-stdin reviews must use a sidecar file.
 
@@ -127,9 +142,9 @@ Press `a` to reveal or hide AI/agent notes and `{`/`}` to move between annotated
 STML is a small, tolerant terminal markup language rendered directly by Rust inside agent note cards. Preview it without entering the review UI:
 
 ```bash
-pdiff markup render note.stml --width 56 --color auto
-printf '<badge color=success>PASS</badge> native' | pdiff markup render - --json
-pdiff markup guide
+ramo markup render note.stml --width 56 --color auto
+printf '<badge color=success>PASS</badge> native' | ramo markup render - --json
+ramo markup guide
 ```
 
 It supports inline emphasis, semantic/named/hex colors, links, badges, keyboard hints, headings, lists, rules, spacers, code blocks, cards, bordered boxes, and responsive rows. Layout uses terminal-cell widths, clips code and wide glyphs safely, and returns bounded degradation notes for malformed or unknown markup. `--color` accepts `auto`, `always`, or `never`; `--theme` selects the preview theme; JSON output is stable `{ "width", "lines", "notes" }`. Parsing is limited to 64 KiB, 2,000 nodes, depth 32, and 20 diagnostics.
@@ -139,23 +154,23 @@ It supports inline emphasis, semantic/named/hex colors, links, badges, keyboard 
 Use `--watch` with direct files or native repository reviews:
 
 ```bash
-pdiff diff before.rs after.rs --watch
-pdiff diff --watch
+ramo diff before.rs after.rs --watch
+ramo diff --watch
 ```
 
 Direct files and Git working trees use native filesystem events with a quiet debounce and safety polling. Jujutsu and Sapling use bounded polling. Atomic-save bursts coalesce into one serialized reload; stale generations are rejected, and failures leave the last valid review visible. Press `r` for an immediate reload even when `--watch` is not enabled.
 
-Press `e` to open the selected file at its selected line through `$EDITOR`. `vi`, `vim`, and `nvim` receive `+line`; VS Code and Cursor receive `--goto file:line`; Helix receives `file:line`. Commands are parsed into literal argv without a shell. Terminal editors temporarily return terminal ownership and redraw afterward. On Unix, `Ctrl-z` suspends `pdiff`; resuming the job restores the review.
+Press `e` to open the selected file at its selected line through `$EDITOR`. `vi`, `vim`, and `nvim` receive `+line`; VS Code and Cursor receive `--goto file:line`; Helix receives `file:line`. Commands are parsed into literal argv without a shell. Terminal editors temporarily return terminal ownership and redraw afterward. On Unix, `Ctrl-z` suspends `ramo`; resuming the job restores the review.
 
 ## Live review sessions
 
-Every interactive review registers with a loopback broker served by the same `pdiff` executable. A second terminal or an agent can inspect and control the live TUI without a browser, Node.js, Bun, or a separate MCP process:
+Every interactive review registers with a loopback broker served by the same `ramo` executable. A second terminal or an agent can inspect and control the live TUI without a browser, Node.js, Bun, or a separate MCP process:
 
 ```bash
-pdiff session list
-pdiff session get SESSION_ID
-pdiff session context SESSION_ID --json
-pdiff session review SESSION_ID --include-patch --include-notes --json
+ramo session list
+ramo session get SESSION_ID
+ramo session context SESSION_ID --json
+ramo session review SESSION_ID --include-patch --include-notes --json
 ```
 
 `list` discovers sessions. `get` returns registration metadata, `context` returns the selected file/hunk and note state, and `review` returns the structured file/hunk model. Review exports omit raw patches and notes by default; request them explicitly with `--include-patch` and `--include-notes`. Every session command has human-readable output by default and stable compact JSON with `--json`.
@@ -163,10 +178,10 @@ pdiff session review SESSION_ID --include-patch --include-notes --json
 Select a session by its ID or canonical repository root. A repository selector must match exactly one live review:
 
 ```bash
-pdiff session context --repo .
-pdiff session navigate SESSION_ID --file src/lib.rs --hunk 2
-pdiff session navigate SESSION_ID --file src/lib.rs --new-line 42
-pdiff session navigate SESSION_ID --next-comment
+ramo session context --repo .
+ramo session navigate SESSION_ID --file src/lib.rs --hunk 2
+ramo session navigate SESSION_ID --file src/lib.rs --new-line 42
+ramo session navigate SESSION_ID --next-comment
 ```
 
 Hunk numbers are positive and 1-based at the CLI. Navigation also accepts `--old-line`, `--new-line`, and `--prev-comment`. Session paths are a third deterministic selector in the wire protocol; reload exposes it as `--session-path PATH`. Empty, conflicting, missing, and ambiguous selectors fail instead of choosing an arbitrary terminal.
@@ -174,9 +189,9 @@ Hunk numbers are positive and 1-based at the CLI. Navigation also accepts `--old
 Replace a live review’s source without changing its session ID:
 
 ```bash
-pdiff session reload SESSION_ID -- diff main...HEAD -- src
-pdiff session reload --repo . -- show HEAD~1
-pdiff session reload --session-path /dev/pts/7 --source ./nested -- patch review.patch
+ramo session reload SESSION_ID -- diff main...HEAD -- src
+ramo session reload --repo . -- show HEAD~1
+ramo session reload --session-path /dev/pts/7 --source ./nested -- patch review.patch
 ```
 
 The command after `--` is parsed by the normal typed review CLI. Pager and stdin-backed patch inputs are rejected because they cannot be repeated. Reload is transactional: loading and config resolution must succeed before the visible review or watch plan changes. Selection falls back safely if its target disappears, while human and live comments whose stable file targets remain are preserved.
@@ -184,23 +199,23 @@ The command after `--` is parsed by the normal typed review CLI. Pager and stdin
 Live comments use the same native note geometry and STML renderer as in-process agent notes:
 
 ```bash
-pdiff session comment add SESSION_ID --file src/lib.rs --new-line 42 \
+ramo session comment add SESSION_ID --file src/lib.rs --new-line 42 \
   --summary "Check this retry" --rationale "The final attempt still sleeps" \
   --markup '<badge color=warning>RETRY</badge>' --author Pi --focus
-pdiff session comment list SESSION_ID --type live --json
-pdiff session comment rm SESSION_ID COMMENT_ID
-pdiff session comment clear SESSION_ID --file src/lib.rs --yes
+ramo session comment list SESSION_ID --type live --json
+ramo session comment rm SESSION_ID COMMENT_ID
+ramo session comment clear SESSION_ID --file src/lib.rs --yes
 ```
 
 `comment list --type` accepts `live`, `agent`, `ai`, `user`, or `all`. `comment apply SESSION_ID --stdin` accepts a JSON array (or `{ "comments": [...] }`) of at most 100 comments; `--focus` reveals and selects the first. Clearing requires `--yes`, removes only live comments by default, and touches human notes only with `--include-user` or `--all`.
 
-The broker binds only to loopback and validates HTTP `Host`/`Origin` authority. Configure it with `PDIFF_SESSION_HOST` and `PDIFF_SESSION_PORT` (default `127.0.0.1:47657`); `HUNK_MCP_HOST` and `HUNK_MCP_PORT` remain compatibility aliases. Non-loopback hosts are rejected. HTTP bodies are limited to 256 KiB, internal frames to 1 MiB, text fields to 64 KiB, and ordinary/reload operations to 5/30-second waits.
+The broker binds only to loopback and validates HTTP `Host`/`Origin` authority. Configure it with `RAMO_SESSION_HOST` and `RAMO_SESSION_PORT` (default `127.0.0.1:47657`); `HUNK_MCP_HOST` and `HUNK_MCP_PORT` remain compatibility aliases. Non-loopback hosts are rejected. HTTP bodies are limited to 256 KiB, internal frames to 1 MiB, text fields to 64 KiB, and ordinary/reload operations to 5/30-second waits.
 
 Reload filesystem reads are confined to the initial session’s canonical repository root, including symlink resolution. `--source`, direct files, patch files, and `--agent-context` paths outside that root are rejected; `--agent-context -` is not accepted for session reload. Sessions initially opened from stdin or from files outside a repository cannot be remotely reloaded. No session input is evaluated as shell text.
 
-The broker starts on demand, prunes sessions silent for 45 seconds, and exits after 60 idle seconds. Live TUIs reconnect after a broker restart. A stale compatible pdiff broker is shut down and replaced; an unrelated service on the configured port is never killed. Normal TUI exit unregisters immediately. `pdiff daemon serve` runs the broker in the foreground, and `pdiff mcp serve` is a command-compatible alias; the old browser/MCP endpoint is intentionally gone in favor of these native session commands.
+The broker starts on demand, prunes sessions silent for 45 seconds, and exits after 60 idle seconds. Live TUIs reconnect after a broker restart. A stale compatible ramo broker is shut down and replaced; an unrelated service on the configured port is never killed. Normal TUI exit unregisters immediately. `ramo daemon serve` runs the broker in the foreground, and `ramo mcp serve` is a command-compatible alias; the old browser/MCP endpoint is intentionally gone in favor of these native session commands.
 
-`pdiff skill path` atomically materializes the embedded `pdiff-review` agent skill in the platform data directory and prints its path. The skill instructs agents to use this same native command surface.
+`ramo skill path` atomically materializes the embedded `ramo-review` agent skill in the platform data directory and prints its path. The skill instructs agents to use this same native command surface.
 
 ## Current controls
 
@@ -233,7 +248,7 @@ The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel even
 
 ## View configuration
 
-User preferences live at the platform config path (for example `~/.config/pdiff/config.toml` on Linux); repository overrides live in the nearest `.pdiff/config.toml`:
+User preferences live at the platform config path (for example `~/.config/ramo/config.toml` on Linux); repository overrides live in the nearest `.ramo/config.toml`:
 
 ```toml
 mode = "auto"
@@ -252,15 +267,15 @@ Press `t` to preview embedded or custom themes. When interactive view settings c
 
 `copy_decorations = true` includes the rendered line-number/change-marker gutter in full-line copies; the default copies code only. `transparentBackground` remains accepted as Hunk's compatibility alias for `transparent_background`. Deprecated `[custom_theme.syntax]` semantic colors are translated to approximate TextMate scopes and surfaced as a startup notice; exact `[custom_theme.syntax_scopes]` entries override translated values.
 
-After an installed-version change, `pdiff` shows a one-time local reminder to refresh any copied agent skill with `pdiff skill path`. It also performs an opportunistic, nonblocking `git ls-remote` query for newer GitHub release tags: the first check is delayed 1.2 seconds, the child is killed after five seconds, failures or a missing optional Git executable are ignored, and a long-running review checks again every six hours. Notices are deduplicated, queued for seven seconds each, and suppressed in pager mode. Set `PDIFF_DISABLE_UPDATE_NOTICE=1` (or Hunk's compatibility name `HUNK_DISABLE_UPDATE_NOTICE=1`) to disable both update notices. This adds no TLS library or mandatory runtime dependency to the `pdiff` executable.
+After an installed-version change, `ramo` shows a one-time local reminder to refresh any copied agent skill with `ramo skill path`. It also performs an opportunistic, nonblocking `git ls-remote` query for newer GitHub release tags: the first check is delayed 1.2 seconds, the child is killed after five seconds, failures or a missing optional Git executable are ignored, and a long-running review checks again every six hours. Notices are deduplicated, queued for seven seconds each, and suppressed in pager mode. Set `RAMO_DISABLE_UPDATE_NOTICE=1` (or Hunk's compatibility name `HUNK_DISABLE_UPDATE_NOTICE=1`) to disable both update notices. This adds no TLS library or mandatory runtime dependency to the `ramo` executable.
 
 The default `theme = "auto"` sends one bounded OSC 11 background query to the controlling terminal, chooses the matching light or dark GitHub default, and falls back to the dark default after 150 ms or an unrecognized response. Explicit and custom themes skip the probe. `COLORFGBG` is used as a fallback hint where a terminal cannot answer OSC 11.
 
-All of this ships in the same Rust executable. Syntax highlighting uses Syntect's pure-Rust regex backend; the dependency graph contains no Oniguruma C implementation. `pdiff` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
+All of this ships in the same Rust executable. Syntax highlighting uses Syntect's pure-Rust regex backend; the dependency graph contains no Oniguruma C implementation. `ramo` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
 
 ## Comment output
 
-On quit, `pdiff` can write comments to `pdiff-review.md`, an explicit `--output` path, or stdout:
+On quit, `ramo` can write comments to `ramo-review.md`, an explicit `--output` path, or stdout:
 
 ```markdown
 ## Review Comments
@@ -274,11 +289,11 @@ Should use proper JWT validation.
 ## Pi integration
 
 ```bash
-pdiff install pi
-pdiff uninstall pi
+ramo install pi
+ramo uninstall pi
 ```
 
-The installed `/pdiff` prompt accepts `staged`, `branch <name>`, or `commit <sha>`, then directs Pi to run this native executable and return its Markdown review comments. Installation writes `~/.pi/agent/prompts/pdiff.md`; it installs no TypeScript extension or runtime helper.
+The installed `/ramo` prompt accepts `staged`, `branch <name>`, or `commit <sha>`, then directs Pi to run this native executable and return its Markdown review comments. Installation writes `~/.pi/agent/prompts/ramo.md`; it installs no TypeScript extension or runtime helper.
 
 ## Development
 

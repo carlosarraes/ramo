@@ -4,7 +4,7 @@
 
 **Goal:** Close every remaining in-scope Hunk parity row with native Rust behavior and named evidence, leaving only the approved top-menu/dropdown and JavaScript embedding exclusions.
 
-**Constraints:** One `pdiff` executable; no JS/TS source or runtime; no shell evaluation of user/protocol data; platform-specific terminal code stays behind common Rust interfaces; no invented timing threshold; performance scenarios compare shapes and bounded ownership.
+**Constraints:** One `ramo` executable; no JS/TS source or runtime; no shell evaluation of user/protocol data; platform-specific terminal code stays behind common Rust interfaces; no invented timing threshold; performance scenarios compare shapes and bounded ownership.
 
 ## Task 1: Close small evidence gaps
 
@@ -24,7 +24,7 @@
 
 ## Task 3: Add the direct agent-skill dialog
 
-- [x] Add an `A` direct binding, centered dialog, Escape behavior, and `y`/Enter OSC 52 copy action for the native `pdiff skill path` prompt.
+- [x] Add an `A` direct binding, centered dialog, Escape behavior, and `y`/Enter OSC 52 copy action for the native `ramo skill path` prompt.
 - [x] Update help and README controls without adding a menu or dropdown.
 - [x] Add input, render, and PTY clipboard evidence.
 - [x] Commit `feat: add native agent skill dialog`.

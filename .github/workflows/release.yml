@@ -53,20 +53,20 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../pdiff-${{ matrix.target }}.tar.gz pdiff
+          tar czf ../../../ramo-${{ matrix.target }}.tar.gz ramo
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/pdiff.exe" -DestinationPath "pdiff-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/ramo.exe" -DestinationPath "ramo-${{ matrix.target }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pdiff-${{ matrix.target }}
-          path: pdiff-${{ matrix.target }}.*
+          name: ramo-${{ matrix.target }}
+          path: ramo-${{ matrix.target }}.*
 
   release:
     name: Create Release

@@ -4,14 +4,14 @@
 
 **Goal:** Add native file/VCS reload, editor and terminal job control, and verified optional integrations without introducing a JavaScript runtime or a second executable.
 
-**Architecture:** A backend-neutral `watch` module derives observation targets from each loader's `ReloadPlan`, coalesces event and polling hints, and executes at most one synchronous reload at a time from the TUI event loop. `ReviewController::replace_files` owns semantic selection and viewport restoration, while a `TerminalSession` owns enter/restore/suspend/resume behavior and an injected process boundary owns editor and tmux commands. Pi integration becomes a Markdown prompt template that instructs Pi to invoke the native `pdiff` CLI; the existing TypeScript extension is removed.
+**Architecture:** A backend-neutral `watch` module derives observation targets from each loader's `ReloadPlan`, coalesces event and polling hints, and executes at most one synchronous reload at a time from the TUI event loop. `ReviewController::replace_files` owns semantic selection and viewport restoration, while a `TerminalSession` owns enter/restore/suspend/resume behavior and an injected process boundary owns editor and tmux commands. Pi integration becomes a Markdown prompt template that instructs Pi to invoke the native `ramo` CLI; the existing TypeScript extension is removed.
 
 **Tech Stack:** Rust 2024, Ratatui, Crossterm, `notify` for linked native filesystem events, standard-library channels/processes/time, `shell-words`, `portable-pty`, and temporary native Git fixtures.
 
 ## Global Constraints
 
 - The implementation is 100% Rust.
-- Installation produces one `pdiff` executable. It must not require Node.js, Bun, TypeScript, a browser runtime, or a separately installed helper service.
+- Installation produces one `ramo` executable. It must not require Node.js, Bun, TypeScript, a browser runtime, or a separately installed helper service.
 - Git, Jujutsu, and Sapling executables remain optional and are invoked only for their matching workflows.
 - Linux, macOS, and Windows remain supported through common Rust interfaces; platform-specific terminal behavior is isolated behind `cfg` modules.
 - Existing piped patch, `--input`, `--output`, `--stdout`, Vim selection, Markdown comments, tmux send, and OSC 52 behavior remains compatible.
@@ -69,12 +69,12 @@ Create `tests/reload.rs` with native temporary files and a controller whose sele
 ```rust
 use std::fs;
 
-use pdiff::config::ResolvedConfig;
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::diff::model::{DiffFile, FileChangeKind};
-use pdiff::input::{LoadContext, ReloadPlan, ReviewLoader};
-use pdiff::review::{ReviewAction, ReviewController, ReviewOptions, Viewport};
-use pdiff::vcs::SystemCommandRunner;
+use ramo::config::ResolvedConfig;
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::diff::model::{DiffFile, FileChangeKind};
+use ramo::input::{LoadContext, ReloadPlan, ReviewLoader};
+use ramo::review::{ReviewAction, ReviewController, ReviewOptions, Viewport};
+use ramo::vcs::SystemCommandRunner;
 
 #[test]
 fn patch_file_reload_reads_the_replacement_contents() {
@@ -103,7 +103,7 @@ fn replacing_files_preserves_selected_file_and_viewport_anchor() {
     let b = DiffFile::for_test("src/b.rs", FileChangeKind::Modified, 30, 3);
     let mut controller = ReviewController::new(vec![a.clone(), b.clone()], ReviewOptions::default());
     controller.apply(ReviewAction::SelectFile(b.id.clone()), viewport);
-    controller.apply(ReviewAction::Scroll { delta: 1, unit: pdiff::review::ScrollUnit::HalfPage }, viewport);
+    controller.apply(ReviewAction::Scroll { delta: 1, unit: ramo::review::ScrollUnit::HalfPage }, viewport);
     let before = controller.snapshot(viewport).clone();
 
     controller.replace_files(vec![b, a], viewport);
@@ -236,9 +236,9 @@ Create `tests/watch.rs` with fake time so debounce behavior never sleeps:
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use pdiff::core::input::VcsId;
-use pdiff::input::ReloadPlan;
-use pdiff::watch::{Coverage, WatchCoordinator, WatchPlan, WatchTarget};
+use ramo::core::input::VcsId;
+use ramo::input::ReloadPlan;
+use ramo::watch::{Coverage, WatchCoordinator, WatchPlan, WatchTarget};
 
 #[test]
 fn direct_files_watch_parent_entries_so_atomic_replacements_are_seen() {
@@ -285,7 +285,7 @@ fn bursts_coalesce_and_an_inflight_hint_gets_one_trailing_generation() {
 
 Run: `cargo test --test watch -- --nocapture`
 
-Expected: compilation fails because `pdiff::watch` does not exist.
+Expected: compilation fails because `ramo::watch` does not exist.
 
 - [x] **Step 3: Add the linked native watcher dependency and deterministic plan types**
 
@@ -553,7 +553,7 @@ Create `tests/editor.rs`:
 
 ```rust
 use std::path::Path;
-use pdiff::process::editor::{build_editor_command, should_suspend_for_editor};
+use ramo::process::editor::{build_editor_command, should_suspend_for_editor};
 
 #[test]
 fn editor_commands_are_argv_not_shell_text() {
@@ -585,7 +585,7 @@ Add fake-runner cases for unset/empty `$EDITOR`, missing selected file, paths re
 
 Run: `cargo test --test editor -- --nocapture`
 
-Expected: compilation fails because `pdiff::process::editor` does not exist.
+Expected: compilation fails because `ramo::process::editor` does not exist.
 
 - [x] **Step 3: Implement a shell-free process boundary and editor commands**
 
@@ -637,7 +637,7 @@ Map Ctrl-Z to `AppAction::Suspend`. On Unix, restore the terminal, raise `SIGTST
 
 - [x] **Step 6: Add bounded PTY restoration tests**
 
-Create `tests/terminal_lifecycle.rs` with helper test modes exposed only under `PDIFF_TEST_PANIC=1` and `PDIFF_TEST_RUNTIME_ERROR=1`. For each child, assert it enters the alternate screen, exits or panics, and emits `\x1b[?1049l` plus cursor restoration before the diagnostic. Add a Unix-only test that sends Ctrl-Z, waits for stopped status, sends `SIGCONT`, verifies the review redraws, and then quits.
+Create `tests/terminal_lifecycle.rs` with helper test modes exposed only under `RAMO_TEST_PANIC=1` and `RAMO_TEST_RUNTIME_ERROR=1`. For each child, assert it enters the alternate screen, exits or panics, and emits `\x1b[?1049l` plus cursor restoration before the diagnostic. Add a Unix-only test that sends Ctrl-Z, waits for stopped status, sends `SIGCONT`, verifies the review redraws, and then quits.
 
 Run: `cargo test --test editor --test terminal_lifecycle --test pty_ui -- --nocapture`
 
@@ -675,15 +675,15 @@ fn tmux_send_uses_literal_stdin_and_never_a_shell() {
     let executor = RecordingExecutor::successful();
     let mut tmux = TmuxClient::new(executor);
     tmux.send_to_pane("%7", "line one\n$(touch /tmp/nope)", PasteMode::Bracketed).unwrap();
-    assert_eq!(tmux.executor().requests[0].argv, ["tmux", "load-buffer", "-b", "pdiff-send", "-"]);
+    assert_eq!(tmux.executor().requests[0].argv, ["tmux", "load-buffer", "-b", "ramo-send", "-"]);
     assert_eq!(tmux.executor().requests[0].stdin.as_deref(), Some(b"line one\n$(touch /tmp/nope)".as_slice()));
-    assert_eq!(tmux.executor().requests[1].argv, ["tmux", "paste-buffer", "-p", "-r", "-b", "pdiff-send", "-t", "%7", "-d"]);
+    assert_eq!(tmux.executor().requests[1].argv, ["tmux", "paste-buffer", "-p", "-r", "-b", "ramo-send", "-t", "%7", "-d"]);
 }
 
 #[test]
 fn osc52_encodes_wide_character_selection_exactly() {
     let mut output = Vec::new();
-    pdiff::clipboard::write_osc52(&mut output, "界 old").unwrap();
+    ramo::clipboard::write_osc52(&mut output, "界 old").unwrap();
     assert_eq!(output, b"\x1b]52;c;55WMIG9sZA==\x07");
 }
 ```
@@ -698,7 +698,7 @@ Expected: compilation fails because `TmuxClient`, `RecordingExecutor`, and `writ
 
 - [x] **Step 3: Move tmux process calls behind `CommandExecutor`**
 
-Keep existing free functions as thin `SystemCommandExecutor` compatibility wrappers, but implement behavior in `TmuxClient<E>`. Parse `list-panes` output exactly once, preserve pane ids as literal arguments, write send text only to child stdin, and include stderr in operation-specific errors. Rename the shared buffer to `pdiff-send`.
+Keep existing free functions as thin `SystemCommandExecutor` compatibility wrappers, but implement behavior in `TmuxClient<E>`. Parse `list-panes` output exactly once, preserve pane ids as literal arguments, write send text only to child stdin, and include stderr in operation-specific errors. Rename the shared buffer to `ramo-send`.
 
 - [x] **Step 4: Separate OSC 52 formatting from stdout ownership**
 
@@ -732,8 +732,8 @@ git commit -m "refactor: verify native tmux and clipboard boundaries"
 - Modify: `docs/superpowers/plans/2026-07-21-watch-process-implementation-plan.md`
 
 **Interfaces:**
-- Consumes: Pi's global prompt-template convention `~/.pi/agent/prompts/*.md` and the normalized native `pdiff` CLI.
-- Produces: `pi_extension::{install_at, uninstall_at}` for testable filesystem integration and `/pdiff` prompt text that directs Pi to invoke only the native executable.
+- Consumes: Pi's global prompt-template convention `~/.pi/agent/prompts/*.md` and the normalized native `ramo` CLI.
+- Produces: `pi_extension::{install_at, uninstall_at}` for testable filesystem integration and `/ramo` prompt text that directs Pi to invoke only the native executable.
 
 - [x] **Step 1: Add failing Pi filesystem tests**
 
@@ -743,14 +743,14 @@ Extend `tests/integrations.rs`:
 #[test]
 fn pi_install_writes_a_markdown_prompt_and_no_typescript() {
     let home = tempfile::tempdir().unwrap();
-    let installed = pdiff::pi_extension::install_at(home.path()).unwrap();
-    assert_eq!(installed, home.path().join(".pi/agent/prompts/pdiff.md"));
+    let installed = ramo::pi_extension::install_at(home.path()).unwrap();
+    assert_eq!(installed, home.path().join(".pi/agent/prompts/ramo.md"));
     let text = std::fs::read_to_string(&installed).unwrap();
-    assert!(text.contains("pdiff diff --staged"));
-    assert!(text.contains("pdiff --output"));
+    assert!(text.contains("ramo diff --staged"));
+    assert!(text.contains("ramo --output"));
     assert!(!text.contains("registerCommand"));
-    assert!(!home.path().join(".pi/agent/extensions/pdiff/index.ts").exists());
-    pdiff::pi_extension::uninstall_at(home.path()).unwrap();
+    assert!(!home.path().join(".pi/agent/extensions/ramo/index.ts").exists());
+    ramo::pi_extension::uninstall_at(home.path()).unwrap();
     assert!(!installed.exists());
 }
 ```
@@ -767,19 +767,19 @@ Create `src/pi_prompt.md`:
 
 ```markdown
 ---
-description: Review changes with the native pdiff executable
+description: Review changes with the native ramo executable
 argument-hint: "[staged|branch <name>|commit <sha>]"
 ---
-Use the native `pdiff` executable to review the requested target. Choose the command from `$ARGUMENTS`:
+Use the native `ramo` executable to review the requested target. Choose the command from `$ARGUMENTS`:
 
-- no argument or `staged`: run `pdiff --output .pdiff-review.md diff --staged`
-- `branch <name>`: run `pdiff --output .pdiff-review.md diff <name>...HEAD`
-- `commit <sha>`: run `pdiff --output .pdiff-review.md show <sha>`
+- no argument or `staged`: run `ramo --output .ramo-review.md diff --staged`
+- `branch <name>`: run `ramo --output .ramo-review.md diff <name>...HEAD`
+- `commit <sha>`: run `ramo --output .ramo-review.md show <sha>`
 
-After pdiff exits, read `.pdiff-review.md` if it exists, return its review comments to this conversation, and remove only that generated file. If pdiff reports no changes or no comments, say so directly. Do not construct a JavaScript or TypeScript wrapper.
+After ramo exits, read `.ramo-review.md` if it exists, return its review comments to this conversation, and remove only that generated file. If ramo reports no changes or no comments, say so directly. Do not construct a JavaScript or TypeScript wrapper.
 ```
 
-Use `include_str!("pi_prompt.md")`, create `~/.pi/agent/prompts`, and write `pdiff.md` atomically through a sibling temporary file plus rename. `uninstall_at` removes only `pdiff.md` and removes `prompts/` only if it is empty. Production `install`/`uninstall` resolve `dirs::home_dir()` and delegate. Delete `src/pi_extension_src.ts`.
+Use `include_str!("pi_prompt.md")`, create `~/.pi/agent/prompts`, and write `ramo.md` atomically through a sibling temporary file plus rename. `uninstall_at` removes only `ramo.md` and removes `prompts/` only if it is empty. Production `install`/`uninstall` resolve `dirs::home_dir()` and delegate. Delete `src/pi_extension_src.ts`.
 
 - [x] **Step 4: Verify there is no runtime or source-language contradiction**
 
@@ -805,8 +805,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets
 cargo build --release
 git diff --check
-file target/release/pdiff
-ldd target/release/pdiff
+file target/release/ramo
+ldd target/release/ramo
 ```
 
 Expected: formatting, lint, all unit/integration/PTY tests, and release build pass; the artifact is one native executable and its dynamic libraries contain no Node.js, Bun, browser, Hunk, or JavaScript engine.
@@ -832,5 +832,5 @@ Before starting notes/markup work, confirm all of the following from fresh comma
 - `$EDITOR` receives a literal absolute file path and correct line convention without a shell.
 - Normal exit, app errors, panic, editor launch, and Unix suspend/resume restore terminal ownership.
 - Tmux remains optional and literal; OSC 52 remains exact for non-ASCII selection.
-- `pdiff install pi` writes Markdown only, and `rg --files src | rg '\.(ts|tsx|js|jsx)$'` returns no files.
-- `target/release/pdiff` is one native Rust binary with no JavaScript runtime dependency.
+- `ramo install pi` writes Markdown only, and `rg --files src | rg '\.(ts|tsx|js|jsx)$'` returns no files.
+- `target/release/ramo` is one native Rust binary with no JavaScript runtime dependency.

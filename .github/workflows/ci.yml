@@ -30,8 +30,8 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          PDIFF_INSTALL_DRY_RUN=1 PDIFF_INSTALL_OS=linux PDIFF_INSTALL_ARCH=x86_64 ./install.sh v0.0.6
-          PDIFF_INSTALL_DRY_RUN=1 PDIFF_INSTALL_OS=darwin PDIFF_INSTALL_ARCH=arm64 ./install.sh v0.0.6
+          RAMO_INSTALL_DRY_RUN=1 RAMO_INSTALL_OS=linux RAMO_INSTALL_ARCH=x86_64 ./install.sh v0.0.6
+          RAMO_INSTALL_DRY_RUN=1 RAMO_INSTALL_OS=darwin RAMO_INSTALL_ARCH=arm64 ./install.sh v0.0.6
 
   unix-pty:
     name: Native PTY (${{ matrix.os }})

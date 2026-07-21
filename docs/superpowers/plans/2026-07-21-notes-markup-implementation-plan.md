@@ -2,7 +2,7 @@
 
 > Status: approved architecture; execution plan for delivery slice 5.
 
-**Goal:** Port Hunk's agent-context, inline human/AI/agent notes, deterministic STML, and markup commands into the single Rust `pdiff` executable without introducing a JavaScript runtime or a second review-state model.
+**Goal:** Port Hunk's agent-context, inline human/AI/agent notes, deterministic STML, and markup commands into the single Rust `ramo` executable without introducing a JavaScript runtime or a second review-state model.
 
 **Reference:** `/home/carraes/github/hunk` at `53fcb2c`, especially `src/core/agent.ts`, `src/ui/lib/agentAnnotations.ts`, `src/ui/lib/agentNoteGeometry.ts`, `src/ui/lib/stml/*`, and `test/pty/notes.test.ts`.
 
@@ -37,7 +37,7 @@ Cover version/default summary, current/previous-path matching, context file orde
 
 Run: `cargo test --test agent_context -- --nocapture`
 
-Expected: compilation fails because `pdiff::notes` and attached file notes do not exist.
+Expected: compilation fails because `ramo::notes` and attached file notes do not exist.
 
 - [x] **Step 3: Add bounded serde models and contextual errors**
 
@@ -232,11 +232,11 @@ Resolve semantic tokens (`accent`, `success`, `warning`, `danger`, `info`, `mute
 Add:
 
 ```text
-pdiff markup render <FILE|-> [--width 56] [--theme ID] [--color auto|always|never] [--json]
-pdiff markup guide
+ramo markup render <FILE|-> [--width 56] [--theme ID] [--color auto|always|never] [--json]
+ramo markup guide
 ```
 
-`render` writes plain/ANSI lines, emits layout notes on stderr, and never enters the alternate screen. JSON is stable `{ "width", "lines", "notes" }`. The embedded guide names `pdiff`, not Hunk, and every fenced STML example is tested.
+`render` writes plain/ANSI lines, emits layout notes on stderr, and never enters the alternate screen. JSON is stable `{ "width", "lines", "notes" }`. The embedded guide names `ramo`, not Hunk, and every fenced STML example is tested.
 
 - [x] **Step 6: Run layout, CLI, render, and full review regressions**
 
@@ -273,8 +273,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets
 cargo build --release
 git diff --check
-file target/release/pdiff
-ldd target/release/pdiff
+file target/release/ramo
+ldd target/release/ramo
 ```
 
 - [x] **Step 3: Commit the slice evidence**
@@ -294,5 +294,5 @@ git commit -m "docs: verify native notes and markup parity"
 - Note rows participate in measurement, scrollbars, hit testing, selection, and annotated-hunk navigation.
 - STML parsing never crashes, is resource bounded, and sanitizes terminal controls.
 - STML layout is deterministic and terminal-cell correct for all documented tags.
-- `pdiff markup render` and `pdiff markup guide` are black-box verified and never initialize the TUI.
+- `ramo markup render` and `ramo markup guide` are black-box verified and never initialize the TUI.
 - The release remains one native Rust executable with no JavaScript/TypeScript source or runtime dependency.

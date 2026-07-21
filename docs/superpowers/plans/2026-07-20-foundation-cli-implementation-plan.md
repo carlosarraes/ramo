@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Establish the Rust-only library, domain model, Hunk-shaped review CLI, layered configuration, patch/file loaders, and legacy `pdiff` compatibility that every remaining parity slice builds on.
+**Goal:** Establish the Rust-only library, domain model, Hunk-shaped review CLI, layered configuration, patch/file loaders, and legacy `ramo` compatibility that every remaining parity slice builds on.
 
 **Architecture:** Keep the existing Ratatui reviewer operational while moving process concerns out of `main.rs`. Parse CLI/config into a normalized `ReviewInput`, load every implemented source into one `Changeset`, and pass only normalized files plus output policy into the existing app. Define the VCS loader seam now; the next plan fills it with Git, jj, and Sapling adapters.
 
@@ -11,13 +11,13 @@
 ## Global Constraints
 
 - The implementation is 100% Rust.
-- Installation produces one `pdiff` executable. It must not require Node.js, Bun, TypeScript, a browser runtime, or a separately installed helper service.
-- `pdiff daemon serve` and all session-broker behavior execute from that same binary.
+- Installation produces one `ramo` executable. It must not require Node.js, Bun, TypeScript, a browser runtime, or a separately installed helper service.
+- `ramo daemon serve` and all session-broker behavior execute from that same binary.
 - Git, Jujutsu, and Sapling executables are optional external tools. A VCS executable is required only when a user invokes a workflow backed by that VCS.
-- The executable remains named `pdiff`; Hunk command shapes are exposed beneath that name.
+- The executable remains named `ramo`; Hunk command shapes are exposed beneath that name.
 - Linux, macOS, and Windows are supported. PTY-only features may use platform-specific implementations behind common Rust interfaces.
-- Existing `pdiff` features remain available unless they conflict with Hunk parity. On a conflict, the Hunk-compatible command or key wins and the existing action receives a new non-conflicting binding.
-- Existing `git diff | pdiff`, `--input`, `--output`, and `--stdout` usage remains compatible.
+- Existing `ramo` features remain available unless they conflict with Hunk parity. On a conflict, the Hunk-compatible command or key wins and the existing action receives a new non-conflicting binding.
+- Existing `git diff | ramo`, `--input`, `--output`, and `--stdout` usage remains compatible.
 - Hunk's top menu bar, dropdown menus, and menu-specific shortcuts are not ported. Their underlying actions remain accessible through direct shortcuts, dialogs, or command-line options.
 
 ## Program roadmap
@@ -65,13 +65,13 @@ This is plan 1 of 7. Each plan consumes stable interfaces from the preceding pla
 
 **Interfaces:**
 - Consumes: existing modules declared privately in `src/main.rs`.
-- Produces: public crate modules addressable as `pdiff::diff`, `pdiff::annotations`, `pdiff::app`, `pdiff::ui`, and integrations used by later tasks.
+- Produces: public crate modules addressable as `ramo::diff`, `ramo::annotations`, `ramo::app`, `ramo::ui`, and integrations used by later tasks.
 
 - [ ] **Step 1: Write the failing public-library smoke test**
 
 ```rust
 // tests/library_surface.rs
-use pdiff::diff::parser::parse_unified_diff;
+use ramo::diff::parser::parse_unified_diff;
 
 #[test]
 fn parser_is_available_from_the_library_crate() {
@@ -87,7 +87,7 @@ fn parser_is_available_from_the_library_crate() {
 
 Run: `cargo test --test library_surface`
 
-Expected: compilation fails because no library target named `pdiff` exists.
+Expected: compilation fails because no library target named `ramo` exists.
 
 - [ ] **Step 3: Add the library entry point and switch the binary to imports**
 
@@ -106,17 +106,17 @@ pub mod vim;
 Delete the eight `mod ...;` declarations from `src/main.rs` and replace internal imports with:
 
 ```rust
-use pdiff::annotations::output;
-use pdiff::app::App;
-use pdiff::diff::parser::parse_unified_diff;
-use pdiff::pi_extension;
+use ramo::annotations::output;
+use ramo::app::App;
+use ramo::diff::parser::parse_unified_diff;
+use ramo::pi_extension;
 ```
 
 Add an explicit library target so package intent is visible:
 
 ```toml
 [lib]
-name = "pdiff"
+name = "ramo"
 path = "src/lib.rs"
 ```
 
@@ -130,7 +130,7 @@ Expected: 17 tests pass, including `parser_is_available_from_the_library_crate`.
 
 ```bash
 git add Cargo.toml src/lib.rs src/main.rs tests/library_surface.rs
-git commit -m "refactor: expose pdiff as a reusable rust library"
+git commit -m "refactor: expose ramo as a reusable rust library"
 ```
 
 ---
@@ -397,19 +397,19 @@ git commit -m "refactor: normalize changesets and review inputs"
 
 ```rust
 // tests/cli_parse.rs
-use pdiff::cli::{parse_from, Action};
-use pdiff::core::input::{LayoutMode, PatchSource, ReviewInput};
+use ramo::cli::{parse_from, Action};
+use ramo::core::input::{LayoutMode, PatchSource, ReviewInput};
 
 #[test]
 fn bare_pipe_is_patch_stdin() {
-    let invocation = parse_from(["pdiff"], false).unwrap();
+    let invocation = parse_from(["ramo"], false).unwrap();
     assert!(matches!(invocation.action, Action::Review(ReviewInput::Patch { source: PatchSource::Stdin, .. })));
 }
 
 #[test]
 fn diff_supports_range_flags_and_pathspecs() {
     let invocation = parse_from(
-        ["pdiff", "diff", "main...HEAD", "--mode", "split", "--watch", "--", "src", "tests"],
+        ["ramo", "diff", "main...HEAD", "--mode", "split", "--watch", "--", "src", "tests"],
         true,
     ).unwrap();
     let Action::Review(ReviewInput::VcsDiff { range, staged, pathspecs, options }) = invocation.action else { panic!("expected vcs diff") };
@@ -427,20 +427,20 @@ fn existing_two_file_operands_become_a_file_pair() {
     let right = temp.path().join("after.rs");
     std::fs::write(&left, "old\n").unwrap();
     std::fs::write(&right, "new\n").unwrap();
-    let invocation = parse_from(["pdiff".into(), "diff".into(), left.into(), right.clone().into()], true).unwrap();
+    let invocation = parse_from(["ramo".into(), "diff".into(), left.into(), right.clone().into()], true).unwrap();
     assert!(matches!(invocation.action, Action::Review(ReviewInput::FilePair { right: value, .. }) if value == right));
 }
 
 #[test]
 fn legacy_input_and_output_flags_remain_accepted() {
-    let invocation = parse_from(["pdiff", "--input", "review.patch", "--output", "review.md"], true).unwrap();
+    let invocation = parse_from(["ramo", "--input", "review.patch", "--output", "review.md"], true).unwrap();
     assert!(matches!(invocation.action, Action::Review(ReviewInput::Patch { source: PatchSource::File(_), .. })));
     assert_eq!(invocation.output.markdown_path.unwrap(), std::path::PathBuf::from("review.md"));
 }
 
 #[test]
 fn more_than_two_diff_targets_is_rejected() {
-    let error = parse_from(["pdiff", "diff", "one", "two", "three"], true).unwrap_err();
+    let error = parse_from(["ramo", "diff", "one", "two", "three"], true).unwrap_err();
     assert!(error.to_string().contains("one revision or two existing files"));
 }
 ```
@@ -456,7 +456,7 @@ tempfile = "3"
 
 Run: `cargo test --test cli_parse`
 
-Expected: compilation fails because `pdiff::cli` is absent.
+Expected: compilation fails because `ramo::cli` is absent.
 
 - [ ] **Step 3: Define the Clap-only argument tree**
 
@@ -464,7 +464,7 @@ Expected: compilation fails because `pdiff::cli` is absent.
 
 ```rust
 #[derive(Debug, Parser)]
-#[command(name = "pdiff", version, disable_version_flag = true)]
+#[command(name = "ramo", version, disable_version_flag = true)]
 pub struct Cli {
     #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
@@ -585,7 +585,7 @@ where I: IntoIterator<Item = T>, T: Into<std::ffi::OsString> + Clone;
 
 `normalize.rs` converts paired flags into `Option<bool>` by preserving absence, distinguishes one VCS target from two existing file operands, maps `--staged` and `--cached` to one boolean, and rejects `--input` combined with a subcommand. Define `CliError` with concrete variants `Parse(clap::Error)`, `ConflictingInput`, `InvalidDiffTargets(Vec<String>)`, and `UnsupportedIntegration(String)` and implement `Display` plus `Error`.
 
-`parse_from` catches Clap `DisplayHelp` and `DisplayVersion` results and returns `Action::Print(rendered_text)` so they exit successfully. Bare `pdiff` on a terminal also returns the rendered top-level help; bare `pdiff` with non-terminal stdin returns patch-stdin review.
+`parse_from` catches Clap `DisplayHelp` and `DisplayVersion` results and returns `Action::Print(rendered_text)` so they exit successfully. Bare `ramo` on a terminal also returns the rendered top-level help; bare `ramo` with non-terminal stdin returns patch-stdin review.
 
 - [ ] **Step 5: Verify the complete parser contract**
 
@@ -622,14 +622,14 @@ git commit -m "feat: add hunk-compatible review commands"
 
 ```rust
 // tests/config_resolution.rs
-use pdiff::config::{ConfigPaths, ConfigResolver};
-use pdiff::core::input::{CommonOptions, LayoutMode, ReviewInput};
+use ramo::config::{ConfigPaths, ConfigResolver};
+use ramo::core::input::{CommonOptions, LayoutMode, ReviewInput};
 
 #[test]
 fn builtin_user_repo_command_and_cli_layers_merge_in_order() {
     let temp = tempfile::tempdir().unwrap();
     let user = temp.path().join("user.toml");
-    let repo = temp.path().join("repo/.pdiff/config.toml");
+    let repo = temp.path().join("repo/.ramo/config.toml");
     std::fs::create_dir_all(repo.parent().unwrap()).unwrap();
     std::fs::write(&user, "mode = \"stack\"\nline_numbers = false\n").unwrap();
     std::fs::write(&repo, "line_numbers = true\n[diff]\nwrap_lines = true\n").unwrap();
@@ -696,7 +696,7 @@ At this step, extend `LayoutMode` with `serde::Deserialize` and `#[serde(rename_
 
 - [ ] **Step 4: Implement deterministic layer merging and discovery**
 
-`ConfigResolver::resolve` applies built-ins, user global, repository global, user command, repository command, pager sections for pager-mode invocations, and CLI overrides in that order. `ConfigPaths::discover(cwd)` uses `dirs::config_dir()/pdiff/config.toml` and the nearest ancestor `.pdiff/config.toml`. Parse errors include the path and TOML diagnostic. Before deserialization, validate each TOML table against the explicit preference keys and command-section names above so unknown keys fail rather than disappearing silently.
+`ConfigResolver::resolve` applies built-ins, user global, repository global, user command, repository command, pager sections for pager-mode invocations, and CLI overrides in that order. `ConfigPaths::discover(cwd)` uses `dirs::config_dir()/ramo/config.toml` and the nearest ancestor `.ramo/config.toml`. Parse errors include the path and TOML diagnostic. Before deserialization, validate each TOML table against the explicit preference keys and command-section names above so unknown keys fail rather than disappearing silently.
 
 - [ ] **Step 5: Cover config failure and boolean precedence cases**
 
@@ -710,7 +710,7 @@ Expected: every precedence and error case passes.
 
 ```bash
 git add Cargo.toml Cargo.lock src/lib.rs src/config tests/config_resolution.rs
-git commit -m "feat: resolve layered pdiff configuration"
+git commit -m "feat: resolve layered ramo configuration"
 ```
 
 ---
@@ -735,8 +735,8 @@ git commit -m "feat: resolve layered pdiff configuration"
 ```rust
 // tests/input_loading.rs
 use std::io::Cursor;
-use pdiff::core::input::{CommonOptions, PatchSource, ReviewInput};
-use pdiff::input::ReviewLoader;
+use ramo::core::input::{CommonOptions, PatchSource, ReviewInput};
+use ramo::input::ReviewLoader;
 
 #[test]
 fn patch_stdin_loads_a_changeset() {
@@ -838,8 +838,8 @@ git commit -m "feat: normalize patch and file review inputs"
 
 ```rust
 // tests/runtime_resolution.rs
-use pdiff::cli::Action;
-use pdiff::runtime::{resolve_action, StartupAction};
+use ramo::cli::Action;
+use ramo::runtime::{resolve_action, StartupAction};
 
 #[test]
 fn integrations_do_not_initialize_the_review_ui() {
@@ -876,13 +876,13 @@ pub fn resolve_action(action: &Action) -> StartupAction {
 
 ```rust
 fn main() -> std::process::ExitCode {
-    let invocation = match pdiff::cli::parse_from(std::env::args_os(), std::io::stdin().is_terminal()) {
+    let invocation = match ramo::cli::parse_from(std::env::args_os(), std::io::stdin().is_terminal()) {
         Ok(value) => value,
-        Err(error) => { eprintln!("pdiff: {error}"); return std::process::ExitCode::from(2); }
+        Err(error) => { eprintln!("ramo: {error}"); return std::process::ExitCode::from(2); }
     };
-    match pdiff::runtime::run(invocation) {
+    match ramo::runtime::run(invocation) {
         Ok(code) => code,
-        Err(error) => { eprintln!("pdiff: {error}"); std::process::ExitCode::from(error.exit_code()) }
+        Err(error) => { eprintln!("ramo: {error}"); std::process::ExitCode::from(error.exit_code()) }
     }
 }
 ```
@@ -903,7 +903,7 @@ Expected: the original parser/annotation tests and all new library, CLI, config,
 
 ```bash
 git add src/lib.rs src/main.rs src/error.rs src/runtime.rs src/app.rs tests/runtime_resolution.rs
-git commit -m "refactor: isolate pdiff process and terminal startup"
+git commit -m "refactor: isolate ramo process and terminal startup"
 ```
 
 ---
@@ -928,7 +928,7 @@ use predicates::prelude::*;
 
 #[test]
 fn help_lists_every_foundation_review_command() {
-    Command::cargo_bin("pdiff").unwrap().arg("--help").assert().success().stdout(
+    Command::cargo_bin("ramo").unwrap().arg("--help").assert().success().stdout(
         predicate::str::contains("diff").and(predicate::str::contains("show"))
             .and(predicate::str::contains("stash")).and(predicate::str::contains("patch"))
             .and(predicate::str::contains("pager")).and(predicate::str::contains("difftool")),
@@ -937,13 +937,13 @@ fn help_lists_every_foundation_review_command() {
 
 #[test]
 fn version_is_plain_and_successful() {
-    Command::cargo_bin("pdiff").unwrap().arg("--version").assert().success()
-        .stdout(predicate::str::starts_with("pdiff "));
+    Command::cargo_bin("ramo").unwrap().arg("--version").assert().success()
+        .stdout(predicate::str::starts_with("ramo "));
 }
 
 #[test]
 fn invalid_layout_fails_before_terminal_startup() {
-    Command::cargo_bin("pdiff").unwrap().args(["diff", "--mode", "columns"]).assert()
+    Command::cargo_bin("ramo").unwrap().args(["diff", "--mode", "columns"]).assert()
         .code(2).stderr(predicate::str::contains("invalid value 'columns'"));
 }
 ```
@@ -973,16 +973,16 @@ cargo test --all-targets
 cargo build --release
 ```
 
-Expected: every command exits 0, the release build produces `target/release/pdiff`, and `ldd target/release/pdiff` on Linux (or `otool -L` on macOS) shows no Node/Bun/JavaScript runtime dependency.
+Expected: every command exits 0, the release build produces `target/release/ramo`, and `ldd target/release/ramo` on Linux (or `otool -L` on macOS) shows no Node/Bun/JavaScript runtime dependency.
 
 - [ ] **Step 6: Manually smoke-test retained workflows**
 
 Run in a real terminal:
 
 ```bash
-git diff --no-color | target/release/pdiff
-target/release/pdiff diff README.md README.md
-target/release/pdiff --input tests/fixtures/simple.patch --stdout
+git diff --no-color | target/release/ramo
+target/release/ramo diff README.md README.md
+target/release/ramo --input tests/fixtures/simple.patch --stdout
 ```
 
 Expected: piped and file-pair inputs enter/exit the reviewer cleanly; the explicit patch opens; annotation stdout remains Markdown; identical files report an empty review without corrupting terminal state.

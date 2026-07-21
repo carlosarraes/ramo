@@ -2,15 +2,15 @@
 
 > Status: approved architecture translated into an executable Rust plan for delivery slice 6.
 
-**Goal:** Port Hunk's loopback daemon, live-session registration, projections, complete `session` command surface, and `skill path` command into the same Rust `pdiff` executable, with the TUI remaining authoritative for review state.
+**Goal:** Port Hunk's loopback daemon, live-session registration, projections, complete `session` command surface, and `skill path` command into the same Rust `ramo` executable, with the TUI remaining authoritative for review state.
 
 **Reference:** `/home/carraes/github/hunk` at `53fcb2c`, especially `src/session/*`, `src/session-broker/*`, `src/hunk-session/*`, the session CLI tests, and the approved parity design.
 
 **Architecture:** `session` owns serializable protocol DTOs, projections, a bounded loopback HTTP daemon, an internal persistent framed TCP transport for registered TUI sessions, a blocking CLI client, and the app bridge. The daemon stores only registration/snapshot/routing metadata. Every mutation is forwarded to the selected live TUI and applied through `ReviewController`, `WatchRuntime`, and existing loader boundaries. The broker uses `std::net` and threads; no async runtime, browser server, JavaScript, shell command, or second executable is introduced.
 
-**Transport:** CLI clients use bounded HTTP/1.1 JSON at `/session-api`; capabilities are exposed at `/session-api/capabilities`, health at `/health`, and legacy `/mcp` returns the Hunk-compatible tombstone. TUI sessions connect to the same loopback port with a private `PDIFF-SESSION/1` preface followed by length-prefixed JSON frames. Request ids bind command results to exactly one selected session. This internal transport need not preserve Hunk's JavaScript WebSocket implementation detail; it preserves the command, projection, lifecycle, and security contract.
+**Transport:** CLI clients use bounded HTTP/1.1 JSON at `/session-api`; capabilities are exposed at `/session-api/capabilities`, health at `/health`, and legacy `/mcp` returns the Hunk-compatible tombstone. TUI sessions connect to the same loopback port with a private `RAMO-SESSION/1` preface followed by length-prefixed JSON frames. Request ids bind command results to exactly one selected session. This internal transport need not preserve Hunk's JavaScript WebSocket implementation detail; it preserves the command, projection, lifecycle, and security contract.
 
-**Defaults and bounds:** loopback `127.0.0.1:47657`; 256 KiB HTTP bodies; 1 MiB internal frames; 100 comments per batch; 64 KiB summary/rationale/markup fields; 5-second ordinary command timeout; 30-second reload/batch timeout; 45-second stale session TTL; 60-second daemon idle shutdown. `PDIFF_SESSION_HOST`/`PDIFF_SESSION_PORT` are accepted, with `HUNK_MCP_HOST`/`HUNK_MCP_PORT` compatibility aliases. Non-loopback hosts are always rejected.
+**Defaults and bounds:** loopback `127.0.0.1:47657`; 256 KiB HTTP bodies; 1 MiB internal frames; 100 comments per batch; 64 KiB summary/rationale/markup fields; 5-second ordinary command timeout; 30-second reload/batch timeout; 45-second stale session TTL; 60-second daemon idle shutdown. `RAMO_SESSION_HOST`/`RAMO_SESSION_PORT` are accepted, with `HUNK_MCP_HOST`/`HUNK_MCP_PORT` compatibility aliases. Non-loopback hosts are always rejected.
 
 ---
 
@@ -43,7 +43,7 @@
 - Modify: `src/cli/mod.rs`
 - Create: `src/session/cli.rs`
 - Create: `src/session/skill.rs`
-- Create: `src/session/pdiff-review-SKILL.md`
+- Create: `src/session/ramo-review-SKILL.md`
 - Modify: `src/runtime.rs`
 - Test: `tests/session_cli.rs`
 - Test: `tests/skill_path.rs`
@@ -52,7 +52,7 @@
 - [x] Add `session list|get|context|review|navigate|reload`, `session comment add|apply|list|rm|clear`, `daemon serve`, `mcp serve`, and `skill path` actions.
 - [x] Canonicalize `--repo` selectors through native VCS detection; enforce exactly one id/repo/session-path selector as appropriate.
 - [x] Parse reload's nested review command through the existing normalized CLI layer while rejecting stdin-backed/nested session commands.
-- [x] Embed the pdiff review skill and materialize it atomically under the platform data directory so `skill path` preserves the one-installed-binary requirement.
+- [x] Embed the ramo review skill and materialize it atomically under the platform data directory so `skill path` preserves the one-installed-binary requirement.
 - [x] Run `cargo test --test session_cli --test skill_path --test cli_parse --test cli_contract` and commit `feat: add native session commands`.
 
 ## Task 3: Implement the loopback daemon and bounded HTTP client
@@ -144,7 +144,7 @@
 
 ## Slice completion gate
 
-- One installed Rust `pdiff` binary serves, registers, controls, and inspects sessions.
+- One installed Rust `ramo` binary serves, registers, controls, and inspects sessions.
 - The daemon cannot bind or accept routed browser origins outside loopback policy.
 - Payloads, frames, comment batches, fields, response sizes, waits, stale entries, and reconnect work are bounded.
 - The daemon never owns mutable review truth; every navigation, comment mutation, and reload is acknowledged by the selected TUI.

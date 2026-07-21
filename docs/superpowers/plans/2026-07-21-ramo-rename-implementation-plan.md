@@ -12,7 +12,7 @@
 
 - The shipped artifact remains one native Rust executable with no JavaScript or TypeScript runtime.
 - The executable, Cargo package, library crate, runtime identity, config namespace, environment prefix, archives, skill, and prompt are named `ramo`.
-- Hunk compatibility aliases remain; old pdiff branding and aliases do not.
+- Hunk compatibility aliases remain; old branding is allowed only in the legacy-binary cleanup path and its tests.
 - Existing commits and tags must be pushed without history rewriting.
 
 ---
@@ -21,10 +21,10 @@
 
 **Files:**
 - Modify: `Cargo.toml`, `Cargo.lock`, `src/**/*.rs`, `tests/**/*.rs`, `benches/parity.rs`
-- Rename: `src/session/pdiff-review-SKILL.md` to `src/session/ramo-review-SKILL.md`
+- Rename: the legacy embedded review skill filename to `src/session/ramo-review-SKILL.md`
 
 **Interfaces:**
-- Consumes: the existing `pdiff` crate and executable contract.
+- Consumes: the existing crate and executable contract.
 - Produces: the same public Rust modules and CLI behavior under the `ramo` crate and executable.
 
 - [ ] Replace crate imports, binary lookups, diagnostics, service identity, paths, environment keys, socket/buffer names, and embedded skill references with Ramo equivalents.
@@ -43,8 +43,9 @@
 
 - [ ] Rewrite README introduction, installation, review workflows, integrations, configuration, and guarantees around Ramo.
 - [ ] Replace installer paths, variables, downloads, artifacts, workflow commands, benchmark copy, and generated Pi prompt names.
+- [ ] Add a tested Unix installer migration that prompts before deleting only `${INSTALL_DIR}/pdiff`, skips deletion without a TTY, and supports explicit `RAMO_REMOVE_LEGACY=yes|no` automation.
 - [ ] Replace old branding in maintained design/history documents so the checked-out codebase presents one current identity.
-- [ ] Run a case-insensitive tracked-file search and expect no old-brand matches.
+- [ ] Run a case-insensitive tracked-file search and expect old-brand matches only in the installer migration and its tests/docs.
 - [ ] Commit with `docs: rebrand project as ramo`.
 
 ### Task 3: Verify the renamed product
@@ -60,7 +61,7 @@
 - [ ] Run `cargo clippy --locked --all-targets --all-features -- -D warnings` and expect success.
 - [ ] Run `cargo test --locked` and expect all tests to pass.
 - [ ] Run `cargo run --locked -- --version` and `cargo run --locked -- diff --help`; expect the Ramo identity and successful exits.
-- [ ] Run the installer integration tests and `cargo build --release --locked`; expect `target/release/ramo` and no `target/release/pdiff`.
+- [ ] Run the installer integration tests and `cargo build --release --locked`; expect `target/release/ramo` and no legacy executable artifact.
 - [ ] Commit any verification-only corrections with `fix: complete ramo rename`.
 
 ### Task 4: Integrate and publish

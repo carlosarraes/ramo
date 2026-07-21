@@ -5,7 +5,7 @@ The native harness runs with `cargo bench --bench parity`. It uses `std::time::I
 Local release-mode sample from 2026-07-21:
 
 ```text
-pdiff parity stress benchmark (descriptive; no timing threshold)
+ramo parity stress benchmark (descriptive; no timing threshold)
 parse_large_patch_50000_changed_lines: iterations=5 total_ms=21.968 mean_ms=4.394
 parse_2000_files: iterations=5 total_ms=6.587 mean_ms=1.317
 parse_20000_non_ascii_changed_lines: iterations=5 total_ms=8.635 mean_ms=1.727
