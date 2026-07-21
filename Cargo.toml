@@ -15,6 +15,7 @@ syntect = "5"
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+similar = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

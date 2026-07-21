@@ -5,6 +5,7 @@ pub mod clipboard;
 pub mod config;
 pub mod core;
 pub mod diff;
+pub mod input;
 pub mod pi_extension;
 pub mod tmux;
 pub mod ui;
