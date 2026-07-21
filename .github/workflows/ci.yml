@@ -21,7 +21,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
         with:
           toolchain: stable
-      - run: cargo test --locked
+      - name: Test portable Rust
+        if: runner.os != 'macOS'
+        run: cargo test --locked
+      - name: Test portable Rust serially on macOS
+        if: runner.os == 'macOS'
+        run: cargo test --locked -- --test-threads=1
       - name: PowerShell installer selection
         if: runner.os == 'Windows'
         shell: pwsh
@@ -47,7 +52,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
         with:
           toolchain: stable
-      - run: >-
+      - name: Test native PTY behavior
+        if: runner.os != 'macOS'
+        run: >-
           cargo test --locked
           --test pty_notes
           --test pty_pager
@@ -57,6 +64,19 @@ jobs:
           --test session_e2e
           --test session_registration
           --test terminal_appearance
+      - name: Test native PTY behavior serially on macOS
+        if: runner.os == 'macOS'
+        run: >-
+          cargo test --locked
+          --test pty_notes
+          --test pty_pager
+          --test pty_session
+          --test pty_ui
+          --test pty_watch
+          --test session_e2e
+          --test session_registration
+          --test terminal_appearance
+          -- --test-threads=1
 
   lint:
     name: Rust format and Clippy
