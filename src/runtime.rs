@@ -272,11 +272,26 @@ fn replace_stdin_with_tty() -> io::Result<()> {
 #[cfg(windows)]
 fn replace_stdin_with_tty() -> io::Result<()> {
     if !stdin_needs_tty_replacement(io::stdin().is_terminal()) {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "interactive piped reviews require Windows console support",
-        ))
+        return Ok(());
     }
+
+    use std::ffi::c_void;
+    use std::os::windows::io::AsRawHandle;
+
+    const STD_INPUT_HANDLE: u32 = -10_i32 as u32;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        #[link_name = "SetStdHandle"]
+        fn set_std_handle(handle_kind: u32, handle: *mut c_void) -> i32;
+    }
+
+    let console = fs::OpenOptions::new().read(true).open("CONIN$")?;
+    // SAFETY: `console` owns a valid Windows console handle opened for reading. The handle is
+    // intentionally kept alive below because the process standard-handle table does not own it.
+    let succeeded = unsafe { set_std_handle(STD_INPUT_HANDLE, console.as_raw_handle()) };
+    if succeeded == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    std::mem::forget(console);
+    Ok(())
 }

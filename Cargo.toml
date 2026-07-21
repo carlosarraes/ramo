@@ -11,7 +11,7 @@ path = "src/lib.rs"
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }
 clap = { version = "4", features = ["derive"] }
-syntect = "5"
+syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

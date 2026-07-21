@@ -16,6 +16,15 @@ Or install the Rust package directly:
 cargo install --git https://github.com/carlosarraes/pdiff --locked
 ```
 
+On Windows PowerShell:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/carlosarraes/pdiff/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+The release matrix produces one archive containing one executable for Linux, macOS, and Windows on x86-64 and ARM64. `install.sh` selects the Linux/macOS tarball; `install.ps1` selects the Windows zip and installs `pdiff.exe` under `%LOCALAPPDATA%\Programs\pdiff` by default. Neither installer adds a language runtime.
+
 ## Verified review inputs
 
 Review patch output from any command:
@@ -242,7 +251,7 @@ Press `t` to preview embedded or custom themes. When interactive view settings c
 
 The default `theme = "auto"` sends one bounded OSC 11 background query to the controlling terminal, chooses the matching light or dark GitHub default, and falls back to the dark default after 150 ms or an unrecognized response. Explicit and custom themes skip the probe. `COLORFGBG` is used as a fallback hint where a terminal cannot answer OSC 11.
 
-All of this ships in the same Rust executable. `pdiff` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
+All of this ships in the same Rust executable. Syntax highlighting uses Syntect's pure-Rust regex backend; the dependency graph contains no Oniguruma C implementation. `pdiff` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
 
 ## Comment output
 

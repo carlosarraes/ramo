@@ -38,11 +38,11 @@
 
 ## Task 5: Complete cross-platform and install contracts
 
-- [ ] Replace the Windows piped-review placeholder with native `CONIN$` standard-input restoration and keep unsupported job control as an explicit non-fatal action.
-- [ ] Add a CI workflow that checks/tests Linux, macOS, and Windows, with Unix PTY jobs clearly separated; make release builds use `--locked`.
-- [ ] Add a native PowerShell installer for Windows release zip artifacts and smoke-test archive/install selection without network mutation.
-- [ ] Cross-check the available macOS/Windows Rust targets locally and use CI results as the final runtime authority.
-- [ ] Commit `build: verify cross-platform native releases`.
+- [x] Replace the Windows piped-review placeholder with native `CONIN$` standard-input restoration and keep unsupported job control as an explicit non-fatal action.
+- [x] Add a CI workflow that checks/tests Linux, macOS, and Windows, with Unix PTY jobs clearly separated; make release builds use `--locked`.
+- [x] Add a native PowerShell installer for Windows release zip artifacts and smoke-test archive/install selection without network mutation.
+- [x] Cross-check the available macOS/Windows Rust targets locally and use CI results as the final runtime authority.
+- [x] Commit `build: verify cross-platform native releases`.
 
 ## Task 6: Exhaustive parity and release closure
 

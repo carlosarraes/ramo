@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Portable Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+      - run: cargo test --locked
+      - name: PowerShell installer selection
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\install.ps1 -DryRun -Architecture x64 -Version v0.0.6
+          .\install.ps1 -DryRun -Architecture arm64 -Version v0.0.6
+      - name: Unix installer selection
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          PDIFF_INSTALL_DRY_RUN=1 PDIFF_INSTALL_OS=linux PDIFF_INSTALL_ARCH=x86_64 ./install.sh v0.0.6
+          PDIFF_INSTALL_DRY_RUN=1 PDIFF_INSTALL_OS=darwin PDIFF_INSTALL_ARCH=arm64 ./install.sh v0.0.6
+
+  unix-pty:
+    name: Native PTY (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+      - run: >-
+          cargo test --locked
+          --test pty_notes
+          --test pty_pager
+          --test pty_session
+          --test pty_ui
+          --test pty_watch
+          --test session_e2e
+          --test session_registration
+          --test terminal_appearance
+
+  lint:
+    name: Rust format and Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
