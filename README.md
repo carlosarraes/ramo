@@ -65,7 +65,61 @@ PDIFF_TEXT_PAGER="less -R" command-producing-text | pdiff pager
 
 Diff-shaped input enters the review UI. Other text is sanitized and sent directly to `PDIFF_TEXT_PAGER`, then `PAGER`, then `less -R`. Pager settings are parsed into a program and literal arguments without a shell; environment assignments are supported, shell operators are not executed, and recursive `pdiff pager` settings fall back safely.
 
-Normalized agent notes, STML, live sessions, and final cross-platform release closure remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+The loopback live-session API and final cross-platform release closure remain staged. See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
+
+## Agent context and inline notes
+
+Attach bounded agent findings to any review with `--agent-context`:
+
+```bash
+pdiff diff --agent-context review-context.json
+pdiff patch changes.patch --agent-context review-context.json
+```
+
+The sidecar is JSON. Its file order leads the review, renamed files match their current or previous path, and file-backed sidecars reload with the diff:
+
+```json
+{
+  "version": 1,
+  "summary": "Authentication review",
+  "files": [
+    {
+      "path": "src/auth.rs",
+      "annotations": [
+        {
+          "id": "auth-retry",
+          "newRange": [42, 44],
+          "summary": "The final retry still sleeps.",
+          "rationale": "Return immediately after the last failed attempt.",
+          "source": "agent",
+          "author": "Pi",
+          "tags": ["correctness"],
+          "confidence": "high",
+          "markup": "<badge color=warning>RETRY</badge> Check the <b>last attempt</b>."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Ranges are positive, inclusive, 1-based `[start, end]` pairs named `oldRange` and/or `newRange`. Optional note fields are `id`, `rationale`, `markup`, `tags`, `confidence`, `source`, `title`, `author`, `createdAt`, `updatedAt`, and `editable`. The sidecar is limited to 1 MiB, 2,000 files, and 10,000 annotations; each note allows 64 KiB of markup and 64 KiB of combined summary/rationale text. Text and markup are terminal-control sanitized.
+
+Press `a` to reveal or hide AI/agent notes and `{`/`}` to move between annotated hunks. External notes marked as `source: "user"` remain visible; only notes authored interactively in this `pdiff` process are exported as Markdown. Press `c` to start an inline human note, Enter for a newline, `Ctrl-S` to save, or Escape to cancel. Clicking a saved human note reopens it for editing; saving it empty removes it.
+
+`--agent-context -` reads the sidecar from stdin only when the review itself does not consume stdin. Patch-stdin and pager-stdin reviews must use a sidecar file.
+
+## Native terminal markup
+
+STML is a small, tolerant terminal markup language rendered directly by Rust inside agent note cards. Preview it without entering the review UI:
+
+```bash
+pdiff markup render note.stml --width 56 --color auto
+printf '<badge color=success>PASS</badge> native' | pdiff markup render - --json
+pdiff markup guide
+```
+
+It supports inline emphasis, semantic/named/hex colors, links, badges, keyboard hints, headings, lists, rules, spacers, code blocks, cards, bordered boxes, and responsive rows. Layout uses terminal-cell widths, clips code and wide glyphs safely, and returns bounded degradation notes for malformed or unknown markup. `--color` accepts `auto`, `always`, or `never`; `--theme` selects the preview theme; JSON output is stable `{ "width", "lines", "notes" }`. Parsing is limited to 64 KiB, 2,000 nodes, depth 32, and 20 diagnostics.
 
 ## Watch, reload, and editor integration
 
@@ -95,12 +149,13 @@ The review UI is a continuous file stream. `auto` uses split layout at 160 colum
 | `{` / `}` | Previous/next annotated hunk |
 | `1` / `2` / `0` | Split/stack/auto layout |
 | `s`, `l`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
+| `a` | Reveal/hide AI and agent notes |
 | `z` | Expand/collapse unchanged context |
 | `/` | Focus the file filter; `Tab` returns to review |
 | `t`, `?` | Theme selector and controls help |
 | `V`, `y` | Select lines and copy through OSC 52 |
 | `Ctrl-t`, `Ctrl-Shift-t` | Send selection to tmux / choose a new target |
-| `c` | Create a review note |
+| `c` | Create an inline human review note |
 | `e`, `r` | Open in `$EDITOR` / reload now |
 | `Ctrl-z` | Suspend and return terminal ownership on Unix |
 | `q` | Quit |
@@ -134,7 +189,7 @@ On quit, `pdiff` can write comments to `pdiff-review.md`, an explicit `--output`
 ```markdown
 ## Review Comments
 
-### src/auth.rs:10-12(new)
+### src/auth.rs:L10 → R10
 > +    token.len() > 0
 
 Should use proper JWT validation.
@@ -157,9 +212,10 @@ cargo test --all-targets
 cargo build --release
 ```
 
-The approved architecture and execution plan are in:
+The approved architecture and execution plans are in:
 
 - [`docs/superpowers/specs/2026-07-20-hunk-feature-parity-design.md`](docs/superpowers/specs/2026-07-20-hunk-feature-parity-design.md)
 - [`docs/superpowers/plans/2026-07-20-foundation-cli-implementation-plan.md`](docs/superpowers/plans/2026-07-20-foundation-cli-implementation-plan.md)
 - [`docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md`](docs/superpowers/plans/2026-07-20-vcs-pager-implementation-plan.md)
 - [`docs/superpowers/plans/2026-07-21-watch-process-implementation-plan.md`](docs/superpowers/plans/2026-07-21-watch-process-implementation-plan.md)
+- [`docs/superpowers/plans/2026-07-21-notes-markup-implementation-plan.md`](docs/superpowers/plans/2026-07-21-notes-markup-implementation-plan.md)

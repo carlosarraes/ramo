@@ -40,26 +40,26 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `pdiff session comment clear` | missing | — | — |
 | `pdiff daemon serve` | missing | — | — |
 | `pdiff mcp serve` alias | missing | — | — |
-| `pdiff markup render` | missing | — | — |
-| `pdiff markup guide` | missing | — | — |
+| `pdiff markup render` | verified | `src/markup/{layout,render,command}.rs`, direct runtime dispatch | `tests/markup_cli.rs::render_accepts_files_stdin_plain_text_and_json_without_entering_the_tui`, `render_color_modes_resolve_symbolic_named_and_hex_colors_natively` |
+| `pdiff markup guide` | verified | embedded `src/markup/guide.md` | `tests/markup_cli.rs::guide_is_embedded_and_all_stml_fences_layout_at_reference_width` |
 | `pdiff skill path` | missing | — | — |
-| `pdiff install pi` / `uninstall pi` | implemented | `src/pi_extension.rs`, `src/runtime.rs::run` | dispatch: `tests/runtime_resolution.rs::integrations_do_not_initialize_the_review_ui`; filesystem integration test missing |
+| `pdiff install pi` / `uninstall pi` | verified | `src/pi_extension.rs`, `src/runtime.rs::run` | `tests/runtime_resolution.rs::integrations_do_not_initialize_the_review_ui`, `tests/integrations.rs::pi_install_writes_a_markdown_prompt_and_no_typescript`, `pi_uninstall_preserves_unrelated_prompt_files` |
 | `-v` / `--version` | verified | `src/cli/mod.rs::parse_from` | `tests/cli_contract.rs::version_is_plain_and_successful` |
-| `--input`, `--output`, `--stdout` compatibility | implemented | `src/cli/normalize.rs`, `src/runtime.rs::finish_annotations` | normalization: `tests/cli_parse.rs::legacy_input_and_output_flags_remain_accepted`; PTY output test missing |
+| `--input`, `--output`, `--stdout` compatibility | verified | `src/cli/normalize.rs`, `src/runtime.rs::finish_annotations` | `tests/cli_parse.rs::legacy_input_and_output_flags_remain_accepted`, `tests/pty_notes.rs::stdout_export_is_printed_after_the_tui_restores_the_terminal`, explicit output in `human_note_draft_owns_keys_saves_inline_and_exports_markdown` |
 
 ## Review options and configuration
 
 | Capability | Status | Rust evidence | Verification evidence |
 |---|---|---|---|
 | `--mode auto|split|stack` | verified | `src/cli/args.rs::LayoutArg`, `ReviewController` | config precedence, `tests/review_state.rs`, `tests/pty_ui.rs` |
-| `--watch` | implemented | normalized `CommonOptions::watch` | parsing: `tests/cli_parse.rs::difftool_preserves_display_path_and_watch`; watcher missing |
+| `--watch` | verified | normalized `CommonOptions::watch`, `src/watch` | `tests/watch.rs`, `tests/pty_watch.rs::watch_mode_refreshes_after_an_atomic_save` |
 | `--theme` | verified | normalized config plus `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs`, `tests/pty_ui.rs` |
-| `--agent-context` | implemented | normalized path | CLI parser coverage; loader and notes missing |
+| `--agent-context` | verified | bounded `src/notes/context.rs`, attachment and reload plan integration | seven cases in `tests/agent_context.rs`, including ordering, rename matching, stdin conflict, sidecar-only watch reload, and limits |
 | `--pager` | verified | normalized pager flag and pager config layer | config resolution and `tests/pty_pager.rs` |
 | `--line-numbers` / `--no-line-numbers` | verified | normalized config plus shared row geometry | CLI/config, state, and render tests |
 | `--wrap` / `--no-wrap` | verified | normalized config plus shared row geometry | `tests/review_state.rs`, `review::geometry` tests |
 | `--hunk-headers` / `--no-hunk-headers` | verified | normalized config and zero-row header planning | `tests/ui_render.rs`, `tests/ui_input.rs` |
-| `--agent-notes` / `--no-agent-notes` | implemented | normalized/configured boolean | CLI/config tests; note UI missing |
+| `--agent-notes` / `--no-agent-notes` | verified | normalized/configured boolean and canonical note-row visibility | `tests/notes_state.rs::external_visibility_and_human_notes_drive_shared_geometry_and_survive_reload`, `tests/pty_notes.rs::agent_notes_toggle_in_the_live_review` |
 | `--transparent-bg` / `--no-transparent-bg` | verified | normalized config and semantic theme resolution | `tests/themes.rs::fallback_auto_and_transparent_surfaces_are_predictable` |
 | `--exclude-untracked` / inverse | verified | normalized/configured boolean, native Git/Sapling loaders | `tests/git_loading.rs::exclude_untracked_removes_only_synthetic_files`, `tests/sl_loading.rs::sl_exclude_untracked_skips_the_status_command` |
 | Built-in/user/repo/command/pager/CLI precedence | verified | `src/config/load.rs::ConfigResolver` | seven cases in `tests/config_resolution.rs` |
@@ -115,7 +115,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Wrapping and horizontal scroll | verified | shared cell-width geometry and typed actions | geometry, state, input, and mouse tests |
 | Collapsed context and per-hunk expansion | verified | `src/review/context.rs` and owned native loader | `tests/context_expansion.rs`, `tests/pty_ui.rs::direct_controls_and_context_expansion_remain_native_across_layout_changes` |
 | Binary/large/untracked/rename file UI | verified | typed placeholders and sidebar statuses | state and render tests |
-| Inline AI/agent/user note cards | missing | legacy human comments are not parity note cards | — |
+| Inline AI/agent/user note cards | verified | controller-owned `HumanNote`, normalized external notes, canonical `ReviewRow::Note` geometry | `tests/notes_state.rs`, `tests/ui_render.rs::inline_agent_notes_render_inside_the_measured_review_stream`, `tests/pty_notes.rs` |
 | Wide-character selection/copy correctness | verified | `review::selection` terminal-cell projection | `tests/review_selection.rs`, `tests/ui_render.rs::stable_selection_projection_is_painted_on_the_selected_terminal_cells` |
 | Restrained contextual bottom status | implemented | status renders only for filter/toast feedback | save-error app test; dedicated PTY styling assertion remains staged |
 | No top menu bar/dropdowns | verified | intentional product exclusion; no menu components | source inspection plus pager/UI PTY absence assertions |
@@ -138,15 +138,15 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `1`/`2`/`0` layout selection | verified | input/state tests and PTY controls test |
 | `s` sidebar | verified | input/state/mouse tests |
 | `t` theme selector | verified | input/dialog and PTY tests |
-| `a` agent notes | implemented | view preference toggles; normalized note cards remain slice 5 |
+| `a` agent notes | verified | canonical external-note visibility toggle | `tests/notes_state.rs`, `tests/pty_notes.rs::agent_notes_toggle_in_the_live_review` |
 | `z` unchanged context | verified | context controller/app and PTY tests |
 | `l` line numbers | verified | input/state/render tests |
 | `w` wrapping | verified | input/state/geometry tests |
 | `m` hunk metadata | verified | input/state/render tests |
-| `e` editor | implemented | typed `EditFile` effect; process/job-control execution remains staged |
-| `r` reload | implemented | typed reload effect; watcher/reload execution remains staged |
+| `e` editor | verified | typed effect, literal native command runner, terminal handoff | `tests/editor.rs`, `tests/pty_watch.rs::editor_key_launches_literal_file_and_line_argv_then_resumes_the_review` |
+| `r` reload | verified | typed effect through `WatchRuntime::manual_reload` | `tests/reload.rs`, `tests/pty_watch.rs::manual_r_reloads_a_direct_file_without_watch_mode` |
 | `/` file filter | verified | state/input and literal-key PTY tests |
-| `c` create review note | implemented | legacy human comment; inline parity behavior missing |
+| `c` create review note | verified | controller-owned inline draft; note input owns literal keys | `tests/notes_state.rs`, `tests/pty_notes.rs::human_note_draft_owns_keys_saves_inline_and_exports_markdown`, `escape_cancels_a_fresh_inline_draft` |
 | Tab focus toggle | verified | filter-aware typed input and PTY test |
 | `?` help | verified | input/dialog and PTY tests |
 | `q` quit | verified | typed quit/save reduction | pager/UI PTY restoration tests |
@@ -190,12 +190,12 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Agent-context JSON and narrative file order | missing | — |
-| Hunk/line-targeted AI and agent notes | missing | — |
-| Human inline draft/edit/save/cancel | implemented | legacy popup/comment model differs from parity; interaction tests missing |
-| Markdown review export | verified | `src/annotations/output.rs` | `annotations::output::tests` |
-| Deterministic STML parse/layout/render | missing | — |
-| STML authoring guide | missing | — |
+| Agent-context JSON and narrative file order | verified | bounded normalization in `src/notes/context.rs`; `Changeset::apply_agent_context` | `tests/agent_context.rs` |
+| Hunk/line-targeted AI and agent notes | verified | `src/notes/target.rs`, canonical note rows and annotated-hunk derivation | `tests/notes_state.rs`, `tests/ui_render.rs` |
+| Human inline draft/edit/save/cancel | verified | `ReviewController` human-note authority plus `InputMode::Note` | `tests/notes_state.rs::controller_drafts_save_edit_cancel_remove_and_clear_by_stable_id`, `tests/pty_notes.rs` |
+| Markdown review export | verified | normalized human note targets in `ReviewController::export_annotations`, `src/annotations/output.rs` | `tests/annotations.rs::export_contains_human_side_ranges_and_context_but_not_external_notes`, `tests/pty_notes.rs` |
+| Deterministic STML parse/layout/render | verified | bounded parser, terminal-cell layout, symbolic renderer, bounded content-sensitive cache | `tests/stml_parse.rs`, `tests/stml_layout.rs`, `tests/ui_render.rs::inline_agent_markup_replaces_plain_fallback_and_keeps_semantic_span_style` |
+| STML authoring guide | verified | embedded `src/markup/guide.md` | `tests/markup_cli.rs::guide_is_embedded_and_all_stml_fences_layout_at_reference_width` |
 | Loopback same-binary daemon | missing | — |
 | API/daemon capability versions | missing | — |
 | Session registration/reconnection | missing | — |
@@ -211,11 +211,11 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Capability | Status | Evidence |
 |---|---|---|
 | Lazy syntax/full-source loading | verified | visible-window `HighlightCache`, cached `NativeContextSourceLoader` | highlighting, context, and render tests |
-| Bounded highlight/geometry caches | verified | bounded highlight LRU and active shared geometry | highlighting and 100,000-row geometry tests |
+| Bounded highlight/geometry/markup caches | verified | bounded highlight LRU, active shared geometry, 1 MiB/128-entry STML LRU | highlighting and 100,000-row geometry tests; `tests/stml_layout.rs::repeated_layout_is_value_deterministic` |
 | Shared geometry for rendering/interaction | verified | `ReviewGeometry`, shared row columns and hit tests | geometry, selection, mouse, and render tests |
 | Large patch/many-file/non-ASCII benchmarks | missing | — |
 | Navigation/resize/watch memory checks | missing | — |
 | Cross-platform CLI/unit CI | missing | — |
-| Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs` and `tests/pty_ui.rs` |
+| Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs`, `tests/pty_ui.rs`, `tests/pty_notes.rs`, and `tests/pty_watch.rs` |
 | Single-binary install/release documentation | implemented | `README.md`, `install.sh` | release artifact verified locally in slice 2; distributable install smoke remains staged |
 | Every in-scope row verified | missing | this ledger intentionally records remaining work | final audit pending |

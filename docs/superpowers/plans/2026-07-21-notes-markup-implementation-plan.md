@@ -259,11 +259,11 @@ git commit -m "feat: render deterministic terminal markup"
 - Modify: `docs/parity/hunk.md`
 - Modify: this plan
 
-- [ ] **Step 1: Update user documentation and the parity ledger**
+- [x] **Step 1: Update user documentation and the parity ledger**
 
 Document agent-context schema/example, note keys, human-vs-external note behavior, export semantics, markup commands, limits, and tolerant degradation. Mark rows `verified` only with named automated evidence. Also reconcile any stale Pi/watch command-surface rows found during the audit.
 
-- [ ] **Step 2: Run the complete slice gate fail-fast**
+- [x] **Step 2: Run the complete slice gate fail-fast**
 
 ```bash
 set -e
@@ -277,7 +277,7 @@ file target/release/pdiff
 ldd target/release/pdiff
 ```
 
-- [ ] **Step 3: Commit the slice evidence**
+- [x] **Step 3: Commit the slice evidence**
 
 ```bash
 git add README.md docs/parity/hunk.md docs/superpowers/plans/2026-07-21-notes-markup-implementation-plan.md
