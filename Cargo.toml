@@ -31,3 +31,7 @@ portable-pty = "0.9"
 predicates = "3"
 tempfile = "3"
 vt100 = "0.15"
+
+[[bench]]
+name = "parity"
+harness = false

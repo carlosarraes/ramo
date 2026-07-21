@@ -14,6 +14,7 @@ use crate::diff::model::DiffFile;
 use super::themes::{AppTheme, TerminalAppearance};
 
 const DEFAULT_FILE_THEME_CAPACITY: usize = 16;
+const DEFAULT_LINE_CAPACITY: usize = 4_096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HighlightCacheStats {
@@ -37,6 +38,29 @@ struct CachedLine {
 #[derive(Default)]
 struct FileThemeEntry {
     lines: HashMap<(usize, usize), CachedLine>,
+    lru: VecDeque<(usize, usize)>,
+}
+
+impl FileThemeEntry {
+    fn touch(&mut self, key: (usize, usize)) {
+        if let Some(index) = self.lru.iter().position(|candidate| *candidate == key) {
+            self.lru.remove(index);
+        }
+        self.lru.push_back(key);
+    }
+
+    fn insert(&mut self, key: (usize, usize), line: CachedLine, capacity: usize) {
+        if !self.lines.contains_key(&key) {
+            while self.lines.len() >= capacity {
+                let Some(oldest) = self.lru.pop_front() else {
+                    break;
+                };
+                self.lines.remove(&oldest);
+            }
+        }
+        self.lines.insert(key, line);
+        self.touch(key);
+    }
 }
 
 #[derive(Clone)]
@@ -49,6 +73,7 @@ pub struct HighlightCache {
     syntax_set: SyntaxSet,
     theme_set: ThemeSet,
     capacity: usize,
+    line_capacity: usize,
     entries: HashMap<FileThemeKey, FileThemeEntry>,
     lru: VecDeque<FileThemeKey>,
     misses: usize,
@@ -62,10 +87,15 @@ impl Default for HighlightCache {
 
 impl HighlightCache {
     pub fn with_capacity(capacity: usize) -> Self {
+        Self::with_capacities(capacity, DEFAULT_LINE_CAPACITY)
+    }
+
+    pub fn with_capacities(capacity: usize, line_capacity: usize) -> Self {
         Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             capacity: capacity.max(1),
+            line_capacity: line_capacity.max(1),
             entries: HashMap::new(),
             lru: VecDeque::new(),
             misses: 0,
@@ -98,6 +128,10 @@ impl HighlightCache {
                 .filter(|cached| cached.content_hash == content_hash)
                 .map(|cached| cached.fragments.clone())
         }) {
+            self.entries
+                .get_mut(&key)
+                .expect("cached highlight bucket exists")
+                .touch((hunk_index, line_index));
             self.touch(&key);
             return into_spans(fragments);
         }
@@ -111,13 +145,13 @@ impl HighlightCache {
         self.entries
             .get_mut(&key)
             .expect("highlight bucket was inserted")
-            .lines
             .insert(
                 (hunk_index, line_index),
                 CachedLine {
                     content_hash,
                     fragments: fragments.clone(),
                 },
+                self.line_capacity,
             );
         self.touch(&key);
         into_spans(fragments)

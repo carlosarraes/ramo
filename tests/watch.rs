@@ -281,6 +281,38 @@ fn disabled_watch_never_polls_but_manual_reload_still_works() {
 }
 
 #[test]
+fn repeated_manual_watch_generations_replace_one_snapshot_without_accumulating_results() {
+    let temp = tempfile::tempdir().unwrap();
+    let (loaded, right, resolved) = direct_file_review(&temp);
+    let start = Instant::now();
+    let mut runtime = WatchRuntime::with_intervals(
+        &loaded,
+        resolved.cwd.clone(),
+        resolved.config.clone(),
+        false,
+        start,
+        WatchIntervals::default(),
+    );
+
+    for cycle in 1..=100 {
+        fs::write(&right, format!("generation {cycle}\n")).unwrap();
+        let now = start + Duration::from_millis(cycle);
+        runtime.manual_reload(now);
+        let WatchUpdate::Replaced { files, generation } = runtime.poll(now) else {
+            panic!("generation {cycle} did not replace the review");
+        };
+        assert_eq!(files.len(), 1);
+        assert_eq!(generation, cycle);
+        assert!(files[0].patch.contains(&format!("+generation {cycle}")));
+    }
+
+    assert!(matches!(
+        runtime.poll(start + Duration::from_secs(1)),
+        WatchUpdate::Unchanged
+    ));
+}
+
+#[test]
 fn repeated_reload_errors_are_suppressed_for_a_bounded_interval() {
     let temp = tempfile::tempdir().unwrap();
     let (loaded, right, resolved) = direct_file_review(&temp);

@@ -67,6 +67,10 @@ Diff-shaped input enters the review UI. Other text is sanitized and sent directl
 
 See the [parity ledger](docs/parity/hunk.md) for behavior-by-behavior evidence; commands are not considered complete merely because their arguments parse.
 
+## Performance evidence
+
+`cargo bench --bench parity` runs descriptive, dependency-free stress scenarios for a 50,000-changed-line patch, 2,000 files, 20,000 non-ASCII changed lines, repeated navigation/resizes, and 50 native watch reload generations. It deliberately has no arbitrary timing pass/fail threshold. Retained-state tests separately enforce bounded highlight LRUs and stable controller, geometry, context-source, and watch-generation shapes. The latest local release-mode sample is recorded in [docs/performance.md](docs/performance.md).
+
 ## Agent context and inline notes
 
 Attach bounded agent findings to any review with `--agent-context`:

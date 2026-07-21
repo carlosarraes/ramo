@@ -31,10 +31,10 @@
 
 ## Task 4: Add performance and memory-shape evidence
 
-- [ ] Add a dependency-free `cargo bench` harness for large patches, many files, non-ASCII input, navigation/resizes, and watch reloads.
-- [ ] Add deterministic tests proving repeated navigation/resize/watch cycles retain bounded controller, geometry, highlight, context, and watcher state.
-- [ ] Run the benchmark once in release mode and record scenario output without declaring an arbitrary pass/fail duration.
-- [ ] Commit `perf: add parity stress benchmarks`.
+- [x] Add a dependency-free `cargo bench` harness for large patches, many files, non-ASCII input, navigation/resizes, and watch reloads.
+- [x] Add deterministic tests proving repeated navigation/resize/watch cycles retain bounded controller, geometry, highlight, context, and watcher state.
+- [x] Run the benchmark once in release mode and record scenario output without declaring an arbitrary pass/fail duration.
+- [x] Commit `perf: add parity stress benchmarks`.
 
 ## Task 5: Complete cross-platform and install contracts
 

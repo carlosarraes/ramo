@@ -212,10 +212,10 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Capability | Status | Evidence |
 |---|---|---|
 | Lazy syntax/full-source loading | verified | visible-window `HighlightCache`, cached `NativeContextSourceLoader` | highlighting, context, and render tests |
-| Bounded highlight/geometry/markup caches | verified | bounded highlight LRU, active shared geometry, 1 MiB/128-entry STML LRU | highlighting and 100,000-row geometry tests; `tests/stml_layout.rs::repeated_layout_is_value_deterministic` |
+| Bounded highlight/geometry/markup caches | verified | bounded file/theme and per-line highlight LRUs, active shared geometry, 1 MiB/128-entry STML LRU | `tests/highlighting.rs::line_lru_is_bounded_while_scrolling_through_one_large_file`, highlighting and 100,000-row geometry tests; `tests/stml_layout.rs::repeated_layout_is_value_deterministic` |
 | Shared geometry for rendering/interaction | verified | `ReviewGeometry`, shared row columns and hit tests | geometry, selection, mouse, and render tests |
-| Large patch/many-file/non-ASCII benchmarks | missing | — |
-| Navigation/resize/watch memory checks | missing | — |
+| Large patch/many-file/non-ASCII benchmarks | verified | dependency-free `benches/parity.rs` release harness | `cargo bench --bench parity`; scenario output in `docs/performance.md` |
+| Navigation/resize/watch memory checks | verified | bounded per-line highlight LRU and non-accumulating controller/context/watch generations | `tests/performance_bounds.rs`, `tests/highlighting.rs::line_lru_is_bounded_while_scrolling_through_one_large_file`, `review::context::tests::repeated_context_reads_reuse_one_entry_per_source_and_invalidation_releases_all`, `tests/watch.rs::repeated_manual_watch_generations_replace_one_snapshot_without_accumulating_results` |
 | Cross-platform CLI/unit CI | missing | — |
 | Unix PTY integration suite | verified | bounded portable-PTY harnesses | `tests/pty_pager.rs`, `tests/pty_ui.rs`, `tests/pty_notes.rs`, `tests/pty_watch.rs`, `tests/pty_session.rs`, and two-terminal `tests/session_e2e.rs` |
 | Single-binary install/release documentation | implemented | `README.md`, `install.sh` | release artifact verified locally in slice 2; distributable install smoke remains staged |

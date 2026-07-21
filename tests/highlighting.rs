@@ -109,3 +109,22 @@ fn file_theme_lru_is_bounded_across_files_and_theme_cycles() {
     assert!(cache.contains_file_theme(&first, &light));
     assert!(cache.contains_file_theme(&second, &dark));
 }
+
+#[test]
+fn line_lru_is_bounded_while_scrolling_through_one_large_file() {
+    let registry = ThemeRegistry::default();
+    let dark = registry.resolve("github-dark-default", None, false);
+    let lines = (0..128)
+        .map(|index| format!("let value_{index} = {index};"))
+        .collect::<Vec<_>>();
+    let line_refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
+    let source = file("file:large", "large.rs", &line_refs);
+    let mut cache = HighlightCache::with_capacities(2, 8);
+
+    for line_index in 0..source.hunks[0].lines.len() {
+        cache.spans(&source, 0, line_index, &dark);
+    }
+
+    assert_eq!(cache.stats().file_theme_entries, 1);
+    assert_eq!(cache.stats().line_entries, 8);
+}

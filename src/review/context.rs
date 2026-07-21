@@ -242,6 +242,11 @@ impl<R> NativeContextSourceLoader<R> {
             cache: HashMap::new(),
         }
     }
+
+    #[cfg(test)]
+    fn cached_source_count(&self) -> usize {
+        self.cache.len()
+    }
 }
 
 impl Default for NativeContextSourceLoader<SystemCommandRunner> {
@@ -281,5 +286,35 @@ fn map_source_error(error: SourceError) -> SourceFailure {
             "failed to read Git source {object}: {}",
             stderr.trim()
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContextSourceLoader, NativeContextSourceLoader};
+    use crate::diff::model::SourceSpec;
+    use crate::vcs::SystemCommandRunner;
+
+    #[test]
+    fn repeated_context_reads_reuse_one_entry_per_source_and_invalidation_releases_all() {
+        let temp = tempfile::tempdir().unwrap();
+        let specs = (0..32)
+            .map(|index| {
+                let path = temp.path().join(format!("source-{index}.rs"));
+                std::fs::write(&path, format!("fn source_{index}() {{}}\n")).unwrap();
+                SourceSpec::File(path)
+            })
+            .collect::<Vec<_>>();
+        let mut loader = NativeContextSourceLoader::new(SystemCommandRunner, "git", 1024);
+
+        for _ in 0..100 {
+            for spec in &specs {
+                assert!(loader.load(spec).unwrap().is_some());
+            }
+            assert_eq!(loader.cached_source_count(), specs.len());
+        }
+
+        loader.invalidate();
+        assert_eq!(loader.cached_source_count(), 0);
     }
 }
