@@ -89,6 +89,7 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
     let port = reserved.local_addr().unwrap().port();
     drop(reserved);
     command.env("PDIFF_SESSION_PORT", port.to_string());
+    command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
     command.env("COLORFGBG", "");
     let start = Instant::now();
     let mut child = pair.slave.spawn_command(command).unwrap();

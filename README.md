@@ -250,7 +250,9 @@ prompt_save_view_preferences = true
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.
 
-`copy_decorations = true` includes the rendered line-number/change-marker gutter in full-line copies; the default copies code only. Deprecated `[custom_theme.syntax]` semantic colors are translated to approximate TextMate scopes and surfaced as a startup notice; exact `[custom_theme.syntax_scopes]` entries override translated values.
+`copy_decorations = true` includes the rendered line-number/change-marker gutter in full-line copies; the default copies code only. `transparentBackground` remains accepted as Hunk's compatibility alias for `transparent_background`. Deprecated `[custom_theme.syntax]` semantic colors are translated to approximate TextMate scopes and surfaced as a startup notice; exact `[custom_theme.syntax_scopes]` entries override translated values.
+
+After an installed-version change, `pdiff` shows a one-time local reminder to refresh any copied agent skill with `pdiff skill path`. Set `PDIFF_DISABLE_UPDATE_NOTICE=1` (or Hunk's compatibility name `HUNK_DISABLE_UPDATE_NOTICE=1`) to disable startup update notices.
 
 The default `theme = "auto"` sends one bounded OSC 11 background query to the controlling terminal, chooses the matching light or dark GitHub default, and falls back to the dark default after 150 ms or an unrecognized response. Explicit and custom themes skip the probe. `COLORFGBG` is used as a fallback hint where a terminal cannot answer OSC 11.
 

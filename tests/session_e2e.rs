@@ -33,6 +33,7 @@ impl ReviewPty {
         command.env("PDIFF_SESSION_HOST", address.ip().to_string());
         command.env("PDIFF_SESSION_PORT", address.port().to_string());
         command.env("PDIFF_SESSION_PATH", session_path);
+        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
         let child = pair.slave.spawn_command(command).unwrap();
         drop(pair.slave);
         let writer = pair.master.take_writer().unwrap();

@@ -67,10 +67,12 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Unknown/malformed config diagnostics | verified | `src/config/load.rs::validate_keys` | `tests/config_resolution.rs::malformed_and_unknown_config_errors_name_the_file_and_key` |
 | Save changed view preferences on quit | verified | `src/config/save.rs`, `App::request_quit` | `tests/config_persistence.rs`, `tests/pty_ui.rs` |
 | Copied-decoration preference | verified | `ReviewOptions::copy_decorations` projects the rendered line-number/change-marker gutter | `tests/ui_render.rs::copied_decorations_config_includes_the_rendered_gutter_for_line_selection` |
+| `transparentBackground` config compatibility alias | verified | typed camel-case compatibility field resolves ahead of the snake-case key | `tests/config_resolution.rs::transparent_background_accepts_hunks_camel_case_compatibility_key` |
 | Built-in and custom theme definitions | verified | `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs` |
 | Terminal background auto-detection | verified | bounded native OSC 11 controlling-TTY probe plus `COLORFGBG` fallback | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `real_pty_query_accepts_a_response_and_timeout_still_starts` |
 | Legacy Hunk theme aliases/syntax translation | verified | alias normalization plus semantic-role-to-TextMate translation with exact-scope precedence | `tests/themes.rs::registry_preserves_hunks_reference_order_and_legacy_aliases`, `deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice` |
 | Compatibility startup notices | verified | resolved config notices enter the native contextual status surface | `tests/themes.rs::deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice`, `tests/pty_ui.rs::deprecated_theme_syntax_surfaces_a_native_startup_notice` |
+| Local copied-skill refresh notice after upgrades | verified | failure-tolerant version state in `src/startup_notice.rs`, disabled by `PDIFF_DISABLE_UPDATE_NOTICE=1` or Hunk's compatibility variable | `tests/startup_notices.rs::copied_skill_refresh_notice_is_local_one_time_and_failure_tolerant`, `tests/pty_ui.rs::installed_version_change_surfaces_a_local_copied_skill_notice_once` |
 | Bounded remote update notice | missing | no dependency-free native HTTPS client | product decision required to balance exact Hunk behavior against the small 100%-Rust binary constraint |
 
 ## Input and normalized model

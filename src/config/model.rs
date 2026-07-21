@@ -46,6 +46,9 @@ pub struct ConfigLayer {
     pub copy_decorations: Option<bool>,
     pub prompt_save_view_preferences: Option<bool>,
     pub transparent_background: Option<bool>,
+    #[serde(rename = "transparentBackground")]
+    #[doc(hidden)]
+    pub transparent_background_camel: Option<bool>,
     pub color_moved: Option<bool>,
 }
 
@@ -138,7 +141,9 @@ impl ResolvedConfig {
         );
         apply(
             &mut self.transparent_background,
-            layer.transparent_background,
+            layer
+                .transparent_background_camel
+                .or(layer.transparent_background),
         );
         apply(&mut self.color_moved, layer.color_moved);
     }

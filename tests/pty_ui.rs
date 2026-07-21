@@ -34,6 +34,7 @@ impl PtyProcess {
         for argument in args {
             command.arg(argument);
         }
+        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
         for (key, value) in env {
             command.env(key, value);
         }
@@ -423,4 +424,29 @@ fn deprecated_theme_syntax_surfaces_a_native_startup_notice() {
     process.read_until("Deprecated [custom_theme.syntax]");
     process.send("q");
     assert_eq!(process.wait(), 0);
+}
+
+#[test]
+fn installed_version_change_surfaces_a_local_copied_skill_notice_once() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    let state = config_home.join("pdiff/state.json");
+    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    std::fs::write(&state, "{\"version\":1,\"lastSeenCliVersion\":\"0.0.5\"}\n").unwrap();
+    let fixture = fixture();
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("PDIFF_DISABLE_UPDATE_NOTICE", "0"),
+        ],
+    );
+
+    process.read_until("If your agent copied pdiff's skill");
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+
+    let state = std::fs::read_to_string(state).unwrap();
+    assert!(state.contains(env!("CARGO_PKG_VERSION")));
 }

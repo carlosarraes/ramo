@@ -29,6 +29,7 @@ impl PtyProcess {
         for argument in args {
             command.arg(argument);
         }
+        command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
         for (key, value) in env {
             command.env(key, value);
         }

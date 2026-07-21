@@ -141,6 +141,7 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
     command.args(["patch", patch.to_str().unwrap()]);
     command.env("PDIFF_SESSION_HOST", "127.0.0.1");
     command.env("PDIFF_SESSION_PORT", port.to_string());
+    command.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
     let mut child = pair.slave.spawn_command(command).unwrap();
     drop(pair.slave);
     let mut writer = pair.master.take_writer().unwrap();

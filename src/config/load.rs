@@ -21,6 +21,7 @@ const PREFERENCE_KEYS: &[&str] = &[
     "copy_decorations",
     "prompt_save_view_preferences",
     "transparent_background",
+    "transparentBackground",
     "color_moved",
 ];
 

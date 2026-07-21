@@ -39,6 +39,7 @@ fn live_pty_routes_navigation_comments_failures_lists_and_clearing_on_the_ui_thr
     review.args(["patch", patch.to_str().unwrap()]);
     review.env("PDIFF_SESSION_HOST", "127.0.0.1");
     review.env("PDIFF_SESSION_PORT", port.to_string());
+    review.env("PDIFF_DISABLE_UPDATE_NOTICE", "1");
     let mut child = pair.slave.spawn_command(review).unwrap();
     drop(pair.slave);
     let mut writer = pair.master.take_writer().unwrap();

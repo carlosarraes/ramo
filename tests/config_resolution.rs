@@ -183,3 +183,23 @@ fn vcs_config_is_typed_and_rejects_unknown_providers() {
     .unwrap_err();
     assert!(error.to_string().contains("unknown variant `mercurial`"));
 }
+
+#[test]
+fn transparent_background_accepts_hunks_camel_case_compatibility_key() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user.toml");
+    std::fs::write(
+        &user,
+        "transparent_background = false\ntransparentBackground = true\n",
+    )
+    .unwrap();
+
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+
+    assert!(resolved.transparent_background);
+}

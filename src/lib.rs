@@ -15,6 +15,7 @@ pub mod process;
 pub mod review;
 pub mod runtime;
 pub mod session;
+pub mod startup_notice;
 pub mod terminal;
 pub mod tmux;
 pub mod ui;

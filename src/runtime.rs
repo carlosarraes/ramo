@@ -116,6 +116,8 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         return Ok(ExitCode::SUCCESS);
     }
 
+    crate::startup_notice::append_local_startup_notice(&mut resolved_config.startup_notices);
+
     if resolved_config.theme == "auto" {
         let appearance = crate::ui::appearance::detect_terminal_appearance();
         resolved_config.theme = match appearance {
