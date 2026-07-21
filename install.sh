@@ -10,9 +10,10 @@ remove_legacy_binary() {
   fi
 
   if [ -z "$response" ]; then
-    if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-      printf 'Legacy pdiff binary found at %s. Remove it? [y/N] ' "$legacy_binary" > /dev/tty
-      IFS= read -r response < /dev/tty || response=""
+    if { exec 3<>/dev/tty; } 2>/dev/null; then
+      printf 'Legacy pdiff binary found at %s. Remove it? [y/N] ' "$legacy_binary" >&3
+      IFS= read -r response <&3 || response=""
+      exec 3>&-
     else
       echo "Legacy pdiff binary remains at $legacy_binary; remove it manually or rerun with RAMO_REMOVE_LEGACY=yes."
       return

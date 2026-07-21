@@ -117,3 +117,33 @@ fn unix_installer_removes_only_the_confirmed_legacy_binary_in_its_install_direct
         assert_eq!(std::fs::read_to_string(unrelated).unwrap(), "unrelated");
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn unix_installer_keeps_the_legacy_binary_cleanly_without_a_controlling_tty() {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh");
+    let install = tempfile::tempdir().unwrap();
+    let legacy = install.path().join("pdiff");
+    std::fs::write(&legacy, "legacy").unwrap();
+
+    let output = std::process::Command::new("setsid")
+        .args([
+            "bash",
+            "-c",
+            "source \"$1\"; INSTALL_DIR=\"$2\"; remove_legacy_binary",
+            "ramo-installer-test",
+        ])
+        .arg(&script)
+        .arg(install.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(legacy.exists());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Legacy pdiff binary remains"));
+    assert!(output.stderr.is_empty());
+}
