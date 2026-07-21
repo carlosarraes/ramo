@@ -15,3 +15,4 @@ pub mod tmux;
 pub mod ui;
 pub mod vcs;
 pub mod vim;
+pub mod watch;

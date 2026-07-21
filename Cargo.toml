@@ -19,6 +19,7 @@ toml_edit = "0.23"
 similar = "3"
 shell-words = "1"
 unicode-width = "0.2"
+notify = "8"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
