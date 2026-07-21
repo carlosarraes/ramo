@@ -7,6 +7,9 @@ pub struct CustomThemeConfig {
     pub label: Option<String>,
     #[serde(default)]
     pub syntax_scopes: BTreeMap<String, String>,
+    #[serde(default, rename = "syntax")]
+    #[doc(hidden)]
+    pub legacy_syntax: BTreeMap<String, String>,
     #[serde(flatten)]
     pub colors: BTreeMap<String, String>,
 }
@@ -63,6 +66,8 @@ pub struct ConfigFile {
     #[serde(default)]
     pub difftool: ConfigLayer,
     pub custom_theme: Option<CustomThemeConfig>,
+    #[serde(skip)]
+    pub(crate) uses_legacy_syntax: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,6 +87,7 @@ pub struct ResolvedConfig {
     pub transparent_background: bool,
     pub color_moved: bool,
     pub custom_theme: Option<CustomThemeConfig>,
+    pub startup_notices: Vec<String>,
 }
 
 impl Default for ResolvedConfig {
@@ -102,6 +108,7 @@ impl Default for ResolvedConfig {
             transparent_background: false,
             color_moved: true,
             custom_theme: None,
+            startup_notices: Vec::new(),
         }
     }
 }

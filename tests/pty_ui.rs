@@ -396,3 +396,31 @@ fn direct_agent_skill_dialog_copies_native_guidance_and_closes() {
     process.send("\x1bqq");
     assert_eq!(process.wait(), 0);
 }
+
+#[test]
+fn deprecated_theme_syntax_surfaces_a_native_startup_notice() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    let path = config_home.join("pdiff/config.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        path,
+        concat!(
+            "theme = \"custom\"\n",
+            "prompt_save_view_preferences = false\n",
+            "[custom_theme.syntax]\n",
+            "keyword = \"#112233\"\n",
+        ),
+    )
+    .unwrap();
+    let fixture = fixture();
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
+    );
+
+    process.read_until("Deprecated [custom_theme.syntax]");
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+}

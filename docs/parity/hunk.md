@@ -16,7 +16,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 |---|---|---|---|
 | One Rust `pdiff` executable; no JS runtime | verified | `Cargo.toml`, `src/main.rs` | slice-2 `cargo build --release`, `file`, and `ldd` gate; `tests/library_surface.rs::parser_is_available_from_the_library_crate` |
 | Reusable Rust library surface | verified | `src/lib.rs` | `tests/library_surface.rs::parser_is_available_from_the_library_crate` |
-| Bare terminal invocation prints help | verified | `src/cli/normalize.rs::normalize` | `tests/cli_parse.rs::help_and_version_are_successful_print_actions` |
+| Bare terminal invocation prints complete help | verified | `src/cli/normalize.rs::normalize`, top-level common-option help | `tests/cli_parse.rs::help_and_version_are_successful_print_actions`, `tests/cli_contract.rs::help_lists_every_foundation_review_command` |
 | Bare piped invocation means patch stdin | verified | `src/cli/normalize.rs::normalize` | `tests/cli_parse.rs::bare_pipe_is_patch_stdin` |
 | `pdiff diff [target] [-- pathspecs]` | verified | `src/cli/normalize.rs::normalize_diff`, `src/vcs/git.rs` | `tests/cli_parse.rs::diff_supports_range_flags_and_pathspecs`, `tests/git_loading.rs::range_and_pathspec_review_only_the_requested_history` |
 | `pdiff diff --staged` | verified | `src/vcs/git.rs::GitAdapter` | `tests/git_loading.rs::staged_diff_excludes_untracked_and_unstaged_changes` |
@@ -66,9 +66,12 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Platform user config path and nearest `.pdiff/config.toml` | verified | `src/config/load.rs::ConfigPaths::discover` | `tests/config_resolution.rs::discovery_chooses_the_nearest_repository_config` |
 | Unknown/malformed config diagnostics | verified | `src/config/load.rs::validate_keys` | `tests/config_resolution.rs::malformed_and_unknown_config_errors_name_the_file_and_key` |
 | Save changed view preferences on quit | verified | `src/config/save.rs`, `App::request_quit` | `tests/config_persistence.rs`, `tests/pty_ui.rs` |
+| Copied-decoration preference | verified | `ReviewOptions::copy_decorations` projects the rendered line-number/change-marker gutter | `tests/ui_render.rs::copied_decorations_config_includes_the_rendered_gutter_for_line_selection` |
 | Built-in and custom theme definitions | verified | `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs` |
 | Terminal background auto-detection | verified | bounded native OSC 11 controlling-TTY probe plus `COLORFGBG` fallback | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `real_pty_query_accepts_a_response_and_timeout_still_starts` |
-| Legacy Hunk theme aliases/syntax translation | verified | `ThemeRegistry` alias normalization and scope mapping | `tests/themes.rs` |
+| Legacy Hunk theme aliases/syntax translation | verified | alias normalization plus semantic-role-to-TextMate translation with exact-scope precedence | `tests/themes.rs::registry_preserves_hunks_reference_order_and_legacy_aliases`, `deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice` |
+| Compatibility startup notices | verified | resolved config notices enter the native contextual status surface | `tests/themes.rs::deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice`, `tests/pty_ui.rs::deprecated_theme_syntax_surfaces_a_native_startup_notice` |
+| Bounded remote update notice | missing | no dependency-free native HTTPS client | product decision required to balance exact Hunk behavior against the small 100%-Rust binary constraint |
 
 ## Input and normalized model
 

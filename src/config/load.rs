@@ -60,6 +60,20 @@ const CUSTOM_THEME_COLOR_KEYS: &[&str] = &[
     "noteTitleBackground",
     "noteTitleText",
 ];
+const LEGACY_SYNTAX_KEYS: &[&str] = &[
+    "default",
+    "keyword",
+    "string",
+    "comment",
+    "number",
+    "function",
+    "property",
+    "type",
+    "variable",
+    "operator",
+    "punctuation",
+];
+const LEGACY_SYNTAX_NOTICE: &str = "Deprecated [custom_theme.syntax] translated approximately • migrate to [custom_theme.syntax_scopes]";
 
 #[derive(Debug, Clone, Default)]
 pub struct ConfigPaths {
@@ -120,6 +134,15 @@ impl ConfigResolver {
         if let Some(config) = &repo {
             resolved.apply_layer(command_layer(config, input.kind()));
         }
+        if user
+            .as_ref()
+            .is_some_and(|config| config.uses_legacy_syntax)
+            || repo
+                .as_ref()
+                .is_some_and(|config| config.uses_legacy_syntax)
+        {
+            resolved.startup_notices.push(LEGACY_SYNTAX_NOTICE.into());
+        }
 
         if input.kind() == InputKind::Pager || input.options().pager == Some(true) {
             if let Some(config) = &user {
@@ -168,6 +191,15 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
             });
         };
         *base = canonical.to_owned();
+    }
+    if let Some(custom) = config.custom_theme.as_mut()
+        && !custom.legacy_syntax.is_empty()
+    {
+        config.uses_legacy_syntax = true;
+        let exact = std::mem::take(&mut custom.syntax_scopes);
+        custom.syntax_scopes = legacy_syntax_scopes(&custom.legacy_syntax);
+        custom.syntax_scopes.extend(exact);
+        custom.legacy_syntax.clear();
     }
     Ok(Some(config))
 }
@@ -235,6 +267,21 @@ fn validate_custom_theme(path: &Path, value: &toml::Value) -> Result<(), ConfigE
             }
             continue;
         }
+        if key == "syntax" {
+            let Some(syntax) = value.as_table() else {
+                return invalid_custom_value(path, "custom_theme.syntax", "a TOML table");
+            };
+            for (role, color) in syntax {
+                if !LEGACY_SYNTAX_KEYS.contains(&role.as_str()) {
+                    return Err(ConfigError::UnknownKey {
+                        path: path.to_path_buf(),
+                        key: format!("custom_theme.syntax.{role}"),
+                    });
+                }
+                validate_hex_color(path, &format!("custom_theme.syntax.{role}"), color)?;
+            }
+            continue;
+        }
         if CUSTOM_THEME_COLOR_KEYS.contains(&key.as_str()) {
             validate_hex_color(path, &format!("custom_theme.{key}"), value)?;
             continue;
@@ -245,6 +292,51 @@ fn validate_custom_theme(path: &Path, value: &toml::Value) -> Result<(), ConfigE
         });
     }
     Ok(())
+}
+
+fn legacy_syntax_scopes(
+    legacy: &std::collections::BTreeMap<String, String>,
+) -> std::collections::BTreeMap<String, String> {
+    const MAPPINGS: &[(&str, &[&str])] = &[
+        ("default", &["source"]),
+        ("keyword", &["keyword"]),
+        ("string", &["string"]),
+        ("comment", &["comment", "punctuation.definition.comment"]),
+        ("number", &["constant.numeric"]),
+        (
+            "function",
+            &[
+                "entity.name.function",
+                "support.function",
+                "variable.function",
+            ],
+        ),
+        (
+            "property",
+            &["variable.other.property", "support.variable.property"],
+        ),
+        (
+            "type",
+            &[
+                "entity.name.type",
+                "entity.name.class",
+                "support.type",
+                "support.class",
+            ],
+        ),
+        ("variable", &["variable"]),
+        ("operator", &["keyword.operator"]),
+        ("punctuation", &["punctuation"]),
+    ];
+    let mut scopes = std::collections::BTreeMap::new();
+    for (role, selectors) in MAPPINGS {
+        if let Some(color) = legacy.get(*role) {
+            for selector in *selectors {
+                scopes.insert((*selector).to_owned(), color.clone());
+            }
+        }
+    }
+    scopes
 }
 
 fn validate_hex_color(path: &Path, key: &str, value: &toml::Value) -> Result<(), ConfigError> {

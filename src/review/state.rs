@@ -61,6 +61,7 @@ pub struct ReviewOptions {
     pub wrap_lines: bool,
     pub hunk_headers: bool,
     pub agent_notes: bool,
+    pub copy_decorations: bool,
     pub pager_mode: bool,
     pub annotated_hunks: Vec<HunkTarget>,
 }
@@ -74,6 +75,7 @@ impl Default for ReviewOptions {
             wrap_lines: false,
             hunk_headers: true,
             agent_notes: false,
+            copy_decorations: false,
             pager_mode: false,
             annotated_hunks: Vec::new(),
         }
@@ -947,12 +949,22 @@ impl ReviewController {
                             plan.line_number_digits,
                             self.options.line_numbers,
                         );
-                        let end = columns
-                            .text_cell
-                            .saturating_add(UnicodeWidthStr::width(cell.text().as_str()));
+                        let (start, width) = if self.options.copy_decorations {
+                            (
+                                1,
+                                columns
+                                    .gutter
+                                    .saturating_add(UnicodeWidthStr::width(cell.text().as_str())),
+                            )
+                        } else {
+                            (
+                                columns.text_cell,
+                                UnicodeWidthStr::width(cell.text().as_str()),
+                            )
+                        };
                         Some((
-                            SelectionPoint::new(row_index, columns.text_cell),
-                            SelectionPoint::new(row_index, end),
+                            SelectionPoint::new(row_index, start),
+                            SelectionPoint::new(row_index, start.saturating_add(width)),
                         ))
                     }
                     ReviewRow::Split { left, right, .. } => {
@@ -962,16 +974,34 @@ impl ReviewController {
                             self.options.line_numbers,
                         );
                         let (text_cell, text) = if right.text().is_empty() {
-                            (columns.left_text_cell, left.text())
+                            (
+                                if self.options.copy_decorations {
+                                    1
+                                } else {
+                                    columns.left_text_cell
+                                },
+                                left.text(),
+                            )
                         } else {
-                            (columns.right_text_cell, right.text())
+                            (
+                                if self.options.copy_decorations {
+                                    columns.divider_cell.saturating_add(1)
+                                } else {
+                                    columns.right_text_cell
+                                },
+                                right.text(),
+                            )
                         };
+                        let width = UnicodeWidthStr::width(text.as_str()).saturating_add(
+                            if self.options.copy_decorations {
+                                columns.gutter
+                            } else {
+                                0
+                            },
+                        );
                         Some((
                             SelectionPoint::new(row_index, text_cell),
-                            SelectionPoint::new(
-                                row_index,
-                                text_cell.saturating_add(UnicodeWidthStr::width(text.as_str())),
-                            ),
+                            SelectionPoint::new(row_index, text_cell.saturating_add(width)),
                         ))
                     }
                     ReviewRow::HunkHeader { .. }
@@ -1571,7 +1601,23 @@ impl ReviewController {
                             plan.line_number_digits,
                             self.options.line_numbers,
                         );
-                        SelectionRow::stack_at(cell.text(), columns.text_cell)
+                        if self.options.copy_decorations {
+                            SelectionRow::stack_at(
+                                format!(
+                                    "{}{}",
+                                    copy_gutter(
+                                        cell,
+                                        plan.line_number_digits,
+                                        self.options.line_numbers,
+                                        true,
+                                    ),
+                                    cell.text()
+                                ),
+                                1,
+                            )
+                        } else {
+                            SelectionRow::stack_at(cell.text(), columns.text_cell)
+                        }
                     }
                     ReviewRow::Split { left, right, .. } => {
                         let columns = split_columns(
@@ -1579,13 +1625,41 @@ impl ReviewController {
                             plan.line_number_digits,
                             self.options.line_numbers,
                         );
-                        SelectionRow::split_at(
-                            left.text(),
-                            right.text(),
-                            columns.divider_cell,
-                            columns.left_text_cell,
-                            columns.right_text_cell,
-                        )
+                        if self.options.copy_decorations {
+                            SelectionRow::split_at(
+                                format!(
+                                    "{}{}",
+                                    copy_gutter(
+                                        left,
+                                        plan.line_number_digits,
+                                        self.options.line_numbers,
+                                        false,
+                                    ),
+                                    left.text()
+                                ),
+                                format!(
+                                    "{}{}",
+                                    copy_gutter(
+                                        right,
+                                        plan.line_number_digits,
+                                        self.options.line_numbers,
+                                        false,
+                                    ),
+                                    right.text()
+                                ),
+                                columns.divider_cell,
+                                1,
+                                columns.divider_cell.saturating_add(1),
+                            )
+                        } else {
+                            SelectionRow::split_at(
+                                left.text(),
+                                right.text(),
+                                columns.divider_cell,
+                                columns.left_text_cell,
+                                columns.right_text_cell,
+                            )
+                        }
                     }
                     ReviewRow::HunkHeader { text, .. }
                     | ReviewRow::Placeholder { text, .. }
@@ -1706,6 +1780,31 @@ impl ReviewController {
             horizontal_offset: self.horizontal_offset,
             note_count,
         };
+    }
+}
+
+fn copy_gutter(
+    cell: &super::row::ReviewCell,
+    digits: usize,
+    line_numbers: bool,
+    stack: bool,
+) -> String {
+    if !line_numbers {
+        return format!("{} ", cell.sign);
+    }
+    if stack {
+        format!(
+            "{:>digits$} {:>digits$} {} ",
+            cell.old_line.map_or(String::new(), |line| line.to_string()),
+            cell.new_line.map_or(String::new(), |line| line.to_string()),
+            cell.sign
+        )
+    } else {
+        let number = cell
+            .old_line
+            .or(cell.new_line)
+            .map_or(String::new(), |line| line.to_string());
+        format!("{number:>digits$} {} ", cell.sign)
     }
 }
 

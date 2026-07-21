@@ -393,3 +393,25 @@ fn stable_selection_projection_is_painted_on_the_selected_terminal_cells() {
     let x = row.find("let item00").unwrap() as u16;
     assert_eq!(buffer[(x, y as u16)].bg, theme.accent_muted);
 }
+
+#[test]
+fn copied_decorations_config_includes_the_rendered_gutter_for_line_selection() {
+    let viewport = Viewport {
+        width: 80,
+        height: 8,
+    };
+    let mut controller = ReviewController::new(
+        vec![file("src/select.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            copy_decorations: true,
+            ..ReviewOptions::default()
+        },
+    );
+    let selection = controller.selected_line_range(viewport).unwrap();
+
+    assert_eq!(
+        controller.selection_text(selection.0, selection.1, viewport),
+        "1   - let item00 = 0;"
+    );
+}

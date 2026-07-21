@@ -243,11 +243,14 @@ line_numbers = true
 wrap_lines = false
 hunk_headers = true
 agent_notes = false
+copy_decorations = false
 transparent_background = false
 prompt_save_view_preferences = true
 ```
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.
+
+`copy_decorations = true` includes the rendered line-number/change-marker gutter in full-line copies; the default copies code only. Deprecated `[custom_theme.syntax]` semantic colors are translated to approximate TextMate scopes and surfaced as a startup notice; exact `[custom_theme.syntax_scopes]` entries override translated values.
 
 The default `theme = "auto"` sends one bounded OSC 11 background query to the controlling terminal, chooses the matching light or dark GitHub default, and falls back to the dark default after 150 ms or an unrecognized response. Explicit and custom themes skip the probe. `COLORFGBG` is used as a fallback hint where a terminal cannot answer OSC 11.
 

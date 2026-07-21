@@ -166,6 +166,7 @@ fn custom_theme_inherits_validated_colors_and_preserves_exact_scopes() {
             ("addedBg".into(), "#112233".into()),
         ]),
         syntax_scopes: BTreeMap::from([("keyword.control.rust".into(), "#ff00ff".into())]),
+        ..CustomThemeConfig::default()
     };
     let registry = ThemeRegistry::new(Some(custom));
     let base = registry.resolve("catppuccin-mocha", None, false);
@@ -262,6 +263,43 @@ fn user_and_repository_custom_theme_layers_merge_by_field_and_scope() {
     assert_eq!(custom.color("accent"), Some("#123456"));
     assert_eq!(custom.color("panel"), Some("#654321"));
     assert_eq!(custom.syntax_scopes.len(), 2);
+}
+
+#[test]
+fn deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user.toml");
+    std::fs::write(
+        &user,
+        concat!(
+            "theme = \"custom\"\n",
+            "[custom_theme.syntax]\n",
+            "keyword = \"#112233\"\n",
+            "comment = \"#445566\"\n",
+            "[custom_theme.syntax_scopes]\n",
+            "comment = \"#abcdef\"\n",
+        ),
+    )
+    .unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&ReviewInput::Patch {
+        source: PatchSource::Stdin,
+        options: CommonOptions::default(),
+    })
+    .unwrap();
+    let custom = resolved.custom_theme.unwrap();
+
+    assert_eq!(custom.syntax_scopes.get("keyword"), Some(&"#112233".into()));
+    assert_eq!(custom.syntax_scopes.get("comment"), Some(&"#abcdef".into()));
+    assert_eq!(
+        custom.syntax_scopes.get("punctuation.definition.comment"),
+        Some(&"#445566".into())
+    );
+    assert_eq!(resolved.startup_notices.len(), 1);
+    assert!(resolved.startup_notices[0].contains("Deprecated [custom_theme.syntax]"));
 }
 
 fn _assert_app_theme_is_clone(_: AppTheme) {}

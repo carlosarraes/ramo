@@ -15,6 +15,13 @@ fn help_lists_every_foundation_review_command() {
                 .and(predicate::str::contains("patch"))
                 .and(predicate::str::contains("pager"))
                 .and(predicate::str::contains("difftool")),
+        )
+        .stdout(
+            predicate::str::contains("Common review options:")
+                .and(predicate::str::contains("--mode <MODE>"))
+                .and(predicate::str::contains("--watch"))
+                .and(predicate::str::contains("--agent-context <PATH>"))
+                .and(predicate::str::contains("--exclude-untracked")),
         );
 }
 
