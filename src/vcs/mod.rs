@@ -1,4 +1,6 @@
 mod command;
+pub mod detect;
+pub mod git;
 mod types;
 
 use std::error::Error;
@@ -29,6 +31,10 @@ pub enum VcsError {
         vcs: VcsId,
         operation: InputKind,
     },
+    User {
+        message: String,
+        help: Vec<String>,
+    },
 }
 
 impl fmt::Display for VcsError {
@@ -53,6 +59,13 @@ impl fmt::Display for VcsError {
             }
             Self::UnsupportedOperation { vcs, operation } => {
                 write!(formatter, "{vcs:?} does not support {operation:?}")
+            }
+            Self::User { message, help } => {
+                write!(formatter, "{message}")?;
+                for line in help {
+                    write!(formatter, "\n{line}")?;
+                }
+                Ok(())
             }
         }
     }
