@@ -168,19 +168,19 @@ git commit -m "feat: edit and export inline review notes"
 - Modify: `src/lib.rs`
 - Test: `tests/stml_parse.rs`
 
-- [ ] **Step 1: Port parser contract tests first**
+- [x] **Step 1: Port parser contract tests first**
 
 Cover nested tags/attributes, bare angle brackets, comments, void tags, raw `code`/`pre`, mismatched/stray/unclosed tags, named and numeric entities, UTF-8 truncation, node/depth/error limits, case-insensitive raw closing tags, quoted/unquoted attributes, terminal-control stripping from text and attributes, and deterministic diagnostics.
 
-- [ ] **Step 2: Confirm parser API is absent**
+- [x] **Step 2: Confirm parser API is absent**
 
 Run: `cargo test --test stml_parse -- --nocapture`
 
-- [ ] **Step 3: Implement pure iterative parsing with fixed limits**
+- [x] **Step 3: Implement pure iterative parsing with fixed limits**
 
 Define owned `StmlNode`, `StmlElement`, `StmlParseResult`, and `StmlParseLimits`. Default limits match Hunk: 64 KiB input, 2,000 nodes, depth 32, 20 diagnostics. Parsing never panics or rejects the whole note; malformed input returns the best-effort tree plus notes.
 
-- [ ] **Step 4: Run sanitizer/parser suites and commit**
+- [x] **Step 4: Run sanitizer/parser suites and commit**
 
 Run: `cargo test --test stml_parse --test pager`
 
