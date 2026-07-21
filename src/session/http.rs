@@ -62,8 +62,7 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, HttpResponse> {
             ));
         }
         let mut buffer = [0_u8; 4096];
-        let count = stream
-            .read(&mut buffer)
+        let count = read_retry_interrupted(stream, &mut buffer)
             .map_err(|_| error_response(400, "invalid-request", "Could not read HTTP request"))?;
         if count == 0 {
             return Err(error_response(
@@ -146,7 +145,7 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, HttpResponse> {
         let remaining = total - bytes.len();
         let mut buffer = [0_u8; 4096];
         let read_length = remaining.min(buffer.len());
-        let count = stream.read(&mut buffer[..read_length]).map_err(|_| {
+        let count = read_retry_interrupted(stream, &mut buffer[..read_length]).map_err(|_| {
             error_response(
                 400,
                 "incomplete-body",
@@ -177,7 +176,7 @@ fn drain_header_tail(stream: &mut TcpStream) {
     while remaining > 0 {
         let mut buffer = [0_u8; 512];
         let read_length = remaining.min(buffer.len());
-        let Ok(count) = stream.read(&mut buffer[..read_length]) else {
+        let Ok(count) = read_retry_interrupted(stream, &mut buffer[..read_length]) else {
             return;
         };
         if count == 0 {
@@ -193,6 +192,15 @@ fn drain_header_tail(stream: &mut TcpStream) {
         retained[..retained_len]
             .copy_from_slice(&combined[combined.len() - retained_len..combined.len()]);
         remaining -= count;
+    }
+}
+
+fn read_retry_interrupted(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match reader.read(buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            result => return result,
+        }
     }
 }
 
@@ -442,4 +450,38 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Cursor, Read};
+
+    use super::read_retry_interrupted;
+
+    struct InterruptedOnce {
+        bytes: Cursor<Vec<u8>>,
+        interrupted: bool,
+    }
+
+    impl Read for InterruptedOnce {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "signal"));
+            }
+            self.bytes.read(buffer)
+        }
+    }
+
+    #[test]
+    fn interrupted_reads_resume_without_losing_request_bytes() {
+        let mut reader = InterruptedOnce {
+            bytes: Cursor::new(b"GET".to_vec()),
+            interrupted: false,
+        };
+        let mut buffer = [0_u8; 3];
+
+        assert_eq!(read_retry_interrupted(&mut reader, &mut buffer).unwrap(), 3);
+        assert_eq!(&buffer, b"GET");
+    }
 }
