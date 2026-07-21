@@ -23,6 +23,10 @@ use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
     ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, Viewport,
 };
+use crate::session::{
+    SessionDescriptor, SessionRegistrationClient, SessionSnapshotState, build_registration,
+    build_snapshot, session_timestamp,
+};
 use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
@@ -188,6 +192,9 @@ pub struct App {
     reload_requested: bool,
     editor_request: Option<(String, Option<u32>)>,
     suspend_requested: bool,
+    session_registration: Option<SessionRegistrationClient>,
+    session_descriptor: Option<SessionDescriptor>,
+    last_session_state: Option<SessionSnapshotState>,
 }
 
 impl App {
@@ -305,7 +312,21 @@ impl App {
             reload_requested: false,
             editor_request: None,
             suspend_requested: false,
+            session_registration: None,
+            session_descriptor: None,
+            last_session_state: None,
         }
+    }
+
+    pub fn attach_session_registration(
+        &mut self,
+        registration: SessionRegistrationClient,
+        descriptor: SessionDescriptor,
+        initial_state: SessionSnapshotState,
+    ) {
+        self.session_registration = Some(registration);
+        self.session_descriptor = Some(descriptor);
+        self.last_session_state = Some(initial_state);
     }
 
     pub fn get_line(&self, flat_idx: usize) -> Option<&DiffLine> {
@@ -433,6 +454,7 @@ impl App {
                     width: size.width,
                     height: size.height,
                 };
+                self.publish_session_snapshot(viewport);
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
@@ -539,6 +561,15 @@ impl App {
                 self.review_keyboard_anchor = None;
                 self.context_loader.invalidate();
                 self.review_controller.replace_files(files, viewport);
+                if let (Some(client), Some(descriptor)) =
+                    (&self.session_registration, &self.session_descriptor)
+                {
+                    client.publish_registration(build_registration(
+                        descriptor,
+                        self.review_controller.files(),
+                    ));
+                }
+                self.last_session_state = None;
                 self.toast = Some("Reloaded".into());
                 true
             }
@@ -551,6 +582,18 @@ impl App {
                 true
             }
         }
+    }
+
+    fn publish_session_snapshot(&mut self, viewport: Viewport) {
+        let Some(client) = &self.session_registration else {
+            return;
+        };
+        let snapshot = build_snapshot(&mut self.review_controller, viewport, session_timestamp());
+        if self.last_session_state.as_ref() == Some(&snapshot.state) {
+            return;
+        }
+        self.last_session_state = Some(snapshot.state.clone());
+        client.publish_snapshot(snapshot);
     }
 
     fn draw(&mut self, frame: &mut Frame) {

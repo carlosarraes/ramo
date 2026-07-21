@@ -134,16 +134,38 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         _ => cwd.clone(),
     };
 
+    let session_descriptor = crate::session::create_session_descriptor(&input, &loaded, &cwd);
+
     replace_stdin_with_tty()?;
     let pager_mode =
         input.kind() == crate::core::input::InputKind::Pager || input.options().pager == Some(true);
-    let app = App::new_with_services(
+    let mut app = App::new_with_services(
         loaded.changeset.files,
         &resolved_config,
         pager_mode,
         Box::new(NativeContextSourceLoader::default()),
         config_paths.user,
     );
+    let session_client = crate::session::ensure_session_daemon()?;
+    let (width, height) = crossterm::terminal::size().unwrap_or((100, 24));
+    let initial_snapshot = crate::session::build_snapshot(
+        &mut app.review_controller,
+        crate::review::Viewport { width, height },
+        crate::session::session_timestamp(),
+    );
+    let registration =
+        crate::session::build_registration(&session_descriptor, app.review_controller.files());
+    match crate::session::SessionRegistrationClient::start(
+        session_client.address(),
+        registration,
+        initial_snapshot.clone(),
+        crate::session::current_session_path(),
+    ) {
+        Ok(client) => {
+            app.attach_session_registration(client, session_descriptor, initial_snapshot.state)
+        }
+        Err(error) => eprintln!("pdiff: live session registration disabled: {error}"),
+    }
     let mut terminal = TerminalSession::enter()?;
     #[cfg(debug_assertions)]
     if std::env::var_os("PDIFF_TEST_PANIC_AFTER_TERMINAL").is_some() {

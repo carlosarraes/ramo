@@ -6,7 +6,9 @@ mod http;
 mod model;
 mod projection;
 mod protocol;
+mod registration;
 mod skill;
+mod wire;
 
 pub use model::*;
 pub use projection::{
@@ -17,7 +19,9 @@ pub use protocol::{
     SESSION_API_PATH, SESSION_API_VERSION, SESSION_CAPABILITIES_PATH, SESSION_DAEMON_VERSION,
     SESSION_REGISTRATION_VERSION, SessionApiError, SessionCapabilities, supported_session_actions,
 };
+pub use registration::*;
 pub use skill::{materialize_review_skill, review_skill_path};
+pub use wire::*;
 
 pub use cli::*;
 pub use client::*;

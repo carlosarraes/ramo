@@ -84,12 +84,12 @@
 - Modify: `src/app.rs`
 - Test: `tests/session_registration.rs`
 
-- [ ] Write failing frame, registration, disconnect, reconnect, snapshot update, and daemon auto-launch tests.
-- [ ] Implement the private preface plus big-endian length-prefixed JSON frames with strict 1 MiB limits and version checks.
-- [ ] Build registration from `LoadedReview`, canonical cwd/repo root, process metadata, stable file/hunk DTOs, and an initial controller snapshot.
-- [ ] Start/ensure the daemon before alternate-screen entry, connect on a background thread, and reconnect with bounded backoff when a compatible daemon restarts.
-- [ ] Publish content-sensitive snapshots from the app loop and update registration after accepted reloads; disconnect cleanly on TUI exit.
-- [ ] Run `cargo test --test session_registration --test pty_ui --test pty_watch` and commit `feat: register live native reviews`.
+- [x] Write failing frame, registration, disconnect, reconnect, snapshot update, and daemon auto-launch tests.
+- [x] Implement the private preface plus big-endian length-prefixed JSON frames with strict 1 MiB limits and version checks.
+- [x] Build registration from `LoadedReview`, canonical cwd/repo root, process metadata, stable file/hunk DTOs, and an initial controller snapshot.
+- [x] Start/ensure the daemon before alternate-screen entry, connect on a background thread, and reconnect with bounded backoff when a compatible daemon restarts.
+- [x] Publish content-sensitive snapshots from the app loop and update registration after accepted reloads; disconnect cleanly on TUI exit.
+- [x] Run `cargo test --test session_registration --test pty_ui --test pty_watch` and commit `feat: register live native reviews`.
 
 ## Task 5: Dispatch navigation and all live comment operations through the TUI
 

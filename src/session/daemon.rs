@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::io;
+use std::io::{self, Read};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -74,6 +74,26 @@ impl SessionRegistry {
             return false;
         }
         session.snapshot = snapshot;
+        session.last_seen = Instant::now();
+        true
+    }
+
+    pub fn update_registration(
+        &mut self,
+        session_id: &str,
+        generation: u64,
+        registration: SessionRegistration,
+    ) -> bool {
+        let Some(session) = self.sessions.get_mut(session_id) else {
+            return false;
+        };
+        if session.generation != generation
+            || registration.descriptor.session_id != session_id
+            || registration.registration_version != super::SESSION_REGISTRATION_VERSION
+        {
+            return false;
+        }
+        session.registration = registration;
         session.last_seen = Instant::now();
         true
     }
@@ -322,7 +342,11 @@ fn serve_loop(
                 let _ = thread::Builder::new()
                     .name("pdiff-session-http".into())
                     .spawn(move || {
-                        super::http::serve_http_connection(stream, port, &registry, &stop);
+                        if super::wire::connection_uses_session_wire(&stream).unwrap_or(false) {
+                            serve_wire_connection(stream, &registry, &stop);
+                        } else {
+                            super::http::serve_http_connection(stream, port, &registry, &stop);
+                        }
                         let (lock, _) = &*state;
                         let mut daemon = lock.lock().unwrap_or_else(|poison| poison.into_inner());
                         daemon.last_activity = Instant::now();
@@ -349,4 +373,91 @@ fn serve_loop(
     let mut daemon = lock.lock().unwrap_or_else(|poison| poison.into_inner());
     daemon.stopped = true;
     condition.notify_all();
+}
+
+fn serve_wire_connection(
+    mut stream: TcpStream,
+    registry: &Arc<Mutex<SessionRegistry>>,
+    stop: &Arc<AtomicBool>,
+) {
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
+    let mut preface = [0_u8; super::SESSION_WIRE_PREFACE.len()];
+    if stream.read_exact(&mut preface).is_err() || preface != super::SESSION_WIRE_PREFACE {
+        return;
+    }
+    let first = match super::read_session_frame::<_, super::ClientSessionFrame>(&mut stream) {
+        Ok(super::ClientSessionFrame::Register {
+            registration,
+            snapshot,
+            session_path,
+            ..
+        }) if registration.registration_version == super::SESSION_REGISTRATION_VERSION => {
+            (registration, snapshot, session_path)
+        }
+        _ => {
+            let _ = super::write_session_frame(
+                &mut stream,
+                &super::ServerSessionFrame::Error {
+                    version: super::SESSION_REGISTRATION_VERSION,
+                    message: "first session frame must be a compatible registration".into(),
+                },
+            );
+            return;
+        }
+    };
+    let session_id = first.0.descriptor.session_id.clone();
+    let generation = match registry.lock() {
+        Ok(mut registry) => registry.register(first.0, first.1, first.2),
+        Err(_) => return,
+    };
+    if super::write_session_frame(
+        &mut stream,
+        &super::ServerSessionFrame::Registered {
+            version: super::SESSION_REGISTRATION_VERSION,
+            generation,
+        },
+    )
+    .is_err()
+    {
+        if let Ok(mut registry) = registry.lock() {
+            registry.unregister_generation(&session_id, generation);
+        }
+        return;
+    }
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+    while !stop.load(Ordering::Acquire) {
+        match super::read_session_frame::<_, super::ClientSessionFrame>(&mut stream) {
+            Ok(super::ClientSessionFrame::Snapshot { snapshot, .. }) => {
+                if let Ok(mut registry) = registry.lock() {
+                    registry.update_snapshot(&session_id, generation, snapshot);
+                }
+            }
+            Ok(super::ClientSessionFrame::Registration { registration, .. }) => {
+                if let Ok(mut registry) = registry.lock() {
+                    registry.update_registration(&session_id, generation, registration);
+                }
+            }
+            Ok(super::ClientSessionFrame::Ping) => {
+                if super::write_session_frame(&mut stream, &super::ServerSessionFrame::Pong)
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            Ok(super::ClientSessionFrame::Unregister) => break,
+            Ok(super::ClientSessionFrame::CommandResult { .. })
+            | Ok(super::ClientSessionFrame::Register { .. }) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            Err(_) => break,
+        }
+    }
+    if let Ok(mut registry) = registry.lock() {
+        registry.unregister_generation(&session_id, generation);
+    }
+    let _ = stream.shutdown(std::net::Shutdown::Both);
 }

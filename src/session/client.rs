@@ -100,18 +100,19 @@ fn launch_daemon(address: SocketAddr) -> io::Result<()> {
             format!("could not locate the current pdiff executable: {error}"),
         )
     })?;
-    let mut child = Command::new(executable)
+    let mut daemon = Command::new(executable);
+    daemon
         .args(["daemon", "serve"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!("could not launch the native pdiff session daemon: {error}"),
-            )
-        })?;
+        .stderr(Stdio::null());
+    detach_daemon(&mut daemon);
+    let mut child = daemon.spawn().map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("could not launch the native pdiff session daemon: {error}"),
+        )
+    })?;
     let client = SessionClient::new(address);
     for _ in 0..150 {
         if client.capabilities().is_ok_and(|value| compatible(&value)) {
@@ -129,6 +130,24 @@ fn launch_daemon(address: SocketAddr) -> io::Result<()> {
         format!("timed out waiting for the pdiff session daemon at {address}"),
     ))
 }
+
+#[cfg(unix)]
+fn detach_daemon(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+}
+
+#[cfg(windows)]
+fn detach_daemon(_command: &mut Command) {}
 
 fn command_output(command: &SessionCommand) -> SessionOutput {
     match command {
@@ -402,6 +421,10 @@ fn string_field<'a>(value: &'a Value, key: &str) -> &'a str {
 impl SessionClient {
     pub const fn new(address: SocketAddr) -> Self {
         Self { address }
+    }
+
+    pub const fn address(self) -> SocketAddr {
+        self.address
     }
 
     pub fn capabilities(self) -> io::Result<SessionCapabilities> {
