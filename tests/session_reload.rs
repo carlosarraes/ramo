@@ -269,9 +269,10 @@ fn git_reload_uses_the_requested_source_and_refreshes_metadata() {
     let refreshed =
         refresh_session_descriptor(&descriptor(), &applied.input, &applied.loaded, &applied.cwd);
     assert_eq!(refreshed.input_kind, "show");
+    let expected_repo_root = repo.path().canonicalize().unwrap();
     assert_eq!(
         refreshed.repo_root.as_deref(),
-        Some(repo.path().to_str().unwrap())
+        Some(expected_repo_root.to_str().unwrap())
     );
 }
 

@@ -67,6 +67,8 @@ fn osc11_parsing_classification_and_environment_fallback_match_hunk() {
 
 #[cfg(unix)]
 fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
+    let daemon = support::TestSessionDaemon::spawn();
+    let session = daemon.client();
     let temp = tempfile::tempdir().unwrap();
     let patch = temp.path().join("review.patch");
     std::fs::write(
@@ -85,10 +87,8 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
     let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin!("ramo"));
     command.cwd(temp.path());
     command.args(["patch", patch.to_str().unwrap(), "--theme", "auto"]);
-    let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = reserved.local_addr().unwrap().port();
-    drop(reserved);
-    command.env("RAMO_SESSION_PORT", port.to_string());
+    command.env("RAMO_SESSION_HOST", session.address().ip().to_string());
+    command.env("RAMO_SESSION_PORT", session.address().port().to_string());
     command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
     command.env("COLORFGBG", "");
     let start = Instant::now();
@@ -139,8 +139,6 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
     writer.write_all(b"q").unwrap();
     writer.flush().unwrap();
     assert!(child.wait().unwrap().success());
-    let client = ramo::session::SessionClient::new(format!("127.0.0.1:{port}").parse().unwrap());
-    let _ = client.shutdown();
     (raw, start.elapsed())
 }
 
@@ -157,3 +155,5 @@ fn real_pty_query_accepts_a_response_and_timeout_still_starts() {
     let (_, elapsed) = launch_and_capture(false);
     assert!(elapsed < Duration::from_secs(2));
 }
+#[cfg(unix)]
+mod support;
