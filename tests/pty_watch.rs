@@ -19,6 +19,10 @@ struct PtyProcess {
 
 impl PtyProcess {
     fn spawn(cwd: &Path, args: &[&str]) -> Self {
+        Self::spawn_with_env(cwd, args, &[])
+    }
+
+    fn spawn_with_env(cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 18,
@@ -31,6 +35,9 @@ impl PtyProcess {
         command.cwd(cwd);
         for argument in args {
             command.arg(argument);
+        }
+        for (key, value) in env {
+            command.env(key, value);
         }
         let child = pair.slave.spawn_command(command).unwrap();
         drop(pair.slave);
@@ -61,6 +68,13 @@ impl PtyProcess {
 
     fn mark(&self) -> usize {
         self.raw.len()
+    }
+
+    fn process_id(&self) -> u32 {
+        self.child
+            .as_ref()
+            .and_then(|child| child.process_id())
+            .unwrap()
     }
 
     fn read_until(&mut self, needle: &str) -> String {
@@ -98,13 +112,17 @@ impl PtyProcess {
         std::thread::spawn(move || {
             let _ = sender.send(child.wait());
         });
-        match status.recv_timeout(DEADLINE) {
+        let exit = match status.recv_timeout(DEADLINE) {
             Ok(result) => result.unwrap().exit_code(),
             Err(error) => {
                 let _ = killer.kill();
                 panic!("PTY child exit deadline: {error}");
             }
+        };
+        while let Ok(chunk) = self.chunks.recv_timeout(Duration::from_millis(100)) {
+            self.raw.extend(chunk);
         }
+        exit
     }
 }
 
@@ -211,6 +229,99 @@ fn reload_error_keeps_the_last_valid_review_visible() {
     session.send("r");
     let screen = session.read_since_until(mark, "Reload failed:");
     assert!(screen.contains("initial change"));
+    session.send("q");
+    assert_eq!(session.wait(), 0);
+}
+
+#[test]
+fn editor_key_launches_literal_file_and_line_argv_then_resumes_the_review() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = WatchFixture::new();
+    let editor = fixture.dir.path().join("nvim");
+    let capture = fixture.dir.path().join("editor-argv.txt");
+    fs::write(
+        &editor,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$PDIFF_EDITOR_CAPTURE\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
+    let editor_setting = format!("{} --clean", editor.display());
+    let capture_setting = capture.display().to_string();
+    let args = fixture.args(false);
+    let mut session = PtyProcess::spawn_with_env(
+        fixture.dir.path(),
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        &[
+            ("EDITOR", editor_setting.as_str()),
+            ("PDIFF_EDITOR_CAPTURE", capture_setting.as_str()),
+        ],
+    );
+    session.read_until("initial change");
+    session.send("e");
+    session.read_until("Editor closed");
+
+    let argv = fs::read_to_string(&capture).unwrap();
+    assert_eq!(
+        argv.lines().collect::<Vec<_>>(),
+        ["--clean", "+1", fixture.after.to_str().unwrap()]
+    );
+    session.send("q");
+    assert_eq!(session.wait(), 0);
+}
+
+#[test]
+fn panic_after_terminal_entry_restores_the_alternate_screen_before_diagnostic() {
+    let fixture = WatchFixture::new();
+    let args = fixture.args(false);
+    let mut session = PtyProcess::spawn_with_env(
+        fixture.dir.path(),
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        &[("PDIFF_TEST_PANIC_AFTER_TERMINAL", "1")],
+    );
+    assert_eq!(session.wait(), 101);
+    let entered = session
+        .raw
+        .windows(b"\x1b[?1049h".len())
+        .position(|window| window == b"\x1b[?1049h")
+        .expect("alternate screen was not entered");
+    let restored = session
+        .raw
+        .windows(b"\x1b[?1049l".len())
+        .position(|window| window == b"\x1b[?1049l")
+        .expect("alternate screen was not restored");
+    let diagnostic = session
+        .raw
+        .windows(b"injected terminal panic".len())
+        .position(|window| window == b"injected terminal panic")
+        .expect("panic diagnostic was not printed");
+    assert!(entered < restored);
+    assert!(restored < diagnostic);
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn ctrl_z_restores_terminal_then_sigcont_redraws_the_review() {
+    let fixture = WatchFixture::new();
+    let mut session = launch(&fixture, false);
+    session.read_until("initial change");
+    let pid = session.process_id();
+    session.send("\x1a");
+
+    let deadline = Instant::now() + DEADLINE;
+    loop {
+        let status = fs::read_to_string(format!("/proc/{pid}/status")).unwrap();
+        if status.lines().any(|line| line.starts_with("State:\tT")) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pdiff did not enter stopped state"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGCONT) }, 0);
+    session.read_until("initial change");
     session.send("q");
     assert_eq!(session.wait(), 0);
 }

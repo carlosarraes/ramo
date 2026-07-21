@@ -14,6 +14,7 @@ use crate::input::{LoadContext, LoadOutcome, ReviewLoader};
 use crate::pager::{page_plain_text, resolve_text_pager};
 use crate::pi_extension;
 use crate::review::NativeContextSourceLoader;
+use crate::terminal::TerminalSession;
 use crate::vcs::SystemCommandRunner;
 use crate::watch::WatchRuntime;
 
@@ -98,6 +99,10 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
             Instant::now(),
         )
     });
+    let editor_base = match &loaded.reload_plan {
+        crate::input::ReloadPlan::Vcs { repo_root, .. } => repo_root.clone(),
+        _ => cwd.clone(),
+    };
 
     replace_stdin_with_tty()?;
     let pager_mode =
@@ -109,9 +114,14 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         Box::new(NativeContextSourceLoader::default()),
         config_paths.user,
     );
-    let mut terminal = ratatui::init();
-    let app_result = app.run_with_watch(&mut terminal, watch_runtime.as_mut());
-    ratatui::restore();
+    let mut terminal = TerminalSession::enter()?;
+    #[cfg(debug_assertions)]
+    if std::env::var_os("PDIFF_TEST_PANIC_AFTER_TERMINAL").is_some() {
+        panic!("injected terminal panic");
+    }
+    let app_result = app.run_with_services(&mut terminal, watch_runtime.as_mut(), &editor_base);
+    let restore_result = terminal.restore();
+    restore_result?;
     let annotations = app_result?;
     finish_annotations(annotations, review_output)?;
     Ok(ExitCode::SUCCESS)

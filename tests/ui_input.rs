@@ -237,6 +237,14 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
     );
     assert_eq!(
         map_key_event(
+            KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+            false,
+        ),
+        Some(AppAction::Suspend)
+    );
+    assert_eq!(
+        map_key_event(
             KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
             InputMode::Normal,
             false,

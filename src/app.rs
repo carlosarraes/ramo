@@ -1,5 +1,5 @@
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
@@ -17,16 +17,70 @@ use crate::config::{
     ResolvedConfig, ViewPreferenceChanges, ViewPreferences, save_view_preferences,
 };
 use crate::diff::model::{DiffFile, DiffLine, LineType};
+use crate::process::command::SystemCommandExecutor;
+use crate::process::editor::{EditorLauncher, build_editor_command};
 use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
     ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, Viewport,
 };
+use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, map_key_event, map_mouse_event};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 use crate::watch::{WatchRuntime, WatchUpdate};
+
+trait TerminalHost {
+    fn terminal(&mut self) -> &mut DefaultTerminal;
+    fn suspend(&mut self) -> io::Result<()>;
+    fn resume(&mut self) -> io::Result<()>;
+    fn suspend_process(&mut self) -> io::Result<()>;
+}
+
+struct BorrowedTerminal<'a>(&'a mut DefaultTerminal);
+
+impl TerminalHost for BorrowedTerminal<'_> {
+    fn terminal(&mut self) -> &mut DefaultTerminal {
+        self.0
+    }
+
+    fn suspend(&mut self) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "terminal suspension requires an owned terminal session",
+        ))
+    }
+
+    fn resume(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn suspend_process(&mut self) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "process suspension requires an owned terminal session",
+        ))
+    }
+}
+
+impl TerminalHost for TerminalSession {
+    fn terminal(&mut self) -> &mut DefaultTerminal {
+        self.terminal()
+    }
+
+    fn suspend(&mut self) -> io::Result<()> {
+        self.suspend()
+    }
+
+    fn resume(&mut self) -> io::Result<()> {
+        self.resume()
+    }
+
+    fn suspend_process(&mut self) -> io::Result<()> {
+        self.suspend_process()
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct FlatLine {
@@ -114,6 +168,8 @@ pub struct App {
     pub tmux_pending_text: String,
     pub tmux_save_annotation_on_send: bool,
     reload_requested: bool,
+    editor_request: Option<(String, Option<u32>)>,
+    suspend_requested: bool,
 }
 
 impl App {
@@ -229,6 +285,8 @@ impl App {
             tmux_pending_text: String::new(),
             tmux_save_annotation_on_send: false,
             reload_requested: false,
+            editor_request: None,
+            suspend_requested: false,
         }
     }
 
@@ -322,19 +380,37 @@ impl App {
     }
 
     pub fn run_with_watch(
-        mut self,
+        self,
         terminal: &mut DefaultTerminal,
+        watch: Option<&mut WatchRuntime>,
+    ) -> io::Result<Vec<Annotation>> {
+        self.run_loop(&mut BorrowedTerminal(terminal), watch, None)
+    }
+
+    pub fn run_with_services(
+        self,
+        terminal: &mut TerminalSession,
+        watch: Option<&mut WatchRuntime>,
+        editor_base: &Path,
+    ) -> io::Result<Vec<Annotation>> {
+        self.run_loop(terminal, watch, Some(editor_base))
+    }
+
+    fn run_loop(
+        mut self,
+        terminal: &mut impl TerminalHost,
         mut watch: Option<&mut WatchRuntime>,
+        editor_base: Option<&Path>,
     ) -> io::Result<Vec<Annotation>> {
         execute!(io::stdout(), EnableMouseCapture)?;
         let run_result = (|| -> io::Result<()> {
             let mut needs_redraw = true;
             while !self.should_quit {
                 if needs_redraw {
-                    terminal.draw(|frame| self.draw(frame))?;
+                    terminal.terminal().draw(|frame| self.draw(frame))?;
                     needs_redraw = false;
                 }
-                let size = terminal.size()?;
+                let size = terminal.terminal().size()?;
                 let viewport = Viewport {
                     width: size.width,
                     height: size.height,
@@ -358,6 +434,23 @@ impl App {
                         needs_redraw = true;
                     }
                 }
+                if let Some((path, line)) = self.editor_request.take() {
+                    if let Some(base) = editor_base {
+                        self.open_editor(terminal, base, &path, line)?;
+                    } else {
+                        self.toast = Some(match line {
+                            Some(line) => format!("Open {path}:{line}"),
+                            None => format!("Open {path}"),
+                        });
+                    }
+                    needs_redraw = true;
+                }
+                if std::mem::take(&mut self.suspend_requested) {
+                    if let Err(error) = terminal.suspend_process() {
+                        self.toast = Some(error.to_string());
+                    }
+                    needs_redraw = true;
+                }
                 if let Some(runtime) = watch.as_deref_mut() {
                     needs_redraw |= self.apply_watch_update(runtime.poll(Instant::now()), viewport);
                 }
@@ -368,6 +461,51 @@ impl App {
         run_result?;
         disable_result?;
         Ok(self.annotations)
+    }
+
+    fn open_editor(
+        &mut self,
+        terminal: &mut impl TerminalHost,
+        base: &Path,
+        path: &str,
+        line: Option<u32>,
+    ) -> io::Result<()> {
+        let editor = match std::env::var("EDITOR") {
+            Ok(editor) if !editor.trim().is_empty() => editor,
+            _ => {
+                self.toast = Some("$EDITOR is not set".into());
+                return Ok(());
+            }
+        };
+        let path = base.join(path);
+        if !path.is_file() {
+            self.toast = Some(format!(
+                "Cannot edit {}: file does not exist",
+                path.display()
+            ));
+            return Ok(());
+        }
+        let command = match build_editor_command(&editor, &path, line.unwrap_or(1)) {
+            Ok(command) => command,
+            Err(error) => {
+                self.toast = Some(error.to_string());
+                return Ok(());
+            }
+        };
+        let mut launcher = EditorLauncher::new(SystemCommandExecutor);
+        let launch_result = if command.suspend_terminal {
+            terminal.suspend()?;
+            let result = launcher.launch(&command);
+            terminal.resume()?;
+            result
+        } else {
+            launcher.launch(&command)
+        };
+        self.toast = Some(match launch_result {
+            Ok(()) => "Editor closed".into(),
+            Err(error) => error.to_string(),
+        });
+        Ok(())
     }
 
     fn apply_watch_update(&mut self, update: WatchUpdate, viewport: Viewport) -> bool {
@@ -678,6 +816,7 @@ impl App {
                     self.request_tmux_send(text, false);
                 }
             }
+            AppAction::Suspend => self.suspend_requested = true,
             AppAction::DisableSavePrompt => {
                 let mut current = self.current_view_preferences();
                 current.prompt_save_view_preferences = false;
@@ -705,12 +844,7 @@ impl App {
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Note;
             }
-            ReviewEffect::EditFile { path, line } => {
-                self.toast = Some(match line {
-                    Some(line) => format!("Open {path}:{line}"),
-                    None => format!("Open {path}"),
-                });
-            }
+            ReviewEffect::EditFile { path, line } => self.editor_request = Some((path, line)),
             ReviewEffect::Reload => self.reload_requested = true,
             ReviewEffect::Quit => self.request_quit(viewport),
             ReviewEffect::None | ReviewEffect::Redraw => {}

@@ -26,6 +26,7 @@ pub enum AppAction {
     BeginSelection,
     YankSelection,
     SendSelection { reset_target: bool },
+    Suspend,
     DisableSavePrompt,
     Discard,
 }
@@ -75,6 +76,9 @@ pub fn map_mouse_event(event: MouseEvent) -> Option<AppAction> {
 }
 
 fn map_normal(event: KeyEvent) -> Option<AppAction> {
+    if event.code == KeyCode::Char('z') && event.modifiers.contains(KeyModifiers::CONTROL) {
+        return Some(AppAction::Suspend);
+    }
     if event.code == KeyCode::Char('t') && event.modifiers.contains(KeyModifiers::CONTROL) {
         return Some(AppAction::SendSelection {
             reset_target: event.modifiers.contains(KeyModifiers::SHIFT),
@@ -206,5 +210,6 @@ fn pager_action(action: &AppAction) -> bool {
                 | ReviewAction::Quit
         ) | AppAction::BeginSelection
             | AppAction::YankSelection
+            | AppAction::Suspend
     )
 }
