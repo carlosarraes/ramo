@@ -274,7 +274,7 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
 
 #[cfg(unix)]
 fn platform_tty_path() -> Option<String> {
-    let mut buffer = [0_i8; 1024];
+    let mut buffer = [0 as libc::c_char; 1024];
     let result = unsafe { libc::ttyname_r(libc::STDIN_FILENO, buffer.as_mut_ptr(), buffer.len()) };
     if result != 0 {
         return None;
