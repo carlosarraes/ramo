@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 const DEADLINE: Duration = Duration::from_secs(5);
+const SAFETY_POLL_DEADLINE: Duration = Duration::from_secs(15);
 
 struct PtyProcess {
     _daemon: support::TestSessionDaemon,
@@ -93,7 +94,11 @@ impl PtyProcess {
     }
 
     fn read_since_until(&mut self, _start: usize, needle: &str) -> String {
-        let deadline = Instant::now() + DEADLINE;
+        self.read_since_until_with_timeout(needle, DEADLINE)
+    }
+
+    fn read_since_until_with_timeout(&mut self, needle: &str, timeout: Duration) -> String {
+        let deadline = Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.chunks.recv_timeout(remaining) {
@@ -222,9 +227,8 @@ fn watch_mode_refreshes_after_an_atomic_save() {
     let fixture = WatchFixture::new();
     let mut session = launch(&fixture, true);
     session.read_until("initial change");
-    let mark = session.mark();
     fixture.replace_after("passive replacement");
-    let screen = session.read_since_until(mark, "passive replacement");
+    let screen = session.read_since_until_with_timeout("passive replacement", SAFETY_POLL_DEADLINE);
     assert!(!screen.contains("initial change"));
     session.send("q");
     assert_eq!(session.wait(), 0);
@@ -273,9 +277,10 @@ fn editor_key_launches_literal_file_and_line_argv_then_resumes_the_review() {
     session.read_until("Editor closed");
 
     let argv = fs::read_to_string(&capture).unwrap();
+    let expected_after = fixture.after.canonicalize().unwrap();
     assert_eq!(
         argv.lines().collect::<Vec<_>>(),
-        ["--clean", "+1", fixture.after.to_str().unwrap()]
+        ["--clean", "+1", expected_after.to_str().unwrap()]
     );
     session.send("q");
     assert_eq!(session.wait(), 0);

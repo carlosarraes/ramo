@@ -255,6 +255,7 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
     assert!(!rendered.contains("NORMAL"));
     assert!(!rendered.contains("F10 menu"));
     process.send("q");
+    process.read_until_raw(b"\x1b[?1049l");
     assert_eq!(process.wait(), 0);
     assert_eq!(
         process
