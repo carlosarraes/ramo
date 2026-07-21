@@ -5,7 +5,7 @@ use pdiff::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, MovedLineKind, SourceSpec,
 };
 use pdiff::review::{
-    ContextSourceLoader, ReviewController, ReviewOptions, SourceFailure, Viewport,
+    ContextSourceLoader, ReviewController, ReviewOptions, SelectionPoint, SourceFailure, Viewport,
 };
 use pdiff::ui::highlight::{HighlightCache, HighlightCacheStats};
 use pdiff::ui::review::ReviewWidget;
@@ -89,6 +89,15 @@ fn text(buffer: &Buffer) -> String {
 }
 
 fn render_controller(width: u16, height: u16, controller: &mut ReviewController) -> Buffer {
+    render_controller_with_selection(width, height, controller, None)
+}
+
+fn render_controller_with_selection(
+    width: u16,
+    height: u16,
+    controller: &mut ReviewController,
+    selection: Option<(SelectionPoint, SelectionPoint)>,
+) -> Buffer {
     let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
     let mut highlights = HighlightCache::with_capacity(4);
     let backend = TestBackend::new(width, height);
@@ -96,7 +105,7 @@ fn render_controller(width: u16, height: u16, controller: &mut ReviewController)
     terminal
         .draw(|frame| {
             frame.render_widget(
-                ReviewWidget::new(controller, &theme, &mut highlights),
+                ReviewWidget::new(controller, &theme, &mut highlights).selection(selection),
                 frame.area(),
             );
         })
@@ -249,4 +258,40 @@ fn context_source_failures_render_distinct_single_row_states_without_geometry_ju
             "expected {expected:?} in:\n{frame}"
         );
     }
+}
+
+#[test]
+fn stable_selection_projection_is_painted_on_the_selected_terminal_cells() {
+    let viewport = Viewport {
+        width: 80,
+        height: 8,
+    };
+    let mut controller = ReviewController::new(
+        vec![file("src/select.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            ..ReviewOptions::default()
+        },
+    );
+    let selection = controller.selected_line_range(viewport).unwrap();
+    assert_eq!(
+        controller.selection_text(selection.0, selection.1, viewport),
+        "let item00 = 0;"
+    );
+    let buffer = render_controller_with_selection(80, 8, &mut controller, Some(selection));
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let rows = (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+    let (y, row) = rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.contains("let item00"))
+        .unwrap();
+    let x = row.find("let item00").unwrap() as u16;
+    assert_eq!(buffer[(x, y as u16)].bg, theme.accent_muted);
 }

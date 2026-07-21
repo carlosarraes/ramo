@@ -1,6 +1,10 @@
 use std::io;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+    MouseButton, MouseEvent, MouseEventKind,
+};
+use crossterm::execute;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Paragraph;
@@ -11,11 +15,11 @@ use crate::config::ResolvedConfig;
 use crate::diff::model::{DiffFile, DiffLine, LineType};
 use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
-    ReviewOptions, Viewport,
+    ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, Viewport,
 };
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
-use crate::ui::input::{AppAction, InputMode, map_key_event};
+use crate::ui::input::{AppAction, InputMode, map_key_event, map_mouse_event};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 
@@ -37,6 +41,30 @@ pub enum Side {
     Right,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReviewMouseDrag {
+    Divider,
+    Scrollbar,
+    Selection { anchor: SelectionPoint, moved: bool },
+}
+
+fn inclusive_drag_selection(
+    anchor: SelectionPoint,
+    focus: SelectionPoint,
+) -> (SelectionPoint, SelectionPoint) {
+    if (anchor.row, anchor.cell) <= (focus.row, focus.cell) {
+        (
+            anchor,
+            SelectionPoint::new(focus.row, focus.cell.saturating_add(1)),
+        )
+    } else {
+        (
+            SelectionPoint::new(anchor.row, anchor.cell.saturating_add(1)),
+            focus,
+        )
+    }
+}
+
 pub struct App {
     pub files: Vec<DiffFile>,
     pub flat_lines: Vec<FlatLine>,
@@ -52,6 +80,9 @@ pub struct App {
     pub review_theme: AppTheme,
     pub review_highlights: HighlightCache,
     context_loader: Box<dyn ContextSourceLoader>,
+    review_mouse_drag: Option<ReviewMouseDrag>,
+    review_selection: Option<(SelectionPoint, SelectionPoint)>,
+    review_keyboard_anchor: Option<SelectionPoint>,
     input_mode: InputMode,
     filter_buffer: String,
     theme_registry: ThemeRegistry,
@@ -136,6 +167,9 @@ impl App {
             review_theme,
             review_highlights: HighlightCache::default(),
             context_loader,
+            review_mouse_drag: None,
+            review_selection: None,
+            review_keyboard_anchor: None,
             input_mode: InputMode::Normal,
             filter_buffer: String::new(),
             theme_registry,
@@ -248,19 +282,29 @@ impl App {
     }
 
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> io::Result<Vec<Annotation>> {
-        while !self.should_quit {
-            terminal.draw(|frame| self.draw(frame))?;
-            if let Event::Key(key) = event::read()? {
+        execute!(io::stdout(), EnableMouseCapture)?;
+        let run_result = (|| -> io::Result<()> {
+            while !self.should_quit {
+                terminal.draw(|frame| self.draw(frame))?;
                 let size = terminal.size()?;
-                self.handle_key(
-                    key,
-                    Viewport {
-                        width: size.width,
-                        height: size.height,
-                    },
-                );
+                let viewport = Viewport {
+                    width: size.width,
+                    height: size.height,
+                };
+                match event::read()? {
+                    Event::Key(key) => self.handle_key(key, viewport),
+                    Event::Mouse(mouse) => self.handle_mouse(mouse, viewport),
+                    Event::FocusGained
+                    | Event::FocusLost
+                    | Event::Paste(_)
+                    | Event::Resize(_, _) => {}
+                }
             }
-        }
+            Ok(())
+        })();
+        let disable_result = execute!(io::stdout(), DisableMouseCapture);
+        run_result?;
+        disable_result?;
         Ok(self.annotations)
     }
 
@@ -271,7 +315,8 @@ impl App {
                 &mut self.review_controller,
                 &self.review_theme,
                 &mut self.review_highlights,
-            ),
+            )
+            .selection(self.review_selection),
             area,
         );
         if self.input_mode == InputMode::Filter || !self.filter_buffer.is_empty() {
@@ -344,11 +389,116 @@ impl App {
         }
     }
 
+    pub fn handle_mouse(&mut self, event: MouseEvent, viewport: Viewport) {
+        if self.input_mode != InputMode::Normal {
+            return;
+        }
+        if let Some(action) = map_mouse_event(event) {
+            self.apply_app_action(action, viewport);
+            return;
+        }
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let point = ReviewPoint::new(event.column, event.row);
+                match self.review_controller.hit_test(point, viewport) {
+                    Some(ReviewHit::SidebarFile(file_id)) => {
+                        self.review_controller
+                            .apply(ReviewAction::SelectFile(file_id), viewport);
+                    }
+                    Some(ReviewHit::SidebarDivider) => {
+                        self.review_mouse_drag = Some(ReviewMouseDrag::Divider);
+                    }
+                    Some(ReviewHit::Scrollbar) => {
+                        self.review_mouse_drag = Some(ReviewMouseDrag::Scrollbar);
+                        self.review_controller
+                            .scroll_to_mouse_row(event.row, viewport);
+                    }
+                    Some(ReviewHit::Collapsed(gap)) => {
+                        self.toast = self
+                            .review_controller
+                            .toggle_context_gap(&gap, self.context_loader.as_mut(), viewport)
+                            .err()
+                            .map(|failure| failure.to_string());
+                    }
+                    Some(ReviewHit::Diff(anchor)) => {
+                        self.review_keyboard_anchor = None;
+                        self.review_mouse_drag = Some(ReviewMouseDrag::Selection {
+                            anchor,
+                            moved: false,
+                        });
+                        self.review_selection = None;
+                    }
+                    None => {}
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => match self.review_mouse_drag {
+                Some(ReviewMouseDrag::Divider) => {
+                    self.review_controller
+                        .resize_sidebar(event.column, viewport);
+                }
+                Some(ReviewMouseDrag::Scrollbar) => {
+                    self.review_controller
+                        .scroll_to_mouse_row(event.row, viewport);
+                }
+                Some(ReviewMouseDrag::Selection { anchor, .. }) => {
+                    if let Some(ReviewHit::Diff(focus)) = self
+                        .review_controller
+                        .hit_test(ReviewPoint::new(event.column, event.row), viewport)
+                    {
+                        self.review_selection = Some(inclusive_drag_selection(anchor, focus));
+                        self.review_mouse_drag = Some(ReviewMouseDrag::Selection {
+                            anchor,
+                            moved: true,
+                        });
+                    }
+                }
+                None => {}
+            },
+            MouseEventKind::Up(MouseButton::Left) => {
+                if matches!(
+                    self.review_mouse_drag,
+                    Some(ReviewMouseDrag::Selection { moved: true, .. })
+                ) {
+                    self.copy_review_selection(viewport);
+                } else if matches!(
+                    self.review_mouse_drag,
+                    Some(ReviewMouseDrag::Selection { moved: false, .. })
+                ) {
+                    self.review_selection = None;
+                }
+                self.review_mouse_drag = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn copy_review_selection(&mut self, viewport: Viewport) {
+        let Some((anchor, focus)) = self.review_selection else {
+            return;
+        };
+        let text = self
+            .review_controller
+            .selection_text(anchor, focus, viewport);
+        if text.is_empty() {
+            self.toast = Some("nothing to copy".into());
+            return;
+        }
+        self.toast = Some(match crate::clipboard::copy_to_clipboard(&text) {
+            Ok(()) => "copied selection".into(),
+            Err(error) => format!("copy failed: {error}"),
+        });
+    }
+
     fn apply_app_action(&mut self, action: AppAction, viewport: Viewport) {
         match action {
             AppAction::Review(action) => {
                 let effect = self.review_controller.apply(action, viewport);
                 self.apply_review_effect(effect);
+                if let Some(anchor) = self.review_keyboard_anchor
+                    && let Some((_, focus)) = self.review_controller.selected_line_range(viewport)
+                {
+                    self.review_selection = Some((anchor, focus));
+                }
             }
             AppAction::Insert(character) => match self.input_mode {
                 InputMode::Filter => {
@@ -399,6 +549,35 @@ impl App {
                     .toggle_context(self.context_loader.as_mut(), viewport)
                     .err()
                     .map(|failure| failure.to_string());
+            }
+            AppAction::BeginSelection => {
+                if let Some((anchor, focus)) = self.review_controller.selected_line_range(viewport)
+                {
+                    self.review_keyboard_anchor = Some(anchor);
+                    self.review_selection = Some((anchor, focus));
+                }
+            }
+            AppAction::YankSelection => {
+                if self.review_selection.is_none() {
+                    self.review_selection = self.review_controller.selected_line_range(viewport);
+                }
+                self.copy_review_selection(viewport);
+                self.review_keyboard_anchor = None;
+                self.review_selection = None;
+            }
+            AppAction::SendSelection { reset_target } => {
+                if reset_target {
+                    self.tmux_last_target = None;
+                }
+                let selection = self
+                    .review_selection
+                    .or_else(|| self.review_controller.selected_line_range(viewport));
+                if let Some((anchor, focus)) = selection {
+                    let text = self
+                        .review_controller
+                        .selection_text(anchor, focus, viewport);
+                    self.request_tmux_send(text, false);
+                }
             }
             AppAction::DisableSavePrompt | AppAction::Discard => {
                 self.input_mode = InputMode::Normal;
@@ -459,7 +638,10 @@ impl App {
             InputMode::Help | InputMode::Filter | InputMode::SavePrompt => {
                 self.input_mode = InputMode::Normal;
             }
-            InputMode::Normal => {}
+            InputMode::Normal => {
+                self.review_keyboard_anchor = None;
+                self.review_selection = None;
+            }
         }
     }
 

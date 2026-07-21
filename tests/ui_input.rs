@@ -214,6 +214,8 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
         (key(KeyCode::Char('c')), review(ReviewAction::StartNote)),
         (key(KeyCode::Tab), Some(AppAction::ToggleFocus)),
         (key(KeyCode::Char('z')), Some(AppAction::ToggleContext)),
+        (key(KeyCode::Char('V')), Some(AppAction::BeginSelection)),
+        (key(KeyCode::Char('y')), Some(AppAction::YankSelection)),
     ] {
         assert_eq!(map_key_event(event, InputMode::Normal, false), expected);
     }
@@ -232,6 +234,27 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
             false,
         ),
         None
+    );
+    assert_eq!(
+        map_key_event(
+            KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
+            InputMode::Normal,
+            false,
+        ),
+        Some(AppAction::SendSelection {
+            reset_target: false,
+        })
+    );
+    assert_eq!(
+        map_key_event(
+            KeyEvent::new(
+                KeyCode::Char('t'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            InputMode::Normal,
+            false,
+        ),
+        Some(AppAction::SendSelection { reset_target: true })
     );
 }
 

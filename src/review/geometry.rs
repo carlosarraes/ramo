@@ -69,6 +69,70 @@ pub(crate) struct GeometryOptions {
     pub wrap_lines: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StackColumns {
+    pub gutter: usize,
+    pub code_width: usize,
+    pub text_cell: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SplitColumns {
+    pub gutter: usize,
+    pub left_width: usize,
+    pub right_width: usize,
+    pub left_code_width: usize,
+    pub right_code_width: usize,
+    pub divider_cell: usize,
+    pub left_text_cell: usize,
+    pub right_text_cell: usize,
+}
+
+pub(crate) fn stack_columns(
+    content_width: u16,
+    line_digits: usize,
+    show_line_numbers: bool,
+) -> StackColumns {
+    let gutter = if show_line_numbers {
+        line_digits.saturating_mul(2).saturating_add(5)
+    } else {
+        2
+    };
+    StackColumns {
+        gutter,
+        code_width: usize::from(content_width)
+            .saturating_sub(1)
+            .saturating_sub(gutter),
+        text_cell: 1usize.saturating_add(gutter),
+    }
+}
+
+pub(crate) fn split_columns(
+    content_width: u16,
+    line_digits: usize,
+    show_line_numbers: bool,
+) -> SplitColumns {
+    let usable = usize::from(content_width).saturating_sub(2);
+    let left_width = usable / 2;
+    let right_width = usable.saturating_sub(left_width);
+    let gutter = if show_line_numbers {
+        line_digits.saturating_add(3)
+    } else {
+        2
+    };
+    let divider_cell = 1usize.saturating_add(left_width);
+    SplitColumns {
+        gutter,
+        left_width,
+        right_width,
+        left_code_width: left_width.saturating_sub(gutter),
+        right_code_width: right_width.saturating_sub(gutter),
+        divider_cell,
+        left_text_cell: 1usize.saturating_add(gutter),
+        right_text_cell: divider_cell.saturating_add(1).saturating_add(gutter),
+    }
+}
+
 impl GeometryOptions {
     #[cfg(test)]
     pub(crate) fn fixed(content_width: u16, viewport_height: u16) -> Self {
@@ -291,27 +355,21 @@ fn measure_row_height(row: &ReviewRow, line_digits: usize, options: GeometryOpti
 }
 
 fn stack_code_width(options: GeometryOptions, line_digits: usize) -> usize {
-    let gutter = if options.show_line_numbers {
-        line_digits.saturating_mul(2).saturating_add(5)
-    } else {
-        2
-    };
-    usize::from(options.content_width)
-        .saturating_sub(1)
-        .saturating_sub(gutter)
+    stack_columns(
+        options.content_width,
+        line_digits,
+        options.show_line_numbers,
+    )
+    .code_width
 }
 
 fn split_code_widths(options: GeometryOptions, line_digits: usize) -> (usize, usize) {
-    let total = usize::from(options.content_width);
-    let usable = total.saturating_sub(2);
-    let left = usable / 2;
-    let right = usable.saturating_sub(left);
-    let gutter = if options.show_line_numbers {
-        line_digits.saturating_add(3)
-    } else {
-        2
-    };
-    (left.saturating_sub(gutter), right.saturating_sub(gutter))
+    let columns = split_columns(
+        options.content_width,
+        line_digits,
+        options.show_line_numbers,
+    );
+    (columns.left_code_width, columns.right_code_width)
 }
 
 fn wrapped_height(cell: &ReviewCell, content_width: usize) -> usize {

@@ -171,6 +171,22 @@ fn patch_pager_enters_review_ui_and_quits_cleanly() {
             .count(),
         1
     );
+    assert_eq!(
+        process
+            .raw()
+            .windows(8)
+            .filter(|bytes| *bytes == b"\x1b[?1000h")
+            .count(),
+        1
+    );
+    assert_eq!(
+        process
+            .raw()
+            .windows(8)
+            .filter(|bytes| *bytes == b"\x1b[?1000l")
+            .count(),
+        1
+    );
 }
 
 #[cfg(unix)]

@@ -8,16 +8,20 @@ use crate::input::sanitize_terminal_text;
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
 use super::context::{
-    ContextSourceLoader, FileContextState, LoadedContextSource, SourceFailure,
+    ContextSourceLoader, FileContextState, GapKey, LoadedContextSource, SourceFailure,
     derive_collapsed_gaps, select_gap_for_toggle, source_for_context,
 };
 use super::geometry::{
     GeometryOptions, PlannedFile, ReviewGeometry, build_review_geometry, resolve_responsive_layout,
+    split_columns, stack_columns,
 };
 use super::navigation::{signed_offset, wrapping_index};
-use super::row::{EffectiveLayout, ReviewRowKey, build_row_plan_with_context};
+use super::row::{EffectiveLayout, ReviewRow, ReviewRowKey, build_row_plan_with_context};
+use super::selection::{SelectionPoint, SelectionRow, project_selection};
 
-const SIDEBAR_WIDTH: u16 = 34;
+const DEFAULT_SIDEBAR_WIDTH: u16 = 34;
+const MIN_SIDEBAR_WIDTH: u16 = 20;
+const MIN_CONTENT_WIDTH: u16 = 40;
 const SIDEBAR_DIVIDER_WIDTH: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +165,27 @@ pub struct ReviewPosition {
     pub new_line: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReviewPoint {
+    pub x: u16,
+    pub y: u16,
+}
+
+impl ReviewPoint {
+    pub const fn new(x: u16, y: u16) -> Self {
+        Self { x, y }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewHit {
+    SidebarFile(String),
+    SidebarDivider,
+    Scrollbar,
+    Collapsed(GapKey),
+    Diff(SelectionPoint),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewSnapshot {
     pub visible_files: Vec<ReviewFileSnapshot>,
@@ -170,6 +195,7 @@ pub struct ReviewSnapshot {
     pub selected_position: Option<ReviewPosition>,
     pub layout: LayoutMode,
     pub show_sidebar: bool,
+    pub sidebar_width: u16,
     pub line_numbers: bool,
     pub wrap_lines: bool,
     pub hunk_headers: bool,
@@ -193,6 +219,7 @@ pub struct ReviewController {
     scroll_top: usize,
     horizontal_offset: usize,
     sidebar_override: Option<bool>,
+    sidebar_width: u16,
     geometry: Option<ReviewGeometry>,
     planned_files: Vec<PlannedFile>,
     effective_layout: EffectiveLayout,
@@ -225,6 +252,7 @@ impl ReviewController {
             scroll_top: 0,
             horizontal_offset: 0,
             sidebar_override: None,
+            sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             geometry: None,
             planned_files: Vec::new(),
             effective_layout: EffectiveLayout::Stack,
@@ -255,15 +283,234 @@ impl ReviewController {
         }
     }
 
+    pub fn hit_test(&mut self, point: ReviewPoint, viewport: Viewport) -> Option<ReviewHit> {
+        self.ensure_geometry(viewport);
+        if point.x >= viewport.width || point.y >= viewport.height {
+            return None;
+        }
+        if point.x == viewport.width.saturating_sub(1)
+            && self.snapshot.total_height > usize::from(viewport.height)
+        {
+            return Some(ReviewHit::Scrollbar);
+        }
+        let content_x = if self.actual_sidebar {
+            if point.x < self.sidebar_width {
+                return self
+                    .snapshot
+                    .sidebar_entries
+                    .get(usize::from(point.y))
+                    .and_then(|entry| match entry {
+                        SidebarEntrySnapshot::File { id, .. } => {
+                            Some(ReviewHit::SidebarFile(id.clone()))
+                        }
+                        SidebarEntrySnapshot::Group { .. } => None,
+                    });
+            }
+            if point.x == self.sidebar_width {
+                return Some(ReviewHit::SidebarDivider);
+            }
+            self.sidebar_width.saturating_add(SIDEBAR_DIVIDER_WIDTH)
+        } else {
+            0
+        };
+        let relative_x = usize::from(point.x.saturating_sub(content_x));
+        let absolute_y = self.scroll_top.saturating_add(usize::from(point.y));
+        let geometry = self.geometry.as_ref()?;
+        let row_index = geometry
+            .rows
+            .partition_point(|row| row.top.saturating_add(row.height) <= absolute_y);
+        let bound = geometry.rows.get(row_index)?;
+        if absolute_y < bound.top || absolute_y >= bound.top.saturating_add(bound.height) {
+            return None;
+        }
+        let row = self
+            .planned_files
+            .get(bound.file_index)?
+            .plan
+            .rows
+            .get(bound.row_index)?;
+        match row {
+            ReviewRow::Collapsed { gap, .. } => Some(ReviewHit::Collapsed(gap.key.clone())),
+            ReviewRow::Stack { .. } => {
+                let columns = stack_columns(
+                    self.content_width(viewport),
+                    self.planned_files[bound.file_index].plan.line_number_digits,
+                    self.options.line_numbers,
+                );
+                let local = relative_x.checked_sub(columns.text_cell)?;
+                if local >= columns.code_width {
+                    return None;
+                }
+                let wrap_line = absolute_y.saturating_sub(bound.top);
+                let offset = if self.options.wrap_lines {
+                    wrap_line.saturating_mul(columns.code_width)
+                } else {
+                    self.horizontal_offset
+                };
+                Some(ReviewHit::Diff(SelectionPoint::new(
+                    row_index,
+                    columns
+                        .text_cell
+                        .saturating_add(offset)
+                        .saturating_add(local),
+                )))
+            }
+            ReviewRow::Split { .. } => {
+                let columns = split_columns(
+                    self.content_width(viewport),
+                    self.planned_files[bound.file_index].plan.line_number_digits,
+                    self.options.line_numbers,
+                );
+                let (text_cell, code_width) = if relative_x < columns.divider_cell {
+                    (columns.left_text_cell, columns.left_code_width)
+                } else if relative_x > columns.divider_cell {
+                    (columns.right_text_cell, columns.right_code_width)
+                } else {
+                    return None;
+                };
+                let local = relative_x.checked_sub(text_cell)?;
+                if local >= code_width {
+                    return None;
+                }
+                let wrap_line = absolute_y.saturating_sub(bound.top);
+                let offset = if self.options.wrap_lines {
+                    wrap_line.saturating_mul(code_width)
+                } else {
+                    self.horizontal_offset
+                };
+                Some(ReviewHit::Diff(SelectionPoint::new(
+                    row_index,
+                    text_cell.saturating_add(offset).saturating_add(local),
+                )))
+            }
+            ReviewRow::HunkHeader { .. } | ReviewRow::Placeholder { .. } => None,
+        }
+    }
+
+    pub fn selection_text(
+        &mut self,
+        anchor: SelectionPoint,
+        focus: SelectionPoint,
+        viewport: Viewport,
+    ) -> String {
+        self.ensure_geometry(viewport);
+        project_selection(&self.selection_rows(viewport), anchor, focus)
+    }
+
+    pub fn selected_line_range(
+        &mut self,
+        viewport: Viewport,
+    ) -> Option<(SelectionPoint, SelectionPoint)> {
+        self.ensure_geometry(viewport);
+        let geometry = self.geometry.as_ref()?;
+        let selected = self.selected_row_key.as_ref()?;
+        let selected_index = geometry
+            .rows
+            .iter()
+            .position(|bound| &bound.key == selected)?;
+        geometry.rows[selected_index..]
+            .iter()
+            .enumerate()
+            .find_map(|(offset, bound)| {
+                if bound.key.file_id != selected.file_id || bound.hunk_index != selected.hunk_index
+                {
+                    return None;
+                }
+                let plan = &self.planned_files[bound.file_index].plan;
+                let row_index = selected_index.saturating_add(offset);
+                match &plan.rows[bound.row_index] {
+                    ReviewRow::Stack { cell, .. } => {
+                        let columns = stack_columns(
+                            self.content_width(viewport),
+                            plan.line_number_digits,
+                            self.options.line_numbers,
+                        );
+                        let end = columns
+                            .text_cell
+                            .saturating_add(UnicodeWidthStr::width(cell.text().as_str()));
+                        Some((
+                            SelectionPoint::new(row_index, columns.text_cell),
+                            SelectionPoint::new(row_index, end),
+                        ))
+                    }
+                    ReviewRow::Split { left, right, .. } => {
+                        let columns = split_columns(
+                            self.content_width(viewport),
+                            plan.line_number_digits,
+                            self.options.line_numbers,
+                        );
+                        let (text_cell, text) = if right.text().is_empty() {
+                            (columns.left_text_cell, left.text())
+                        } else {
+                            (columns.right_text_cell, right.text())
+                        };
+                        Some((
+                            SelectionPoint::new(row_index, text_cell),
+                            SelectionPoint::new(
+                                row_index,
+                                text_cell.saturating_add(UnicodeWidthStr::width(text.as_str())),
+                            ),
+                        ))
+                    }
+                    ReviewRow::HunkHeader { .. }
+                    | ReviewRow::Collapsed { .. }
+                    | ReviewRow::Placeholder { .. } => None,
+                }
+            })
+    }
+
+    pub fn resize_sidebar(&mut self, width: u16, viewport: Viewport) {
+        let maximum = viewport
+            .width
+            .saturating_sub(MIN_CONTENT_WIDTH + SIDEBAR_DIVIDER_WIDTH)
+            .max(MIN_SIDEBAR_WIDTH);
+        let width = width.clamp(MIN_SIDEBAR_WIDTH, maximum);
+        if self.sidebar_width != width {
+            self.sidebar_width = width;
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+    }
+
+    pub fn scroll_to_mouse_row(&mut self, row: u16, viewport: Viewport) {
+        self.ensure_geometry(viewport);
+        let denominator = usize::from(viewport.height.saturating_sub(1)).max(1);
+        self.scroll_top = self
+            .max_scroll_top()
+            .saturating_mul(usize::from(row.min(viewport.height.saturating_sub(1))))
+            / denominator;
+        self.select_from_viewport(viewport);
+        self.refresh_snapshot();
+    }
+
     pub fn toggle_context(
         &mut self,
         loader: &mut dyn ContextSourceLoader,
         viewport: Viewport,
     ) -> Result<bool, SourceFailure> {
+        self.toggle_context_target(None, loader, viewport)
+    }
+
+    pub fn toggle_context_gap(
+        &mut self,
+        gap: &GapKey,
+        loader: &mut dyn ContextSourceLoader,
+        viewport: Viewport,
+    ) -> Result<bool, SourceFailure> {
+        self.toggle_context_target(Some(gap.clone()), loader, viewport)
+    }
+
+    fn toggle_context_target(
+        &mut self,
+        requested: Option<GapKey>,
+        loader: &mut dyn ContextSourceLoader,
+        viewport: Viewport,
+    ) -> Result<bool, SourceFailure> {
         self.ensure_geometry(viewport);
-        let file_id = self
-            .selected_file_id
-            .clone()
+        let file_id = requested
+            .as_ref()
+            .map(|gap| gap.file_id.clone())
+            .or_else(|| self.selected_file_id.clone())
             .ok_or(SourceFailure::Unavailable)?;
         let file = self
             .files
@@ -271,12 +518,19 @@ impl ReviewController {
             .find(|file| file.id == file_id)
             .cloned()
             .ok_or(SourceFailure::Unavailable)?;
-        let selected_hunk = self.selected_hunk_index.unwrap_or(0);
+        let selected_hunk = requested.as_ref().map_or_else(
+            || self.selected_hunk_index.unwrap_or(0),
+            |gap| gap.hunk_index,
+        );
         let initial_gaps = self.contexts.get(&file_id).map_or_else(
             || derive_collapsed_gaps(&file, None),
             |context| context.gaps(&file),
         );
-        let mut target = select_gap_for_toggle(&initial_gaps, selected_hunk).cloned();
+        let mut target =
+            requested.filter(|requested| initial_gaps.iter().any(|gap| gap.key == *requested));
+        if target.is_none() {
+            target = select_gap_for_toggle(&initial_gaps, selected_hunk).cloned();
+        }
 
         if let Some(target) = &target
             && self
@@ -491,7 +745,7 @@ impl ReviewController {
         let content_width = if self.actual_sidebar {
             viewport
                 .width
-                .saturating_sub(SIDEBAR_WIDTH + SIDEBAR_DIVIDER_WIDTH)
+                .saturating_sub(self.sidebar_width + SIDEBAR_DIVIDER_WIDTH)
         } else {
             viewport.width
         };
@@ -685,30 +939,88 @@ impl ReviewController {
             .map_or(0, ReviewGeometry::max_scroll_top)
     }
 
+    fn content_width(&self, viewport: Viewport) -> u16 {
+        if self.actual_sidebar {
+            viewport
+                .width
+                .saturating_sub(self.sidebar_width + SIDEBAR_DIVIDER_WIDTH)
+        } else {
+            viewport.width
+        }
+    }
+
+    fn selection_rows(&self, viewport: Viewport) -> Vec<SelectionRow> {
+        let content_width = self.content_width(viewport);
+        self.geometry
+            .as_ref()
+            .into_iter()
+            .flat_map(|geometry| &geometry.rows)
+            .map(|bound| {
+                let plan = &self.planned_files[bound.file_index].plan;
+                match &plan.rows[bound.row_index] {
+                    ReviewRow::Stack { cell, .. } => {
+                        let columns = stack_columns(
+                            content_width,
+                            plan.line_number_digits,
+                            self.options.line_numbers,
+                        );
+                        SelectionRow::stack_at(cell.text(), columns.text_cell)
+                    }
+                    ReviewRow::Split { left, right, .. } => {
+                        let columns = split_columns(
+                            content_width,
+                            plan.line_number_digits,
+                            self.options.line_numbers,
+                        );
+                        SelectionRow::split_at(
+                            left.text(),
+                            right.text(),
+                            columns.divider_cell,
+                            columns.left_text_cell,
+                            columns.right_text_cell,
+                        )
+                    }
+                    ReviewRow::HunkHeader { text, .. }
+                    | ReviewRow::Placeholder { text, .. }
+                    | ReviewRow::Collapsed { text, .. } => SelectionRow::stack(text),
+                }
+            })
+            .collect()
+    }
+
     fn max_horizontal_offset(&self, viewport: Viewport) -> usize {
         if self.options.wrap_lines {
             return 0;
         }
-        let widest = self
-            .visible_indices
+        let content_width = self.content_width(viewport);
+        self.planned_files
             .iter()
-            .flat_map(|index| &self.files[*index].hunks)
-            .flat_map(|hunk| &hunk.lines)
-            .map(|line| {
-                let text = sanitize_terminal_text(&line.content, false).replace('\t', "  ");
-                UnicodeWidthStr::width(text.as_str())
+            .flat_map(|planned| {
+                let digits = planned.plan.line_number_digits;
+                planned.plan.rows.iter().map(move |row| match row {
+                    ReviewRow::Stack { cell, .. } => {
+                        let columns =
+                            stack_columns(content_width, digits, self.options.line_numbers);
+                        UnicodeWidthStr::width(cell.text().as_str())
+                            .saturating_sub(columns.code_width)
+                    }
+                    ReviewRow::Split { left, right, .. } => {
+                        let columns =
+                            split_columns(content_width, digits, self.options.line_numbers);
+                        UnicodeWidthStr::width(left.text().as_str())
+                            .saturating_sub(columns.left_code_width)
+                            .max(
+                                UnicodeWidthStr::width(right.text().as_str())
+                                    .saturating_sub(columns.right_code_width),
+                            )
+                    }
+                    ReviewRow::HunkHeader { .. }
+                    | ReviewRow::Collapsed { .. }
+                    | ReviewRow::Placeholder { .. } => 0,
+                })
             })
             .max()
-            .unwrap_or(0);
-        let mut width = viewport.width;
-        if self.actual_sidebar {
-            width = width.saturating_sub(SIDEBAR_WIDTH + SIDEBAR_DIVIDER_WIDTH);
-        }
-        let code_width = match self.effective_layout {
-            EffectiveLayout::Split => usize::from(width / 2).saturating_sub(8),
-            EffectiveLayout::Stack => usize::from(width).saturating_sub(12),
-        };
-        widest.saturating_sub(code_width)
+            .unwrap_or(0)
     }
 
     fn edit_effect(&self) -> ReviewEffect {
@@ -765,6 +1077,7 @@ impl ReviewController {
                 EffectiveLayout::Stack => LayoutMode::Stack,
             },
             show_sidebar: self.actual_sidebar,
+            sidebar_width: self.sidebar_width,
             line_numbers: self.options.line_numbers,
             wrap_lines: self.options.wrap_lines,
             hunk_headers: self.options.hunk_headers,
@@ -909,6 +1222,7 @@ fn empty_snapshot() -> ReviewSnapshot {
         selected_position: None,
         layout: LayoutMode::Stack,
         show_sidebar: false,
+        sidebar_width: DEFAULT_SIDEBAR_WIDTH,
         line_numbers: true,
         wrap_lines: false,
         hunk_headers: true,

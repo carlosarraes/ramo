@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::core::input::LayoutMode;
 use crate::review::{ReviewAction, ScrollUnit};
@@ -23,6 +23,9 @@ pub enum AppAction {
     MoveChoice(i32),
     ToggleFocus,
     ToggleContext,
+    BeginSelection,
+    YankSelection,
+    SendSelection { reset_target: bool },
     DisableSavePrompt,
     Discard,
 }
@@ -51,7 +54,32 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
     }
 }
 
+pub fn map_mouse_event(event: MouseEvent) -> Option<AppAction> {
+    let horizontal = event.modifiers.contains(KeyModifiers::SHIFT);
+    let action = match event.kind {
+        MouseEventKind::ScrollUp if horizontal => ReviewAction::ScrollHorizontal(-3),
+        MouseEventKind::ScrollDown if horizontal => ReviewAction::ScrollHorizontal(3),
+        MouseEventKind::ScrollUp => ReviewAction::Scroll {
+            delta: -3,
+            unit: ScrollUnit::Step,
+        },
+        MouseEventKind::ScrollDown => ReviewAction::Scroll {
+            delta: 3,
+            unit: ScrollUnit::Step,
+        },
+        MouseEventKind::ScrollLeft => ReviewAction::ScrollHorizontal(-3),
+        MouseEventKind::ScrollRight => ReviewAction::ScrollHorizontal(3),
+        _ => return None,
+    };
+    Some(AppAction::Review(action))
+}
+
 fn map_normal(event: KeyEvent) -> Option<AppAction> {
+    if event.code == KeyCode::Char('t') && event.modifiers.contains(KeyModifiers::CONTROL) {
+        return Some(AppAction::SendSelection {
+            reset_target: event.modifiers.contains(KeyModifiers::SHIFT),
+        });
+    }
     if event
         .modifiers
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
@@ -121,6 +149,8 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('t') => review(ReviewAction::OpenThemeSelector),
         KeyCode::Char('a') => review(ReviewAction::ToggleAgentNotes),
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
+        KeyCode::Char('V') => Some(AppAction::BeginSelection),
+        KeyCode::Char('y') => Some(AppAction::YankSelection),
         KeyCode::Char('l') => review(ReviewAction::ToggleLineNumbers),
         KeyCode::Char('w') => review(ReviewAction::ToggleWrap),
         KeyCode::Char('m') => review(ReviewAction::ToggleHunkHeaders),
@@ -131,6 +161,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Tab => Some(AppAction::ToggleFocus),
         KeyCode::Char('?') => review(ReviewAction::OpenHelp),
         KeyCode::Char('q') => review(ReviewAction::Quit),
+        KeyCode::Esc => Some(AppAction::Cancel),
         _ => None,
     }
 }
@@ -172,6 +203,7 @@ fn pager_action(action: &AppAction) -> bool {
                 | ReviewAction::ToggleWrap
                 | ReviewAction::ToggleSidebar
                 | ReviewAction::Quit
-        )
+        ) | AppAction::BeginSelection
+            | AppAction::YankSelection
     )
 }

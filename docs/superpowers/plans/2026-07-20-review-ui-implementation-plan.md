@@ -472,7 +472,7 @@ git commit -m "feat: expand collapsed diff context natively"
 - Consumes: shared row bounds/cell spans, terminal cell coordinates, Crossterm mouse events and clipboard integration.
 - Produces: text selection projections, hit-tested mouse actions, draggable sidebar divider/scrollbar and OSC 52 copy effects.
 
-- [ ] **Step 1: Write failing selection and mouse tests**
+- [x] **Step 1: Write failing selection and mouse tests**
 
 Verify:
 
@@ -485,25 +485,25 @@ Verify:
 7. Dragging the sidebar divider clamps to a minimum and a terminal-relative maximum; non-left buttons and release-without-drag do nothing.
 8. Mouse coordinates outside current hit regions never mutate state.
 
-- [ ] **Step 2: Run mouse/selection tests and verify red**
+- [x] **Step 2: Run mouse/selection tests and verify red**
 
 Run: `cargo test --test review_selection && cargo test --test ui_mouse`
 
 Expected: compilation fails on selection and hit-testing APIs.
 
-- [ ] **Step 3: Implement shared-coordinate interaction**
+- [x] **Step 3: Implement shared-coordinate interaction**
 
 Enable mouse capture only while the review UI owns the terminal and disable it on every normal return. All hit regions come from the same rendered geometry snapshot. Use `unicode-width` to map cells to grapheme-safe boundaries; add `unicode-segmentation` only if tests demonstrate scalar iteration is insufficient.
 
 Retain keyboard `V`/`y` selection and existing clipboard/tmux flows through the new stable row selection projection. Mouse copy uses the same projection and clipboard function.
 
-- [ ] **Step 4: Run input/render/mouse regressions**
+- [x] **Step 4: Run input/render/mouse regressions**
 
 Run: `cargo test --test review_selection && cargo test --test ui_mouse && cargo test --test ui_input && cargo test --test ui_render && cargo clippy --all-targets --all-features -- -D warnings`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit mouse and selection behavior**
+- [x] **Step 5: Commit mouse and selection behavior**
 
 ```bash
 git add Cargo.toml Cargo.lock src/review src/ui src/app.rs src/runtime.rs tests/review_selection.rs tests/ui_mouse.rs

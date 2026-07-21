@@ -5,19 +5,20 @@ use ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthChar;
 
 use crate::diff::model::{DiffFile, LineType, MovedLineKind};
-use crate::review::geometry::RowBounds;
+use crate::review::geometry::{RowBounds, split_columns, stack_columns};
 use crate::review::row::{CellKind, ReviewCell, ReviewRow};
-use crate::review::{ReviewController, ReviewFileStatus, SidebarEntrySnapshot, Viewport};
+use crate::review::{
+    ReviewController, ReviewFileStatus, SelectionPoint, SidebarEntrySnapshot, Viewport,
+};
 
 use super::highlight::HighlightCache;
 use super::themes::{AppTheme, ReviewLineStyle};
-
-const SIDEBAR_WIDTH: u16 = 34;
 
 pub struct ReviewWidget<'a> {
     controller: &'a mut ReviewController,
     theme: &'a AppTheme,
     highlights: &'a mut HighlightCache,
+    selection: Option<(SelectionPoint, SelectionPoint)>,
 }
 
 impl<'a> ReviewWidget<'a> {
@@ -30,7 +31,13 @@ impl<'a> ReviewWidget<'a> {
             controller,
             theme,
             highlights,
+            selection: None,
         }
+    }
+
+    pub fn selection(mut self, selection: Option<(SelectionPoint, SelectionPoint)>) -> Self {
+        self.selection = selection;
+        self
     }
 }
 
@@ -47,23 +54,31 @@ impl Widget for ReviewWidget<'_> {
             height: area.height,
         };
         let view = self.controller.render_view(viewport);
-        let content = if view.snapshot.show_sidebar && area.width > SIDEBAR_WIDTH + 1 {
-            let sidebar = Rect::new(area.x, area.y, SIDEBAR_WIDTH, area.height);
+        let sidebar_width = view.snapshot.sidebar_width;
+        let content = if view.snapshot.show_sidebar && area.width > sidebar_width + 1 {
+            let sidebar = Rect::new(area.x, area.y, sidebar_width, area.height);
             render_sidebar(sidebar, buffer, view.snapshot, self.theme);
-            let divider_x = area.x.saturating_add(SIDEBAR_WIDTH);
+            let divider_x = area.x.saturating_add(sidebar_width);
             for y in area.y..area.bottom() {
                 buffer.set_stringn(divider_x, y, "│", 1, Style::default().fg(self.theme.border));
             }
             Rect::new(
                 divider_x.saturating_add(1),
                 area.y,
-                area.width.saturating_sub(SIDEBAR_WIDTH + 1),
+                area.width.saturating_sub(sidebar_width + 1),
                 area.height,
             )
         } else {
             area
         };
-        render_stream(content, buffer, view, self.theme, self.highlights);
+        render_stream(
+            content,
+            buffer,
+            view,
+            self.theme,
+            self.highlights,
+            self.selection,
+        );
     }
 }
 
@@ -149,6 +164,7 @@ fn render_stream(
     view: crate::review::state::ReviewRenderView<'_>,
     theme: &AppTheme,
     highlights: &mut HighlightCache,
+    selection: Option<(SelectionPoint, SelectionPoint)>,
 ) {
     if area.is_empty() {
         return;
@@ -186,7 +202,7 @@ fn render_stream(
     let window = view
         .geometry
         .visible_window(scroll, usize::from(area.height), 2);
-    for bound in &view.geometry.rows[window.range] {
+    for (window_offset, bound) in view.geometry.rows[window.range.clone()].iter().enumerate() {
         let Some(y) = visible_y(bound.top, scroll, area) else {
             continue;
         };
@@ -204,8 +220,11 @@ fn render_stream(
             view.snapshot,
             theme,
             highlights,
+            window.range.start.saturating_add(window_offset),
+            selection,
         );
     }
+    render_scrollbar(area, buffer, view.snapshot, theme);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -220,6 +239,8 @@ fn render_row(
     snapshot: &crate::review::ReviewSnapshot,
     theme: &AppTheme,
     highlights: &mut HighlightCache,
+    geometry_row: usize,
+    selection: Option<(SelectionPoint, SelectionPoint)>,
 ) {
     match row {
         ReviewRow::HunkHeader { text, .. } => {
@@ -255,12 +276,7 @@ fn render_row(
             );
         }
         ReviewRow::Stack { cell, .. } => {
-            let gutter = if snapshot.line_numbers {
-                digits.saturating_mul(2).saturating_add(5)
-            } else {
-                2
-            };
-            let code_width = usize::from(area.width).saturating_sub(1 + gutter);
+            let columns = stack_columns(area.width, digits, snapshot.line_numbers);
             for line in 0..bound.height {
                 let draw_y = y.saturating_add(line as u16);
                 if draw_y >= area.bottom() {
@@ -269,8 +285,8 @@ fn render_row(
                 render_cell(
                     area.x + 1,
                     draw_y,
-                    gutter,
-                    code_width,
+                    columns.gutter,
+                    columns.code_width,
                     line,
                     cell,
                     file,
@@ -280,18 +296,18 @@ fn render_row(
                     theme,
                     highlights,
                     true,
+                    selected_cell_range(
+                        selection,
+                        geometry_row,
+                        columns.text_cell,
+                        cell.text().as_str(),
+                    ),
+                    columns.text_cell,
                 );
             }
         }
         ReviewRow::Split { left, right, .. } => {
-            let usable = usize::from(area.width).saturating_sub(2);
-            let left_width = usable / 2;
-            let right_width = usable.saturating_sub(left_width);
-            let gutter = if snapshot.line_numbers {
-                digits.saturating_add(3)
-            } else {
-                2
-            };
+            let columns = split_columns(area.width, digits, snapshot.line_numbers);
             for line in 0..bound.height {
                 let draw_y = y.saturating_add(line as u16);
                 if draw_y >= area.bottom() {
@@ -300,8 +316,8 @@ fn render_row(
                 render_cell(
                     area.x + 1,
                     draw_y,
-                    gutter,
-                    left_width.saturating_sub(gutter),
+                    columns.gutter,
+                    columns.left_code_width,
                     line,
                     left,
                     file,
@@ -311,14 +327,25 @@ fn render_row(
                     theme,
                     highlights,
                     false,
+                    (selection_side(selection, columns.divider_cell) != Some(true))
+                        .then(|| {
+                            selected_cell_range(
+                                selection,
+                                geometry_row,
+                                columns.left_text_cell,
+                                left.text().as_str(),
+                            )
+                        })
+                        .flatten(),
+                    columns.left_text_cell,
                 );
-                let divider = area.x.saturating_add(1 + left_width as u16);
+                let divider = area.x.saturating_add(columns.divider_cell as u16);
                 buffer.set_stringn(divider, draw_y, "│", 1, Style::default().fg(theme.border));
                 render_cell(
                     divider + 1,
                     draw_y,
-                    gutter,
-                    right_width.saturating_sub(gutter),
+                    columns.gutter,
+                    columns.right_code_width,
                     line,
                     right,
                     file,
@@ -328,6 +355,17 @@ fn render_row(
                     theme,
                     highlights,
                     false,
+                    (selection_side(selection, columns.divider_cell) != Some(false))
+                        .then(|| {
+                            selected_cell_range(
+                                selection,
+                                geometry_row,
+                                columns.right_text_cell,
+                                right.text().as_str(),
+                            )
+                        })
+                        .flatten(),
+                    columns.right_text_cell,
                 );
             }
         }
@@ -349,6 +387,8 @@ fn render_cell(
     theme: &AppTheme,
     highlights: &mut HighlightCache,
     stack: bool,
+    selection: Option<std::ops::Range<usize>>,
+    text_cell: usize,
 ) {
     let kind = semantic_kind(cell);
     let row_style = theme.row_style(kind);
@@ -394,6 +434,60 @@ fn render_cell(
         theme,
         kind,
     );
+    if let Some(selection) = selection {
+        let visible = text_cell.saturating_add(offset)
+            ..text_cell.saturating_add(offset).saturating_add(code_width);
+        let start = selection.start.max(visible.start);
+        let end = selection.end.min(visible.end);
+        if start < end {
+            buffer.set_style(
+                Rect::new(
+                    x.saturating_add(gutter as u16)
+                        .saturating_add(start.saturating_sub(visible.start) as u16),
+                    y,
+                    end.saturating_sub(start) as u16,
+                    1,
+                ),
+                Style::default().bg(theme.accent_muted),
+            );
+        }
+    }
+}
+
+fn selection_side(
+    selection: Option<(SelectionPoint, SelectionPoint)>,
+    divider_cell: usize,
+) -> Option<bool> {
+    selection.map(|(anchor, _)| anchor.cell > divider_cell)
+}
+
+fn selected_cell_range(
+    selection: Option<(SelectionPoint, SelectionPoint)>,
+    row: usize,
+    text_cell: usize,
+    text: &str,
+) -> Option<std::ops::Range<usize>> {
+    let (anchor, focus) = selection?;
+    let (start, end) = if (anchor.row, anchor.cell) <= (focus.row, focus.cell) {
+        (anchor, focus)
+    } else {
+        (focus, anchor)
+    };
+    if row < start.row || row > end.row {
+        return None;
+    }
+    let text_end = text_cell.saturating_add(unicode_width::UnicodeWidthStr::width(text));
+    let from = if row == start.row {
+        start.cell.max(text_cell)
+    } else {
+        text_cell
+    };
+    let to = if row == end.row {
+        end.cell.min(text_end)
+    } else {
+        text_end
+    };
+    (from < to).then_some(from..to)
 }
 
 fn render_emphasis(
@@ -514,6 +608,42 @@ fn fill_line(area: Rect, y: u16, buffer: &mut Buffer, background: ratatui::style
         Rect::new(area.x, y, area.width, 1),
         Style::default().bg(background),
     );
+}
+
+fn render_scrollbar(
+    area: Rect,
+    buffer: &mut Buffer,
+    snapshot: &crate::review::ReviewSnapshot,
+    theme: &AppTheme,
+) {
+    if area.is_empty() || snapshot.total_height <= usize::from(area.height) {
+        return;
+    }
+    let height = usize::from(area.height);
+    let thumb_height = height
+        .saturating_mul(height)
+        .checked_div(snapshot.total_height)
+        .unwrap_or(1)
+        .clamp(1, height);
+    let travel = height.saturating_sub(thumb_height);
+    let thumb_top = snapshot
+        .scroll_top
+        .saturating_mul(travel)
+        .checked_div(snapshot.max_scroll_top.max(1))
+        .unwrap_or(0);
+    let x = area.right().saturating_sub(1);
+    for row in 0..height {
+        let in_thumb = (thumb_top..thumb_top.saturating_add(thumb_height)).contains(&row);
+        buffer.set_stringn(
+            x,
+            area.y.saturating_add(row as u16),
+            if in_thumb { "█" } else { "│" },
+            1,
+            Style::default()
+                .fg(if in_thumb { theme.accent } else { theme.border })
+                .bg(theme.background),
+        );
+    }
 }
 
 fn file_header(file: &DiffFile, status: ReviewFileStatus) -> String {
