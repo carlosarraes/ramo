@@ -152,12 +152,11 @@ impl App {
             let flat_idx = from + i;
 
             // In focus mode, skip lines hidden by the renderer
-            if self.focus_mode {
-                if let Some(line) = self.get_line(flat_idx) {
-                    if self.line_hidden_on_side(line) {
-                        continue;
-                    }
-                }
+            if self.focus_mode
+                && let Some(line) = self.get_line(flat_idx)
+                && self.line_hidden_on_side(line)
+            {
+                continue;
             }
 
             if last_file != Some(fl.file_idx) {
@@ -174,16 +173,15 @@ impl App {
             }
             rows += 1;
 
-            if self.show_comments && flat_idx < to {
-                if let Some(ann) = self
+            if self.show_comments
+                && flat_idx < to
+                && let Some(ann) = self
                     .annotations
                     .iter()
                     .find(|a| flat_idx >= a.flat_start && flat_idx <= a.flat_end)
-                {
-                    if flat_idx == ann.flat_end {
-                        rows += ann.comment.lines().count();
-                    }
-                }
+                && flat_idx == ann.flat_end
+            {
+                rows += ann.comment.lines().count();
             }
         }
         rows
@@ -465,22 +463,22 @@ impl App {
     fn submit_comment(&mut self) {
         if self.comment_buf.trim().is_empty() {
             // If editing and user cleared the comment, delete the annotation
-            if let Some(idx) = self.editing_annotation.take() {
-                if idx < self.annotations.len() {
-                    self.annotations.remove(idx);
-                }
+            if let Some(idx) = self.editing_annotation.take()
+                && idx < self.annotations.len()
+            {
+                self.annotations.remove(idx);
             }
             self.comment_buf.clear();
             return;
         }
 
         // If editing an existing annotation, update in place
-        if let Some(idx) = self.editing_annotation.take() {
-            if idx < self.annotations.len() {
-                self.annotations[idx].comment = self.comment_buf.clone();
-                self.comment_buf.clear();
-                return;
-            }
+        if let Some(idx) = self.editing_annotation.take()
+            && idx < self.annotations.len()
+        {
+            self.annotations[idx].comment = self.comment_buf.clone();
+            self.comment_buf.clear();
+            return;
         }
 
         let (start, end) = match self.comment_selection.take() {
@@ -547,10 +545,9 @@ impl App {
                 .and_then(|f| f.hunks.get(fl.hunk_idx))
                 .and_then(|h| h.lines.get(fl.line_idx))
                 .map(|l| &l.content)
+                && content.to_lowercase().contains(&query)
             {
-                if content.to_lowercase().contains(&query) {
-                    self.search_matches.push(i);
-                }
+                self.search_matches.push(i);
             }
         }
     }
@@ -665,7 +662,7 @@ impl App {
                 line_count,
                 if line_count == 1 { "" } else { "s" }
             ),
-            Err(e) => format!("yank failed: {}", e),
+            Err(e) => format!("yank failed: {e}"),
         });
     }
 
@@ -700,7 +697,7 @@ impl App {
         let panes = match crate::tmux::list_panes() {
             Ok(p) => p,
             Err(e) => {
-                self.toast = Some(format!("tmux list failed: {}", e));
+                self.toast = Some(format!("tmux list failed: {e}"));
                 self.tmux_pending_text.clear();
                 self.tmux_save_annotation_on_send = false;
                 return;
@@ -739,7 +736,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toast = Some(format!("send failed: {}", e));
+                self.toast = Some(format!("send failed: {e}"));
             }
         }
         self.tmux_panes.clear();
@@ -823,8 +820,8 @@ impl App {
         }
 
         let range = match (min_line, max_line) {
-            (Some(a), Some(b)) if a != b => format!(":{}-{}", a, b),
-            (Some(a), _) => format!(":{}", a),
+            (Some(a), Some(b)) if a != b => format!(":{a}-{b}"),
+            (Some(a), _) => format!(":{a}"),
             _ => String::new(),
         };
 
@@ -868,16 +865,16 @@ impl App {
     }
 
     fn snap_cursor_to_visible_line(&mut self) {
-        if let Some(line) = self.get_line(self.cursor) {
-            if self.line_hidden_on_side(line) {
-                let visible = |i: usize| {
-                    self.get_line(i)
-                        .is_some_and(|l| !self.line_hidden_on_side(l))
-                };
-                let forward = (self.cursor + 1..self.flat_lines.len()).find(|&i| visible(i));
-                let backward = (0..self.cursor).rev().find(|&i| visible(i));
-                self.cursor = forward.or(backward).unwrap_or(self.cursor);
-            }
+        if let Some(line) = self.get_line(self.cursor)
+            && self.line_hidden_on_side(line)
+        {
+            let visible = |i: usize| {
+                self.get_line(i)
+                    .is_some_and(|l| !self.line_hidden_on_side(l))
+            };
+            let forward = (self.cursor + 1..self.flat_lines.len()).find(|&i| visible(i));
+            let backward = (0..self.cursor).rev().find(|&i| visible(i));
+            self.cursor = forward.or(backward).unwrap_or(self.cursor);
         }
     }
 

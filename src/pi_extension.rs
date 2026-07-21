@@ -6,7 +6,7 @@ const EXTENSION_SOURCE: &str = include_str!("pi_extension_src.ts");
 
 fn resolve_dir(target: &str) -> io::Result<PathBuf> {
     if target != "pi" {
-        eprintln!("Unknown target: {}. Supported: pi", target);
+        eprintln!("Unknown target: {target}. Supported: pi");
         std::process::exit(1);
     }
 

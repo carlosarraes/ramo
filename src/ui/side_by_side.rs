@@ -55,7 +55,7 @@ fn render_diff(frame: &mut Frame, area: Rect, app: &App) {
         let para = Paragraph::new(lines).block(Block::default().borders(Borders::NONE));
         frame.render_widget(para, area);
     } else if app.show_file_list {
-        let flist_width = (area.width as f32 * 0.15).max(16.0).min(30.0) as u16;
+        let flist_width = (area.width as f32 * 0.15).clamp(16.0, 30.0) as u16;
         let content_width = area.width.saturating_sub(flist_width + 2);
         let half_content = content_width / 2;
 
@@ -96,12 +96,12 @@ fn render_file_list(frame: &mut Frame, area: Rect, app: &App, width: u16) {
     lines.push(Line::from(vec![
         Span::styled(format!("{} files ", app.files.len()), app.theme.file_header),
         Span::styled(
-            format!("+{}", total_adds),
+            format!("+{total_adds}"),
             app.theme.line_style(&LineType::Addition),
         ),
         Span::styled(" ", Style::default()),
         Span::styled(
-            format!("-{}", total_dels),
+            format!("-{total_dels}"),
             app.theme.line_style(&LineType::Deletion),
         ),
     ]));
@@ -124,13 +124,13 @@ fn render_file_list(frame: &mut Frame, area: Rect, app: &App, width: u16) {
         ];
         if adds > 0 {
             spans.push(Span::styled(
-                format!(" +{}", adds),
+                format!(" +{adds}"),
                 app.theme.line_style(&LineType::Addition),
             ));
         }
         if dels > 0 {
             spans.push(Span::styled(
-                format!(" -{}", dels),
+                format!(" -{dels}"),
                 app.theme.line_style(&LineType::Deletion),
             ));
         }
@@ -252,18 +252,19 @@ fn build_diff_lines<'a>(app: &'a App, viewport_height: usize) -> Vec<Line<'a>> {
         lines.push(Line::from(spans));
         rows += 1;
 
-        if let Some(ann) = annotation {
-            if app.show_comments && flat_idx == ann.flat_end {
-                for cl in ann.comment.lines() {
-                    if rows >= viewport_height {
-                        break;
-                    }
-                    lines.push(Line::from(vec![
-                        Span::styled("     ", Style::default()),
-                        Span::styled(format!("# {}", cl), app.theme.comment_indicator),
-                    ]));
-                    rows += 1;
+        if let Some(ann) = annotation
+            && app.show_comments
+            && flat_idx == ann.flat_end
+        {
+            for cl in ann.comment.lines() {
+                if rows >= viewport_height {
+                    break;
                 }
+                lines.push(Line::from(vec![
+                    Span::styled("     ", Style::default()),
+                    Span::styled(format!("# {cl}"), app.theme.comment_indicator),
+                ]));
+                rows += 1;
             }
         }
 
@@ -426,28 +427,29 @@ fn render_split_panels(
         }
         rows += 1;
 
-        if let Some(ann) = annotation {
-            if app.show_comments && flat_idx == ann.flat_end {
-                for cl in ann.comment.lines() {
-                    if rows >= viewport_height {
-                        break;
-                    }
-                    let comment_span = Line::from(vec![
-                        Span::styled("     ", Style::default()),
-                        Span::styled(format!("# {}", cl), app.theme.comment_indicator),
-                    ]);
-                    // Show comment on the side matching the line type
-                    let on_left = diff_line.kind == LineType::Deletion
-                        || (diff_line.kind == LineType::Context && app.focus_side == Side::Left);
-                    if on_left {
-                        left_lines.push(comment_span);
-                        right_lines.push(Line::default());
-                    } else {
-                        left_lines.push(Line::default());
-                        right_lines.push(comment_span);
-                    }
-                    rows += 1;
+        if let Some(ann) = annotation
+            && app.show_comments
+            && flat_idx == ann.flat_end
+        {
+            for cl in ann.comment.lines() {
+                if rows >= viewport_height {
+                    break;
                 }
+                let comment_span = Line::from(vec![
+                    Span::styled("     ", Style::default()),
+                    Span::styled(format!("# {cl}"), app.theme.comment_indicator),
+                ]);
+                // Show comment on the side matching the line type
+                let on_left = diff_line.kind == LineType::Deletion
+                    || (diff_line.kind == LineType::Context && app.focus_side == Side::Left);
+                if on_left {
+                    left_lines.push(comment_span);
+                    right_lines.push(Line::default());
+                } else {
+                    left_lines.push(Line::default());
+                    right_lines.push(comment_span);
+                }
+                rows += 1;
             }
         }
 
@@ -476,6 +478,9 @@ fn render_split_panels(
     );
 }
 
+// The renderer keeps paired-panel state explicit until the UI parity slice
+// replaces this legacy function with a deeper rendering module.
+#[allow(clippy::too_many_arguments)]
 fn push_diff_line<'a>(
     kind: &LineType,
     diff_line: &crate::diff::model::DiffLine,
@@ -541,7 +546,7 @@ fn truncate_line(line: Line<'_>, max_width: u16) -> Line<'_> {
             let remaining = max.saturating_sub(width);
             if remaining > 1 {
                 let truncated: String = span.content.chars().take(remaining - 1).collect();
-                new_spans.push(Span::styled(format!("{}…", truncated), span.style));
+                new_spans.push(Span::styled(format!("{truncated}…"), span.style));
             } else if remaining == 1 {
                 new_spans.push(Span::styled("…", span.style));
             }
@@ -553,7 +558,7 @@ fn truncate_line(line: Line<'_>, max_width: u16) -> Line<'_> {
 }
 
 fn render_tmux_pane_picker(frame: &mut Frame, diff_area: Rect, app: &App) {
-    let popup_width = (diff_area.width as f32 * 0.6).max(40.0).min(100.0) as u16;
+    let popup_width = (diff_area.width as f32 * 0.6).clamp(40.0, 100.0) as u16;
     let list_rows = app.tmux_panes.len() as u16;
     let desired_height = list_rows.saturating_add(3); // border + hint + padding
     let popup_height = desired_height.min(diff_area.height).max(5);
@@ -619,7 +624,7 @@ fn render_comment_popup(frame: &mut Frame, diff_area: Rect, app: &App) {
         .rendered_rows_between(app.scroll_offset, app.cursor)
         .min(diff_area.height as usize);
 
-    let popup_width = (diff_area.width as f32 * 0.5).max(30.0).min(60.0) as u16;
+    let popup_width = (diff_area.width as f32 * 0.5).clamp(30.0, 60.0) as u16;
     let inner_width = popup_width.saturating_sub(2) as usize;
 
     // Count rendered rows given hard newlines AND soft wrap.
@@ -723,7 +728,7 @@ fn short_filename(path: &str, max_width: usize) -> String {
             let skip = name_chars.saturating_sub(max_width - 1);
             format!("…{}", name.chars().skip(skip).collect::<String>())
         } else {
-            format!("…/{}", name)
+            format!("…/{name}")
         }
     } else {
         path.chars().take(max_width).collect()
@@ -767,16 +772,13 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let toast = app
         .toast
         .as_deref()
-        .map(|t| format!(" {} ", t))
+        .map(|t| format!(" {t} "))
         .unwrap_or_default();
 
     let bar = Line::from(vec![
         Span::styled(format!(" {} ", app.mode.label()), mode_style),
-        Span::styled(
-            format!(" {} ", side_label),
-            Style::default().fg(Color::Cyan),
-        ),
-        Span::styled(format!(" {} ", file_info), app.theme.status_bar),
+        Span::styled(format!(" {side_label} "), Style::default().fg(Color::Cyan)),
+        Span::styled(format!(" {file_info} "), app.theme.status_bar),
         Span::styled(annotations_count, app.theme.comment_indicator),
         Span::styled(search_info, app.theme.status_bar),
         Span::styled(
@@ -816,6 +818,9 @@ fn render_command_line(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(content), area);
 }
 
+// The highlighter lookup coordinates mirror the legacy diff-line model. They
+// stay separate until the UI parity slice introduces a rendered-line context.
+#[allow(clippy::too_many_arguments)]
 fn build_content_spans(
     content: &str,
     file_idx: usize,
@@ -855,7 +860,7 @@ fn build_content_spans(
 
 fn format_lineno(lineno: Option<u32>) -> String {
     match lineno {
-        Some(n) => format!("{:>4} ", n),
+        Some(n) => format!("{n:>4} "),
         None => "     ".to_string(),
     }
 }

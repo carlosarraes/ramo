@@ -35,6 +35,6 @@ fn b64_encode(bytes: &[u8]) -> String {
 pub fn copy_to_clipboard(text: &str) -> io::Result<()> {
     let encoded = b64_encode(text.as_bytes());
     let mut stdout = io::stdout().lock();
-    write!(stdout, "\x1b]52;c;{}\x07", encoded)?;
+    write!(stdout, "\x1b]52;c;{encoded}\x07")?;
     stdout.flush()
 }

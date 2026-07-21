@@ -29,14 +29,14 @@ pub fn in_tmux() -> bool {
 ///
 /// Customize the match arms below for the agents/shells you actually use.
 /// A few notes from the codebase exploration:
-///   - "claude" — Claude Code CLI, supports bracketed paste, multi-line works great.
-///   - "pi"     — pi-mono coding agent (sets `process.title = "pi"`). Treats every
-///                LF/CR as Enter, NO bracketed-paste support. Multi-line will fan out
-///                into N separate submissions in Plain mode.
-///   - "node"   — generic Node CLI (the binary didn't override process.title). Could
-///                be either Claude or pi or anything else; pick a safe default.
-///   - shells   — bash/zsh/fish with readline 8+ support bracketed paste.
-///   - editors  — vim/nvim support bracketed paste in :insert mode.
+/// - `claude` — Claude Code CLI, supports bracketed paste, multi-line works great.
+/// - `pi` — pi-mono coding agent (sets `process.title = "pi"`). Treats every
+///   LF/CR as Enter, has no bracketed-paste support, and fans multi-line text out
+///   into separate submissions in plain mode.
+/// - `node` — generic Node CLI (the binary didn't override process.title). Could
+///   be Claude, pi, or anything else, so use a safe default.
+/// - Shells — bash/zsh/fish with readline 8+ support bracketed paste.
+/// - Editors — vim/nvim support bracketed paste in insert mode.
 ///
 /// TODO: pick the default for unknown commands, and add any agents you use.
 pub fn paste_mode_for_command(cmd: &str) -> PasteMode {
@@ -79,7 +79,7 @@ pub fn list_panes() -> io::Result<Vec<TmuxPane>> {
             let window = parts.next()?;
             let cmd = parts.next()?;
             Some(TmuxPane {
-                label: format!("{}  {}  {}  [{}]", id, target, window, cmd),
+                label: format!("{id}  {target}  {window}  [{cmd}]"),
                 id,
                 current_command: cmd.to_string(),
             })

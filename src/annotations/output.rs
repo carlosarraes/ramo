@@ -27,7 +27,7 @@ pub fn format_markdown(annotations: &[Annotation]) -> String {
         ));
 
         for ctx_line in annotation.diff_context.lines() {
-            out.push_str(&format!("> {}\n", ctx_line));
+            out.push_str(&format!("> {ctx_line}\n"));
         }
         out.push('\n');
 

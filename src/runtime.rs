@@ -7,6 +7,7 @@ use crate::annotations::{model::Annotation, output};
 use crate::app::App;
 use crate::cli::{Action, Invocation};
 use crate::config::{ConfigPaths, ConfigResolver};
+use crate::core::input::{ReviewInput, ReviewOutput};
 use crate::error::AppError;
 use crate::input::ReviewLoader;
 use crate::pi_extension;
@@ -51,10 +52,7 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
     }
 }
 
-fn run_review(
-    input: crate::core::input::ReviewInput,
-    review_output: crate::core::input::ReviewOutput,
-) -> Result<ExitCode, AppError> {
+fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCode, AppError> {
     let cwd = std::env::current_dir()?;
     let _resolved_config = ConfigResolver::new(ConfigPaths::discover(&cwd)).resolve(&input)?;
     let stdin = io::stdin();
@@ -76,10 +74,7 @@ fn run_review(
     Ok(ExitCode::SUCCESS)
 }
 
-fn finish_annotations(
-    annotations: Vec<Annotation>,
-    review_output: crate::core::input::ReviewOutput,
-) -> io::Result<()> {
+fn finish_annotations(annotations: Vec<Annotation>, review_output: ReviewOutput) -> io::Result<()> {
     if review_output.stdout {
         output::print_markdown(&annotations);
         return Ok(());

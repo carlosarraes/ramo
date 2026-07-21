@@ -386,14 +386,14 @@ fn parse_diff_git_line(line: &str) -> (String, String) {
     let rest = line.strip_prefix("diff --git ").unwrap_or(line);
 
     // Quoted form: diff --git "a/..." "b/..."
-    if rest.starts_with('"') {
-        if let Some(end) = find_closing_quote(rest) {
-            let first = &rest[..end + 1]; // includes both quotes
-            let remainder = rest[end + 1..].trim_start();
-            let old = strip_git_prefix(first, "a/");
-            let new = strip_git_prefix(remainder, "b/");
-            return (old, new);
-        }
+    if rest.starts_with('"')
+        && let Some(end) = find_closing_quote(rest)
+    {
+        let first = &rest[..end + 1]; // includes both quotes
+        let remainder = rest[end + 1..].trim_start();
+        let old = strip_git_prefix(first, "a/");
+        let new = strip_git_prefix(remainder, "b/");
+        return (old, new);
     }
 
     // Unquoted, identical paths: use midpoint symmetry
