@@ -241,8 +241,7 @@ fn real_review_auto_launches_registers_and_cleanly_unregisters_before_exit() {
         let captured = String::from_utf8_lossy(&output).into_owned();
         assert!(
             Instant::now() < deadline,
-            "review did not register; output: {}",
-            captured
+            "review did not register; output: {captured}"
         );
         std::thread::sleep(Duration::from_millis(10));
     }
