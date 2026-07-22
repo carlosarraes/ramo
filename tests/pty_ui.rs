@@ -472,7 +472,7 @@ fn direct_controls_and_context_expansion_remain_native_across_layout_changes() {
     let changed_mark = process.mark();
     process.send("12");
     process.read_since_until(changed_mark, "source 1");
-    process.send("0slwm][],.gGfbduq");
+    process.send("0snwm][],.gGfbduq");
     assert_eq!(process.wait(), 0);
     assert_eq!(
         process

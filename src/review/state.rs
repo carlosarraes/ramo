@@ -1243,7 +1243,8 @@ impl ReviewController {
                 ReviewEffect::Redraw
             }
             ReviewAction::JumpTop => {
-                if let Some(index) = self.selectable_indices().first().copied() {
+                let target_index = self.selectable_indices().next();
+                if let Some(index) = target_index {
                     self.set_cursor_index(index);
                     self.scroll_top = 0;
                 }
@@ -1251,7 +1252,8 @@ impl ReviewController {
                 ReviewEffect::Redraw
             }
             ReviewAction::JumpBottom => {
-                if let Some(index) = self.selectable_indices().last().copied() {
+                let target_index = self.selectable_indices().last();
+                if let Some(index) = target_index {
                     self.set_cursor_index(index);
                     self.scroll_top = self.max_scroll_top();
                 }
@@ -1530,7 +1532,7 @@ impl ReviewController {
         self.selected_row_key = None;
         self.dirty = true;
         self.rebuild(viewport, false);
-        if let Some(index) = self.selectable_indices().into_iter().find(|index| {
+        let target_index = self.selectable_indices().find(|index| {
             self.geometry
                 .as_ref()
                 .and_then(|geometry| geometry.rows.get(*index))
@@ -1538,7 +1540,8 @@ impl ReviewController {
                     row.key.file_id == self.selected_file_id.as_deref().unwrap_or_default()
                         && row.hunk_index == Some(hunk_index)
                 })
-        }) {
+        });
+        if let Some(index) = target_index {
             self.set_cursor_index(index);
             if let Some(bound) = self
                 .selected_row_key
@@ -1581,29 +1584,32 @@ impl ReviewController {
     }
 
     fn move_cursor(&mut self, delta: i32, viewport: Viewport) {
-        let selectable = self.selectable_indices();
-        if selectable.is_empty() {
+        let selectable_count = self.selectable_indices().count();
+        if selectable_count == 0 {
             return;
         }
         let current = self
             .selected_row_key
             .as_ref()
             .and_then(|key| {
-                selectable.iter().position(|index| {
+                self.selectable_indices().position(|index| {
                     self.geometry
                         .as_ref()
-                        .and_then(|geometry| geometry.rows.get(*index))
+                        .and_then(|geometry| geometry.rows.get(index))
                         .is_some_and(|row| &row.key == key)
                 })
             })
             .unwrap_or(0);
-        let next = signed_offset(current, delta, 1).min(selectable.len().saturating_sub(1));
-        self.set_cursor_index(selectable[next]);
-        self.ensure_cursor_visible(viewport, false);
+        let next = signed_offset(current, delta, 1).min(selectable_count.saturating_sub(1));
+        let target_index = self.selectable_indices().nth(next);
+        if let Some(index) = target_index {
+            self.set_cursor_index(index);
+        }
+        self.ensure_cursor_visible(viewport);
         self.refresh_snapshot();
     }
 
-    fn selectable_indices(&self) -> Vec<usize> {
+    fn selectable_indices(&self) -> impl Iterator<Item = usize> + '_ {
         self.geometry
             .as_ref()
             .into_iter()
@@ -1613,7 +1619,6 @@ impl ReviewController {
                     .is_some_and(ReviewRow::is_selectable)
                     .then_some(index)
             })
-            .collect()
     }
 
     fn set_cursor_index(&mut self, index: usize) {
@@ -1650,7 +1655,7 @@ impl ReviewController {
         };
     }
 
-    fn ensure_cursor_visible(&mut self, viewport: Viewport, center: bool) {
+    fn ensure_cursor_visible(&mut self, viewport: Viewport) {
         let Some(bound) = self
             .selected_row_key
             .as_ref()
@@ -1659,9 +1664,7 @@ impl ReviewController {
             return;
         };
         let height = usize::from(viewport.height).max(1);
-        if center {
-            self.scroll_top = bound.top.saturating_sub(height / 2);
-        } else if bound.top < self.scroll_top {
+        if bound.top < self.scroll_top {
             self.scroll_top = bound.top;
         } else if bound.top.saturating_add(bound.height) > self.scroll_top.saturating_add(height) {
             self.scroll_top = bound
@@ -1877,6 +1880,12 @@ impl ReviewController {
 
     fn refresh_snapshot(&mut self) {
         let geometry = self.geometry.as_ref();
+        let cursor_lines = self
+            .selected_row_key
+            .as_ref()
+            .and_then(|key| geometry?.row_by_key(key))
+            .and_then(|bound| row_for_bound(&self.planned_files, bound))
+            .map(|row| row.cursor_lines(self.focused_side == ReviewSide::Right));
         let visible_files = self
             .visible_indices
             .iter()
@@ -1912,8 +1921,8 @@ impl ReviewController {
             selected_position: self.selected_row_key.as_ref().map(|key| ReviewPosition {
                 file_id: key.file_id.clone(),
                 hunk_index: key.hunk_index,
-                old_line: key.old_line,
-                new_line: key.new_line,
+                old_line: cursor_lines.map_or(key.old_line, |lines| lines.0),
+                new_line: cursor_lines.map_or(key.new_line, |lines| lines.1),
             }),
             focused_side: self.focused_side,
             layout: match self.effective_layout {
@@ -2181,20 +2190,16 @@ fn nearest_selectable_index_for_file(
     file_id: &str,
     reference: Option<&ReviewRowKey>,
 ) -> Option<usize> {
-    let fallback = ReviewRowKey {
-        file_id: file_id.to_owned(),
-        hunk_index: None,
-        kind: super::row::ReviewRowKind::DiffLine,
-        old_line: None,
-        new_line: None,
-        note_id: None,
-    };
-    nearest_selectable_index(
-        geometry,
-        planned_files,
-        reference.unwrap_or(&fallback),
-        |candidate| candidate.file_id == file_id,
-    )
+    if let Some(reference) = reference {
+        return nearest_selectable_index(geometry, planned_files, reference, |candidate| {
+            candidate.file_id == file_id
+        });
+    }
+    geometry.rows.iter().enumerate().find_map(|(index, bound)| {
+        (bound.key.file_id == file_id
+            && row_for_bound(planned_files, bound).is_some_and(ReviewRow::is_selectable))
+        .then_some(index)
+    })
 }
 
 fn semantic_line_distance(left: &ReviewRowKey, right: &ReviewRowKey) -> u32 {

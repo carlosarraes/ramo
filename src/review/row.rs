@@ -148,8 +148,31 @@ impl ReviewRow {
             Self::Split { left, right, .. } => {
                 (left.kind != CellKind::Empty, right.kind != CellKind::Empty)
             }
-            Self::Stack { .. } => (true, true),
+            Self::Stack { cell, .. } => match cell.kind {
+                CellKind::Addition => (false, true),
+                CellKind::Deletion => (true, false),
+                CellKind::Context => (true, true),
+                CellKind::Empty => (false, false),
+            },
             _ => (false, false),
+        }
+    }
+
+    pub(super) fn cursor_lines(&self, focus_right: bool) -> (Option<u32>, Option<u32>) {
+        match self {
+            Self::Split { left, right, .. }
+                if left.kind == CellKind::Deletion && right.kind == CellKind::Addition =>
+            {
+                if focus_right {
+                    (None, right.new_line)
+                } else {
+                    (left.old_line, None)
+                }
+            }
+            _ => {
+                let key = self.key();
+                (key.old_line, key.new_line)
+            }
         }
     }
 }
