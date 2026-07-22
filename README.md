@@ -219,11 +219,13 @@ The broker starts on demand, prunes sessions silent for 45 seconds, and exits af
 
 ## Current controls
 
-The review UI is a continuous file stream. `auto` uses split layout at 160 columns and stack layout below 160; the responsive sidebar appears at 220 columns. There is deliberately no top menu bar or dropdown UI.
+The review UI is a continuous file stream with an explicit highlighted cursor. Every file keeps a visible identity header even when the responsive sidebar is hidden. `auto` uses split layout at 160 columns and stack layout below 160; the sidebar appears at 220 columns. There is deliberately no top menu bar or dropdown UI.
 
 | Key | Action |
 |---|---|
-| `j` / `k`, arrows | Scroll one row |
+| `j` / `k`, Up/Down | Move to the previous/next diff row |
+| `h` / `l` | Focus the left/right side in split layout |
+| Left/Right | Scroll code horizontally; Shift moves faster |
 | `Space` / `f`, `b` | Page down/up |
 | `d` / `u` | Half-page down/up |
 | `g` / `G`, Home/End | Jump to top/bottom |
@@ -231,11 +233,11 @@ The review UI is a continuous file stream. `auto` uses split layout at 160 colum
 | `,` / `.` | Previous/next file |
 | `{` / `}` | Previous/next annotated hunk |
 | `1` / `2` / `0` | Split/stack/auto layout |
-| `s`, `l`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
+| `s`, `n`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
 | `a` | Reveal/hide AI and agent notes |
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
-| `/` | Focus the file filter; `Tab` returns to review |
+| `/` | Focus the file filter; `Tab` returns to review; Escape clears and exits |
 | `t`, `?` | Theme selector and controls help |
 | `V`, `y` | Select lines and copy through OSC 52 |
 | `Ctrl-t`, `Ctrl-Shift-t` | Send selection to tmux / choose a new target |
@@ -243,6 +245,8 @@ The review UI is a continuous file stream. `auto` uses split layout at 160 colum
 | `e`, `r` | Open in `$EDITOR` / reload now |
 | `Ctrl-z` | Suspend and return terminal ownership on Unix |
 | `q` | Quit |
+
+Ordinary line movement follows semantic diff rows rather than treating the viewport as the selection. Page and wheel scrolling move the viewport and place the cursor on the selectable row nearest its center. Hunk and file jumps land on their first diff row; `g` and `G` clamp to the first and last diff rows.
 
 The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel events scroll code horizontally. Left-click selects sidebar files or collapsed context. The scrollbar and sidebar divider are draggable. Dragged text uses terminal-cell-aware selection, including full-width Unicode characters, and copies through the same OSC 52 path as `V`/`y`.
 
@@ -269,7 +273,7 @@ Press `t` to preview embedded or custom themes. When interactive view settings c
 
 After an installed-version change, `ramo` shows a one-time local reminder to refresh any copied agent skill with `ramo skill path`. It also performs an opportunistic, nonblocking `git ls-remote` query for newer GitHub release tags: the first check is delayed 1.2 seconds, the child is killed after five seconds, failures or a missing optional Git executable are ignored, and a long-running review checks again every six hours. Notices are deduplicated, queued for seven seconds each, and suppressed in pager mode. Set `RAMO_DISABLE_UPDATE_NOTICE=1` (or Hunk's compatibility name `HUNK_DISABLE_UPDATE_NOTICE=1`) to disable both update notices. This adds no TLS library or mandatory runtime dependency to the `ramo` executable.
 
-The default `theme = "auto"` sends one bounded OSC 11 background query to the controlling terminal, chooses the matching light or dark GitHub default, and falls back to the dark default after 150 ms or an unrecognized response. Explicit and custom themes skip the probe. `COLORFGBG` is used as a fallback hint where a terminal cannot answer OSC 11.
+The default `theme = "auto"` reads `COLORFGBG` when available and otherwise selects the dark GitHub default. Startup never sends an active terminal background query, so terminal responses cannot be mistaken for keyboard input. Explicit and custom themes skip auto resolution.
 
 All of this ships in the same Rust executable. Syntax highlighting uses Syntect's pure-Rust regex backend; the dependency graph contains no Oniguruma C implementation. `ramo` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
 

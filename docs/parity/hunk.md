@@ -8,7 +8,7 @@ This ledger is the completion authority for the Rust port. Status meanings:
 - `implemented`: a typed seam or partial implementation exists, but end-user behavior is not fully verified.
 - `verified`: automated evidence covers the behavior at the appropriate boundary.
 
-Only `verified` entries count toward final parity. The intentional exclusions are Hunk's top menu/dropdown UI and its JavaScript-specific OpenTUI component API; the latter is replaced by a reusable Rust library surface.
+Only `verified` entries count toward final parity. The intentional exclusions are Hunk's top menu/dropdown UI and its JavaScript-specific OpenTUI component API; the latter is replaced by a reusable Rust library surface. Ramo also intentionally keeps pdiff-style semantic cursor navigation: `j`/`k` move between diff rows, `h`/`l` focus split sides, `n` toggles numbers, and Left/Right scroll horizontally. These bindings are product identity, not missing Hunk parity.
 
 ## Executable and command surface
 
@@ -69,7 +69,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Copied-decoration preference | verified | `ReviewOptions::copy_decorations` projects the rendered line-number/change-marker gutter | `tests/ui_render.rs::copied_decorations_config_includes_the_rendered_gutter_for_line_selection` |
 | `transparentBackground` config compatibility alias | verified | typed camel-case compatibility field resolves ahead of the snake-case key | `tests/config_resolution.rs::transparent_background_accepts_hunks_camel_case_compatibility_key` |
 | Built-in and custom theme definitions | verified | `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs` |
-| Terminal background auto-detection | verified | bounded native OSC 11 controlling-TTY probe plus `COLORFGBG` fallback | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `real_pty_query_accepts_a_response_and_timeout_still_starts` |
+| Terminal background auto-detection | verified | environment-only `COLORFGBG` hint with deterministic dark fallback; no active terminal query | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `auto_theme_starts_without_querying_or_waiting_for_terminal_input`, `tests/pty_ui.rs::semantic_navigation_moves_the_rendered_cursor_without_startup_input` |
 | Legacy Hunk theme aliases/syntax translation | verified | alias normalization plus semantic-role-to-TextMate translation with exact-scope precedence | `tests/themes.rs::registry_preserves_hunks_reference_order_and_legacy_aliases`, `deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice` |
 | Compatibility startup notices | verified | resolved config notices enter a timed, deduplicated native queue; pager mode suppresses application notices | `tests/themes.rs::deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice`, `tests/pty_ui.rs::deprecated_theme_syntax_surfaces_a_native_startup_notice`, `local_and_remote_startup_notices_are_shown_in_order`, `tests/pty_pager.rs::patch_pager_suppresses_application_startup_notices` |
 | Local copied-skill refresh notice after upgrades | verified | failure-tolerant version state in `src/startup_notice.rs`, disabled by `RAMO_DISABLE_UPDATE_NOTICE=1` or Hunk's compatibility variable | `tests/startup_notices.rs::copied_skill_refresh_notice_is_local_one_time_and_failure_tolerant`, `tests/pty_ui.rs::installed_version_change_surfaces_a_local_copied_skill_notice_once` |
@@ -106,7 +106,9 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 |---|---|---|---|
 | Continuous multi-file review stream | verified | `ReviewController`, `ReviewWidget` | `tests/review_state.rs`, `tests/ui_render.rs`, `tests/pty_ui.rs::resize_thresholds_keep_the_selected_file_anchor` |
 | Sidebar navigates rather than filters stream | verified | controller sidebar entries and shared hit regions | state and mouse tests |
-| File filter and focus handling | verified | typed filter input and derived visible files | `tests/review_state.rs`, `tests/ui_input.rs`, `tests/pty_ui.rs::filter_owns_literal_keys_and_tab_returns_to_help_and_review` |
+| File filter and focus handling | verified | typed filter input, atomic one-Escape cancellation, and derived visible files | `tests/review_state.rs`, `tests/ui_input.rs`, `tests/pty_ui.rs::filter_owns_literal_keys_and_tab_returns_to_help_and_review` |
+| Explicit semantic cursor and split-side focus | verified | `ReviewController` owns stable row identity and `ReviewSide`; renderer paints the active cell with selection precedence | `tests/review_state.rs::semantic_cursor_moves_between_diff_rows_and_clamps_at_review_bounds`, `focused_side_tracks_row_availability_and_explicit_context_focus`, `tests/ui_render.rs::cursor_paints_the_focused_split_side_and_selection_overrides_it`, `tests/pty_ui.rs::semantic_navigation_moves_the_rendered_cursor_without_startup_input` |
+| File identity without sidebar | verified | every geometry section owns a one-row file header | `review::geometry::tests::file_sections_include_separator_and_header_after_the_first_file`, `tests/ui_render.rs::first_file_header_is_visible_without_the_sidebar` |
 | Responsive `auto` split/stack | verified | `resolve_responsive_layout` | geometry tests and 220→160→159 PTY resize test |
 | Explicit split layout | verified | shared split row plan/geometry | row, state, render, and PTY tests |
 | Explicit stack layout | verified | shared stack row plan/geometry | row, state, render, and PTY tests |
@@ -133,7 +135,9 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 
 | Action | Status | Evidence |
 |---|---|---|
-| Arrow step scrolling | verified | typed key map plus controller clamp tests |
+| `j`/`k`, Up/Down semantic row movement | verified | typed cursor actions plus controller clamp and rendered PTY tests |
+| `h`/`l` split-side focus | verified | side availability snapping in `ReviewController` plus input/render tests |
+| Left/Right horizontal scrolling | verified | typed horizontal actions plus input/state tests |
 | Space/`f` page down, `b` page up, Shift-Space | verified | `tests/ui_input.rs`, `tests/review_state.rs` |
 | `d`/`u` half-page scrolling | verified | `tests/ui_input.rs`, `tests/review_state.rs` |
 | `g`/`G`, Home/End bounds | verified | input and controller navigation tests |
@@ -146,7 +150,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `a` agent notes | verified | canonical external-note visibility toggle | `tests/notes_state.rs`, `tests/pty_notes.rs::agent_notes_toggle_in_the_live_review` |
 | `A` agent-skill setup | verified | direct dialog action with native prompt copy | input, dialog, and `tests/pty_ui.rs::direct_agent_skill_dialog_copies_native_guidance_and_closes` |
 | `z` unchanged context | verified | context controller/app and PTY tests |
-| `l` line numbers | verified | input/state/render tests |
+| `n` line numbers | verified | input/state/render tests |
 | `w` wrapping | verified | input/state/geometry tests |
 | `m` hunk metadata | verified | input/state/render tests |
 | `e` editor | verified | typed effect, literal native command runner, terminal handoff | `tests/editor.rs`, `tests/pty_watch.rs::editor_key_launches_literal_file_and_line_argv_then_resumes_the_review` |
@@ -178,7 +182,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Filesystem observation with debounce | verified | `src/watch/observer.rs`, `WatchCoordinator` | `tests/watch.rs::native_observer_sees_an_atomic_replacement_of_an_exact_file`, `bursts_coalesce_and_inflight_hints_get_one_trailing_generation`; `tests/pty_watch.rs::watch_mode_refreshes_after_an_atomic_save` |
 | Polling fallback | verified | content fingerprint safety polls; two-second degraded interval | `tests/watch.rs::polling_fallback_reloads_only_when_the_content_fingerprint_changes`, `unavailable_native_observation_degrades_to_two_second_polling` |
 | Serialized reload and stale-result protection | verified | single-loop `WatchRuntime`, generation acceptance, trailing dirty bit | `tests/watch.rs::bursts_coalesce_and_inflight_hints_get_one_trailing_generation` |
-| Selection/viewport preservation on reload | verified | `ReviewController::replace_files` plus semantic anchors | `tests/reload.rs::replacing_files_preserves_selected_file_and_viewport_anchor` |
+| Selection/viewport preservation on reload | verified | `ReviewController::replace_files` plus stable semantic row identity | `tests/reload.rs::replacing_files_preserves_selected_file_and_viewport_anchor`, cursor-highlight preservation in `tests/pty_watch.rs::watch_mode_refreshes_after_an_atomic_save` |
 | Manual `r` reload | verified | `ReviewEffect::Reload` routes to `WatchRuntime::manual_reload` | `tests/pty_watch.rs::manual_r_reloads_a_direct_file_without_watch_mode` |
 | Error display retains last valid review | verified | `WatchUpdate::Error` never replaces files | `tests/pty_watch.rs::reload_error_keeps_the_last_valid_review_visible`, `tests/watch.rs::failed_reload_keeps_the_applied_fingerprint_and_can_retry` |
 | TTY replacement after piped input | verified | `src/runtime.rs::replace_stdin_with_tty` | `tests/runtime_resolution.rs::only_piped_stdin_needs_a_tty_replacement`, `tests/pty_pager.rs::patch_pager_enters_review_ui_and_quits_cleanly` |
