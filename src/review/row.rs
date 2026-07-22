@@ -1076,7 +1076,7 @@ mod tests {
         assert_eq!(first.hunk_anchor_keys.len(), 1);
         assert_eq!(first.hunk_anchor_keys[0].file_id, sample.id);
         assert_eq!(first.hunk_anchor_keys[0].hunk_index, Some(0));
-        assert_eq!(first.hunk_anchor_keys[0].kind, ReviewRowKind::HunkHeader);
+        assert_eq!(first.hunk_anchor_keys[0].kind, ReviewRowKind::DiffLine);
 
         let baseline = file(vec![
             line(LineType::Context, "same", Some(10), Some(10)),

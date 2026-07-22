@@ -121,7 +121,10 @@ mod tests {
         };
         assert_eq!(
             restore_viewport_anchor(&geometry, &missing),
-            geometry.sections[1].body_top
+            geometry
+                .hunk_anchor("file:src/b.rs", 0)
+                .expect("hunk has a selectable row")
+                .top
         );
 
         let absolute = ViewportAnchor {
