@@ -67,12 +67,10 @@ pub fn appearance_from_colorfgbg(value: &str) -> Option<TerminalAppearance> {
 }
 
 pub fn detect_terminal_appearance() -> Option<TerminalAppearance> {
-    probe_terminal_background().or_else(|| {
-        std::env::var("COLORFGBG")
-            .ok()
-            .as_deref()
-            .and_then(appearance_from_colorfgbg)
-    })
+    std::env::var("COLORFGBG")
+        .ok()
+        .as_deref()
+        .and_then(appearance_from_colorfgbg)
 }
 
 fn parse_hex_channel(channel: &str) -> Option<u8> {
@@ -82,93 +80,4 @@ fn parse_hex_channel(channel: &str) -> Option<u8> {
     let value = u32::from_str_radix(channel, 16).ok()?;
     let maximum = 16_u32.pow(channel.len() as u32) - 1;
     Some(((value * 255 + maximum / 2) / maximum) as u8)
-}
-
-#[cfg(unix)]
-fn probe_terminal_background() -> Option<TerminalAppearance> {
-    use std::fs::OpenOptions;
-    use std::io::{Read, Write};
-    use std::os::fd::AsRawFd;
-    use std::time::{Duration, Instant};
-
-    const QUERY: &[u8] = b"\x1b]11;?\x1b\\";
-    const TIMEOUT: Duration = Duration::from_millis(150);
-
-    struct ModeGuard {
-        fd: std::os::fd::RawFd,
-        original: libc::termios,
-    }
-    impl Drop for ModeGuard {
-        fn drop(&mut self) {
-            unsafe {
-                libc::tcsetattr(self.fd, libc::TCSANOW, &self.original);
-            }
-        }
-    }
-
-    let mut tty = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-        .ok()?;
-    let fd = tty.as_raw_fd();
-    let mut original = std::mem::MaybeUninit::<libc::termios>::uninit();
-    if unsafe { libc::tcgetattr(fd, original.as_mut_ptr()) } != 0 {
-        return None;
-    }
-    let original = unsafe { original.assume_init() };
-    let mut raw = original;
-    unsafe {
-        libc::cfmakeraw(&mut raw);
-    }
-    raw.c_cc[libc::VMIN] = 0;
-    raw.c_cc[libc::VTIME] = 0;
-    if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw) } != 0 {
-        return None;
-    }
-    let _guard = ModeGuard { fd, original };
-    tty.write_all(QUERY).ok()?;
-    tty.flush().ok()?;
-
-    let deadline = Instant::now() + TIMEOUT;
-    let mut response = Vec::with_capacity(64);
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return None;
-        }
-        let mut descriptor = libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let timeout = remaining.as_millis().min(i32::MAX as u128) as i32;
-        let ready = unsafe { libc::poll(&mut descriptor, 1, timeout) };
-        if ready < 0 {
-            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
-                continue;
-            }
-            return None;
-        }
-        if ready == 0 || descriptor.revents & libc::POLLIN == 0 {
-            return None;
-        }
-        let mut chunk = [0_u8; 64];
-        let count = tty.read(&mut chunk).ok()?;
-        if count == 0 {
-            return None;
-        }
-        response.extend_from_slice(&chunk[..count]);
-        if let Some(color) = parse_osc11_background(&response) {
-            return Some(appearance_for_background(color));
-        }
-        if response.len() >= 512 {
-            return None;
-        }
-    }
-}
-
-#[cfg(windows)]
-fn probe_terminal_background() -> Option<TerminalAppearance> {
-    None
 }

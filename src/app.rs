@@ -1195,6 +1195,7 @@ impl App {
                 self.filter_buffer.clear();
                 self.review_controller
                     .apply(ReviewAction::SetFilter(String::new()), viewport);
+                self.input_mode = InputMode::Normal;
             }
             InputMode::Theme => {
                 if let Some(selection) = &self.theme_selection {

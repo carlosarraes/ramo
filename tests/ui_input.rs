@@ -428,7 +428,5 @@ fn app_keys_mutate_the_rendering_controller_and_dialog_modes_own_closing_keys() 
     assert_eq!(app.review_controller.snapshot(view).filter, "q");
     app.handle_ui_key(key(KeyCode::Esc), view);
     assert_eq!(app.review_controller.snapshot(view).filter, "");
-    assert_eq!(app.input_mode(), InputMode::Filter);
-    app.handle_ui_key(key(KeyCode::Esc), view);
     assert_eq!(app.input_mode(), InputMode::Normal);
 }

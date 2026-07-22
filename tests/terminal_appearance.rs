@@ -66,7 +66,7 @@ fn osc11_parsing_classification_and_environment_fallback_match_hunk() {
 }
 
 #[cfg(unix)]
-fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
+fn launch_and_capture() -> (Vec<u8>, Duration) {
     let daemon = support::TestSessionDaemon::spawn();
     let session = daemon.client();
     let temp = tempfile::tempdir().unwrap();
@@ -107,7 +107,6 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
     });
     let mut raw = Vec::new();
     let deadline = Instant::now() + Duration::from_secs(4);
-    let mut answered = false;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         match receiver.recv_timeout(remaining) {
@@ -117,19 +116,6 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
                 String::from_utf8_lossy(&raw)
             ),
             Err(RecvTimeoutError::Disconnected) => panic!("terminal appearance PTY closed"),
-        }
-        if !answered
-            && raw
-                .windows(b"\x1b]11;?\x1b\\".len())
-                .any(|window| window == b"\x1b]11;?\x1b\\")
-        {
-            answered = true;
-            if respond {
-                writer
-                    .write_all(b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\")
-                    .unwrap();
-                writer.flush().unwrap();
-            }
         }
         let clean = ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&raw), false);
         if clean.contains("old") && clean.contains("new") {
@@ -157,15 +143,12 @@ fn launch_and_capture(respond: bool) -> (Vec<u8>, Duration) {
 
 #[test]
 #[cfg(unix)]
-fn real_pty_query_accepts_a_response_and_timeout_still_starts() {
-    let (light, answered_elapsed) = launch_and_capture(true);
+fn auto_theme_starts_without_querying_or_waiting_for_terminal_input() {
+    let (raw, elapsed) = launch_and_capture();
     assert!(
-        light
-            .windows(b"\x1b]11;?\x1b\\".len())
+        !raw.windows(b"\x1b]11;?\x1b\\".len())
             .any(|window| window == b"\x1b]11;?\x1b\\")
     );
-    assert!(answered_elapsed < Duration::from_secs(2));
-    let (_, elapsed) = launch_and_capture(false);
     assert!(elapsed < Duration::from_secs(2));
 }
 #[cfg(unix)]
