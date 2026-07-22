@@ -198,7 +198,7 @@ fn collapsed_rows_and_scrollbar_use_shared_geometry_hit_regions() {
         mouse(
             MouseEventKind::Down(MouseButton::Left),
             4,
-            0,
+            1,
             KeyModifiers::NONE,
         ),
         viewport,

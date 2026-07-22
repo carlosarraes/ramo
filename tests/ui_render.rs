@@ -5,7 +5,8 @@ use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, MovedLineKind, SourceSpec,
 };
 use ramo::review::{
-    ContextSourceLoader, ReviewController, ReviewOptions, SelectionPoint, SourceFailure, Viewport,
+    ContextSourceLoader, ReviewAction, ReviewController, ReviewOptions, ReviewSide, SelectionPoint,
+    SourceFailure, Viewport,
 };
 use ramo::ui::highlight::{HighlightCache, HighlightCacheStats};
 use ramo::ui::review::ReviewWidget;
@@ -134,15 +135,64 @@ fn responsive_stream_has_no_top_menu_and_later_files_have_headers() {
             expected_split || expected_sidebar,
             "{width}:\n{frame}"
         );
-        assert_eq!(
-            frame.contains("src/"),
-            expected_sidebar,
-            "{width}:\n{frame}"
-        );
+        assert!(frame.contains("src/alpha.rs"), "{width}:\n{frame}");
         assert!(frame.contains("docs/beta.rs"), "{width}:\n{frame}");
         assert!(!frame.contains("F10 menu"));
         assert!(!frame.contains("File  View"));
     }
+}
+
+#[test]
+fn cursor_paints_the_focused_split_side_and_selection_overrides_it() {
+    let viewport = Viewport {
+        width: 180,
+        height: 8,
+    };
+    let mut controller = ReviewController::new(
+        vec![file("src/cursor.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+
+    let left = render_controller(viewport.width, viewport.height, &mut controller);
+    let left_frame = text(&left);
+    let (y, row) = left_frame
+        .lines()
+        .enumerate()
+        .find(|(_, row)| row.contains("let item00") && row.contains("let item01"))
+        .unwrap();
+    let left_x = row.find("let item00").unwrap() as u16;
+    let right_x = row.find("let item01").unwrap() as u16;
+    assert_eq!(left[(left_x, y as u16)].bg, theme.selected_hunk);
+    assert_ne!(left[(right_x, y as u16)].bg, theme.selected_hunk);
+
+    controller.apply(ReviewAction::FocusSide(ReviewSide::Right), viewport);
+    let right = render_controller(viewport.width, viewport.height, &mut controller);
+    assert_ne!(right[(left_x, y as u16)].bg, theme.selected_hunk);
+    assert_eq!(right[(right_x, y as u16)].bg, theme.selected_hunk);
+
+    let selection = controller.selected_line_range(viewport).unwrap();
+    let selected = render_controller_with_selection(
+        viewport.width,
+        viewport.height,
+        &mut controller,
+        Some(selection),
+    );
+    assert_eq!(selected[(right_x, y as u16)].bg, theme.accent_muted);
+}
+
+#[test]
+fn first_file_header_is_visible_without_the_sidebar() {
+    let (buffer, _) = render(
+        80,
+        8,
+        vec![file("src/only.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let frame = text(&buffer);
+    let header = frame.find("src/only.rs").unwrap();
+    let hunk = frame.find("render_target").unwrap();
+    assert!(header < hunk, "{frame}");
 }
 
 #[test]
@@ -283,15 +333,19 @@ fn moved_rows_keep_moved_paint_while_changed_characters_use_stronger_backgrounds
     let mut moved = file("src/moved.rs", FileChangeKind::Modified, 2);
     moved.hunks[0].lines[0].moved = Some(MovedLineKind::OldMoved);
     moved.hunks[0].lines[1].moved = Some(MovedLineKind::NewMoved);
-    let (buffer, _) = render(
-        80,
-        8,
+    let viewport = Viewport {
+        width: 80,
+        height: 8,
+    };
+    let mut controller = ReviewController::new(
         vec![moved],
         ReviewOptions {
             layout: LayoutMode::Stack,
             ..ReviewOptions::default()
         },
     );
+    controller.apply(ReviewAction::MoveCursor(1), viewport);
+    let buffer = render_controller(viewport.width, viewport.height, &mut controller);
     let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
     let rows = (0..buffer.area.height)
         .map(|y| {

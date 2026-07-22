@@ -8,7 +8,7 @@ use crate::diff::model::{DiffFile, LineType, MovedLineKind};
 use crate::review::geometry::{RowBounds, split_columns, stack_columns};
 use crate::review::row::{CellKind, ReviewCell, ReviewRow};
 use crate::review::{
-    ReviewController, ReviewFileStatus, SelectionPoint, SidebarEntrySnapshot, Viewport,
+    ReviewController, ReviewFileStatus, ReviewSide, SelectionPoint, SidebarEntrySnapshot, Viewport,
 };
 
 use super::highlight::HighlightCache;
@@ -227,6 +227,8 @@ fn render_stream(
             window.range.start.saturating_add(window_offset),
             selection,
             first_line,
+            view.cursor_key == Some(&bound.key),
+            view.focused_side,
         );
     }
     render_scrollbar(area, buffer, view.snapshot, theme);
@@ -247,6 +249,8 @@ fn render_row(
     geometry_row: usize,
     selection: Option<(SelectionPoint, SelectionPoint)>,
     first_line: usize,
+    cursor: bool,
+    focused_side: ReviewSide,
 ) {
     match row {
         ReviewRow::HunkHeader { text, .. } => {
@@ -302,6 +306,7 @@ fn render_row(
                     theme,
                     highlights,
                     true,
+                    cursor,
                     selected_cell_range(
                         selection,
                         geometry_row,
@@ -333,6 +338,7 @@ fn render_row(
                     theme,
                     highlights,
                     false,
+                    cursor && focused_side == ReviewSide::Left,
                     (selection_side(selection, columns.divider_cell) != Some(true))
                         .then(|| {
                             selected_cell_range(
@@ -361,6 +367,7 @@ fn render_row(
                     theme,
                     highlights,
                     false,
+                    cursor && focused_side == ReviewSide::Right,
                     (selection_side(selection, columns.divider_cell) != Some(false))
                         .then(|| {
                             selected_cell_range(
@@ -565,6 +572,7 @@ fn render_cell(
     theme: &AppTheme,
     highlights: &mut HighlightCache,
     stack: bool,
+    cursor: bool,
     selection: Option<std::ops::Range<usize>>,
     text_cell: usize,
 ) {
@@ -612,6 +620,12 @@ fn render_cell(
         theme,
         kind,
     );
+    if cursor {
+        buffer.set_style(
+            Rect::new(x, y, (gutter + code_width) as u16, 1),
+            Style::default().bg(theme.selected_hunk),
+        );
+    }
     if let Some(selection) = selection {
         let visible = text_cell.saturating_add(offset)
             ..text_cell.saturating_add(offset).saturating_add(code_width);

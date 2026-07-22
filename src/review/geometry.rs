@@ -281,7 +281,7 @@ pub(crate) fn build_review_geometry(
 
     for (file_index, file) in files.iter().enumerate() {
         let separator_height = usize::from(file_index > 0);
-        let header_height = usize::from(file_index > 0);
+        let header_height = 1;
         let section_top = cursor;
         let header_top = section_top.saturating_add(separator_height);
         let body_top = header_top.saturating_add(header_height);
@@ -434,8 +434,8 @@ mod tests {
         let geometry = build_review_geometry(&files, GeometryOptions::fixed(80, 20));
         assert_eq!(geometry.sections.len(), 2);
         assert_eq!(geometry.sections[0].section_top, 0);
-        assert_eq!(geometry.sections[0].header_height, 0);
-        assert_eq!(geometry.sections[0].body_top, 0);
+        assert_eq!(geometry.sections[0].header_height, 1);
+        assert_eq!(geometry.sections[0].body_top, 1);
 
         let second = &geometry.sections[1];
         assert_eq!(second.section_top, geometry.sections[0].section_bottom);

@@ -272,6 +272,8 @@ pub(crate) struct ReviewRenderView<'a> {
     pub planned_files: &'a [PlannedFile],
     pub geometry: &'a ReviewGeometry,
     pub snapshot: &'a ReviewSnapshot,
+    pub cursor_key: Option<&'a ReviewRowKey>,
+    pub focused_side: ReviewSide,
 }
 
 impl ReviewController {
@@ -814,6 +816,8 @@ impl ReviewController {
                 .as_ref()
                 .expect("geometry exists after ensure_geometry"),
             snapshot: &self.snapshot,
+            cursor_key: self.selected_row_key.as_ref(),
+            focused_side: self.focused_side,
         }
     }
 
