@@ -193,6 +193,14 @@ fn first_file_header_is_visible_without_the_sidebar() {
     let header = frame.find("src/only.rs").unwrap();
     let hunk = frame.find("render_target").unwrap();
     assert!(header < hunk, "{frame}");
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let (y, row) = frame
+        .lines()
+        .enumerate()
+        .find(|(_, row)| row.contains("let item00"))
+        .unwrap();
+    let x = row.find("let item00").unwrap() as u16;
+    assert_eq!(buffer[(x, y as u16)].bg, theme.selected_hunk);
 }
 
 #[test]

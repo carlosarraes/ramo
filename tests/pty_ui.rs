@@ -18,6 +18,8 @@ struct PtyProcess {
     writer: Option<Box<dyn Write + Send>>,
     chunks: Receiver<Vec<u8>>,
     raw: Vec<u8>,
+    cols: u16,
+    rows: u16,
 }
 
 impl PtyProcess {
@@ -38,6 +40,9 @@ impl PtyProcess {
             .unwrap();
         let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
+        command.env_remove("NO_COLOR");
+        command.env("TERM", "xterm-256color");
+        command.env("COLORTERM", "truecolor");
         for argument in args {
             command.arg(argument);
         }
@@ -68,6 +73,8 @@ impl PtyProcess {
             writer: Some(writer),
             chunks,
             raw: Vec::new(),
+            cols,
+            rows,
         }
     }
 
@@ -142,6 +149,48 @@ impl PtyProcess {
         }
     }
 
+    fn wait_for_cursor(&mut self, needle: &str, expected: vt100::Color) -> String {
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+            parser.process(&self.raw);
+            let screen = parser.screen();
+            let contents = screen.contents();
+            let observed = contents
+                .lines()
+                .enumerate()
+                .find(|(_, line)| line.contains(needle))
+                .and_then(|(row, line)| {
+                    let column = line.find(needle)?;
+                    screen
+                        .cell(row as u16, column as u16)
+                        .map(|cell| cell.bgcolor())
+                });
+            if observed == Some(expected) {
+                return contents;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.chunks.recv_timeout(remaining) {
+                Ok(chunk) => self.raw.extend(chunk),
+                Err(error) => {
+                    let background_escape = self
+                        .raw
+                        .windows(4)
+                        .position(|window| window == b"[48;")
+                        .map(|start| {
+                            String::from_utf8_lossy(
+                                &self.raw[start..self.raw.len().min(start.saturating_add(48))],
+                            )
+                            .into_owned()
+                        });
+                    panic!(
+                        "PTY deadline waiting for cursor on {needle:?}: {error}; expected: {expected:?}; observed: {observed:?}; first background escape: {background_escape:?}; screen: {contents:?}"
+                    )
+                }
+            }
+        }
+    }
+
     fn wait(&mut self) -> u32 {
         self.writer.take();
         let mut child = self.child.take().unwrap();
@@ -204,6 +253,75 @@ fn write_multi_file_patch(path: &Path) {
         }
     }
     std::fs::write(path, patch).unwrap();
+}
+
+fn write_navigation_patch(path: &Path) {
+    std::fs::write(
+        path,
+        concat!(
+            "diff --git a/src/navigation.rs b/src/navigation.rs\n",
+            "--- a/src/navigation.rs\n",
+            "+++ b/src/navigation.rs\n",
+            "@@ -1,0 +1,3 @@\n",
+            "+FIRST_CURSOR_LINE\n",
+            "+SECOND_CURSOR_LINE\n",
+            "+HUNK_ONE_TAIL\n",
+            "@@ -10,0 +10,2 @@\n",
+            "+SECOND_HUNK_CURSOR_LINE\n",
+            "+FINAL_CURSOR_LINE\n",
+        ),
+    )
+    .unwrap();
+}
+
+fn selected_hunk_color() -> vt100::Color {
+    let color = ramo::ui::themes::ThemeRegistry::default()
+        .resolve("github-dark-default", None, false)
+        .selected_hunk;
+    match color {
+        ratatui::style::Color::Rgb(red, green, blue) => vt100::Color::Rgb(red, green, blue),
+        other => panic!("selected cursor color must be RGB, got {other:?}"),
+    }
+}
+
+#[test]
+fn semantic_navigation_moves_the_rendered_cursor_without_startup_input() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    disable_save_prompt(&config_home);
+    let patch = temp.path().join("navigation.patch");
+    write_navigation_patch(&patch);
+    let patch_arg = patch.display().to_string();
+    let mut process = PtyProcess::spawn_sized(
+        temp.path(),
+        &["patch", &patch_arg, "--mode", "stack", "--theme", "auto"],
+        &[
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("COLORFGBG", ""),
+        ],
+        80,
+        6,
+    );
+    let selected = selected_hunk_color();
+
+    let initial = process.wait_for_cursor("FIRST_CURSOR_LINE", selected);
+    assert!(!initial.contains("Filter:"), "{initial}");
+    assert!(
+        !process
+            .raw
+            .windows(b"\x1b]11;?\x1b\\".len())
+            .any(|window| window == b"\x1b]11;?\x1b\\")
+    );
+    process.send("j");
+    process.wait_for_cursor("SECOND_CURSOR_LINE", selected);
+    process.send("]");
+    process.wait_for_cursor("SECOND_HUNK_CURSOR_LINE", selected);
+    process.send("G");
+    process.wait_for_cursor("FINAL_CURSOR_LINE", selected);
+    process.send("g");
+    process.wait_for_cursor("FIRST_CURSOR_LINE", selected);
+    process.send("q");
+    assert_eq!(process.wait(), 0);
 }
 
 #[test]
@@ -383,7 +501,7 @@ fn cjk_mouse_selection_copies_whole_terminal_cells_through_osc52() {
         &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
     );
     process.read_until("界 old");
-    process.send("\x1b[<0;9;2M\x1b[<32;14;2M\x1b[<0;14;2m");
+    process.send("\x1b[<0;9;3M\x1b[<32;14;3M\x1b[<0;14;3m");
     process.read_raw_until(b"\x1b]52;c;55WMIG9sZA==\x07");
     process.send("q");
     assert_eq!(process.wait(), 0);

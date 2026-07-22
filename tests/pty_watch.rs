@@ -40,6 +40,9 @@ impl PtyProcess {
             .unwrap();
         let mut command = CommandBuilder::new(assert_cmd::cargo::cargo_bin("ramo"));
         command.cwd(cwd);
+        command.env_remove("NO_COLOR");
+        command.env("TERM", "xterm-256color");
+        command.env("COLORTERM", "truecolor");
         for argument in args {
             command.arg(argument);
         }
@@ -121,6 +124,35 @@ impl PtyProcess {
         }
     }
 
+    fn wait_for_cursor(&mut self, needle: &str, timeout: Duration) -> String {
+        let expected = selected_hunk_color();
+        let deadline = Instant::now() + timeout;
+        loop {
+            let mut parser = vt100::Parser::new(18, 120, 0);
+            parser.process(&self.raw);
+            let screen = parser.screen();
+            let contents = screen.contents();
+            if let Some((row, line)) = contents
+                .lines()
+                .enumerate()
+                .find(|(_, line)| line.contains(needle))
+                && let Some(column) = line.find(needle)
+                && screen
+                    .cell(row as u16, column as u16)
+                    .is_some_and(|cell| cell.bgcolor() == expected)
+            {
+                return contents;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.chunks.recv_timeout(remaining) {
+                Ok(chunk) => self.raw.extend(chunk),
+                Err(error) => panic!(
+                    "PTY deadline waiting for cursor on {needle:?}: {error}; screen: {contents:?}"
+                ),
+            }
+        }
+    }
+
     fn wait(&mut self) -> u32 {
         self.writer.take();
         let mut child = self.child.take().unwrap();
@@ -184,6 +216,8 @@ impl WatchFixture {
             self.after.display().to_string(),
             "--mode".into(),
             "stack".into(),
+            "--theme".into(),
+            "github-dark-default".into(),
         ];
         if watch {
             args.push("--watch".into());
@@ -210,6 +244,16 @@ fn launch(fixture: &WatchFixture, watch: bool) -> PtyProcess {
     )
 }
 
+fn selected_hunk_color() -> vt100::Color {
+    let color = ramo::ui::themes::ThemeRegistry::default()
+        .resolve("github-dark-default", None, false)
+        .selected_hunk;
+    match color {
+        ratatui::style::Color::Rgb(red, green, blue) => vt100::Color::Rgb(red, green, blue),
+        other => panic!("selected cursor color must be RGB, got {other:?}"),
+    }
+}
+
 #[test]
 fn manual_r_reloads_a_direct_file_without_watch_mode() {
     let fixture = WatchFixture::new();
@@ -228,8 +272,10 @@ fn watch_mode_refreshes_after_an_atomic_save() {
     let fixture = WatchFixture::new();
     let mut session = launch(&fixture, true);
     session.read_until("initial change");
+    session.send("j");
+    session.wait_for_cursor("initial change", DEADLINE);
     fixture.replace_after("passive replacement");
-    let screen = session.read_since_until_with_timeout("passive replacement", SAFETY_POLL_DEADLINE);
+    let screen = session.wait_for_cursor("passive replacement", SAFETY_POLL_DEADLINE);
     assert!(!screen.contains("initial change"));
     session.send("q");
     assert_eq!(session.wait(), 0);

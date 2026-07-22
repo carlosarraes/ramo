@@ -203,7 +203,9 @@ fn render_stream(
         .geometry
         .visible_window(scroll, usize::from(area.height), 2);
     for (window_offset, bound) in view.geometry.rows[window.range.clone()].iter().enumerate() {
-        if bound.top.saturating_add(bound.height) <= scroll {
+        if bound.top.saturating_add(bound.height) <= scroll
+            || bound.top >= scroll.saturating_add(usize::from(area.height))
+        {
             continue;
         }
         let first_line = scroll.saturating_sub(bound.top);
