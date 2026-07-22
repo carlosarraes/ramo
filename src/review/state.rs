@@ -18,8 +18,8 @@ use super::context::{
     derive_collapsed_gaps, select_gap_for_toggle, source_for_context,
 };
 use super::geometry::{
-    GeometryOptions, PlannedFile, ReviewGeometry, build_review_geometry, resolve_responsive_layout,
-    split_columns, stack_columns,
+    GeometryOptions, PlannedFile, ReviewGeometry, RowBounds, build_review_geometry,
+    resolve_responsive_layout, split_columns, stack_columns,
 };
 use super::navigation::{signed_offset, wrapping_index};
 use super::row::{
@@ -89,10 +89,18 @@ pub enum ScrollUnit {
     Page,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewSide {
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewAction {
     Scroll { delta: i32, unit: ScrollUnit },
     ScrollHorizontal(i32),
+    MoveCursor(i32),
+    FocusSide(ReviewSide),
     JumpTop,
     JumpBottom,
     MoveHunk(i32),
@@ -214,6 +222,7 @@ pub struct ReviewSnapshot {
     pub selected_file_id: Option<String>,
     pub selected_hunk_index: Option<usize>,
     pub selected_position: Option<ReviewPosition>,
+    pub focused_side: ReviewSide,
     pub layout: LayoutMode,
     pub show_sidebar: bool,
     pub sidebar_width: u16,
@@ -238,6 +247,7 @@ pub struct ReviewController {
     selected_file_id: Option<String>,
     selected_hunk_index: Option<usize>,
     selected_row_key: Option<ReviewRowKey>,
+    focused_side: ReviewSide,
     scroll_top: usize,
     horizontal_offset: usize,
     sidebar_override: Option<bool>,
@@ -275,6 +285,7 @@ impl ReviewController {
             selected_file_id,
             selected_hunk_index: Some(0),
             selected_row_key: None,
+            focused_side: ReviewSide::Left,
             scroll_top: 0,
             horizontal_offset: 0,
             sidebar_override: None,
@@ -1217,15 +1228,29 @@ impl ReviewController {
                 self.refresh_snapshot();
                 ReviewEffect::Redraw
             }
+            ReviewAction::MoveCursor(delta) => {
+                self.move_cursor(delta, viewport);
+                ReviewEffect::Redraw
+            }
+            ReviewAction::FocusSide(side) => {
+                self.focused_side = side;
+                self.snap_focused_side();
+                self.refresh_snapshot();
+                ReviewEffect::Redraw
+            }
             ReviewAction::JumpTop => {
-                self.scroll_top = 0;
-                self.select_from_viewport(viewport);
+                if let Some(index) = self.selectable_indices().first().copied() {
+                    self.set_cursor_index(index);
+                    self.scroll_top = 0;
+                }
                 self.refresh_snapshot();
                 ReviewEffect::Redraw
             }
             ReviewAction::JumpBottom => {
-                self.scroll_top = self.max_scroll_top();
-                self.select_from_viewport(viewport);
+                if let Some(index) = self.selectable_indices().last().copied() {
+                    self.set_cursor_index(index);
+                    self.scroll_top = self.max_scroll_top();
+                }
                 self.refresh_snapshot();
                 ReviewEffect::Redraw
             }
@@ -1399,22 +1424,38 @@ impl ReviewController {
         }
         self.scroll_top = self.scroll_top.min(geometry.max_scroll_top());
 
-        self.selected_row_key = self
-            .selected_row_key
+        let previous_key = self.selected_row_key.clone();
+        let selected_index = previous_key
             .as_ref()
-            .and_then(|key| geometry.row_by_key(key))
-            .map(|row| row.key.clone())
+            .and_then(|key| selectable_index_by_key(&geometry, &self.planned_files, key))
             .or_else(|| {
-                Some((self.selected_file_id.as_deref()?, self.selected_hunk_index?))
-                    .and_then(|(file_id, hunk)| geometry.hunk_anchor(file_id, hunk))
-                    .map(|row| row.key.clone())
+                let key = previous_key.as_ref()?;
+                nearest_selectable_index(&geometry, &self.planned_files, key, |candidate| {
+                    candidate.file_id == key.file_id && candidate.hunk_index == key.hunk_index
+                })
             })
             .or_else(|| {
-                geometry
-                    .row_at_offset(self.scroll_top)
-                    .map(|row| row.key.clone())
-            });
+                let file_id = previous_key
+                    .as_ref()
+                    .map(|key| key.file_id.as_str())
+                    .or(self.selected_file_id.as_deref())?;
+                let reference = previous_key.as_ref();
+                nearest_selectable_index_for_file(
+                    &geometry,
+                    &self.planned_files,
+                    file_id,
+                    reference,
+                )
+            })
+            .or_else(|| first_selectable_index(&geometry, &self.planned_files));
         self.geometry = Some(geometry);
+        if let Some(index) = selected_index {
+            self.set_cursor_index(index);
+        } else {
+            self.selected_file_id = None;
+            self.selected_hunk_index = None;
+            self.selected_row_key = None;
+        }
         self.horizontal_offset = self
             .horizontal_offset
             .min(self.max_horizontal_offset(viewport));
@@ -1485,14 +1526,23 @@ impl ReviewController {
         self.selected_row_key = None;
         self.dirty = true;
         self.rebuild(viewport, false);
-        if let Some(geometry) = &self.geometry
-            && let Some(row) = geometry.hunk_anchor(
-                self.selected_file_id.as_deref().unwrap_or_default(),
-                hunk_index,
-            )
-        {
-            self.selected_row_key = Some(row.key.clone());
-            self.scroll_top = row.top.min(geometry.max_scroll_top());
+        if let Some(index) = self.selectable_indices().into_iter().find(|index| {
+            self.geometry
+                .as_ref()
+                .and_then(|geometry| geometry.rows.get(*index))
+                .is_some_and(|row| {
+                    row.key.file_id == self.selected_file_id.as_deref().unwrap_or_default()
+                        && row.hunk_index == Some(hunk_index)
+                })
+        }) {
+            self.set_cursor_index(index);
+            if let Some(bound) = self
+                .selected_row_key
+                .as_ref()
+                .and_then(|key| self.geometry.as_ref()?.row_by_key(key))
+            {
+                self.scroll_top = bound.top.saturating_sub(1).min(self.max_scroll_top());
+            }
         }
         self.refresh_snapshot();
     }
@@ -1505,18 +1555,117 @@ impl ReviewController {
             .scroll_top
             .saturating_add(usize::from(viewport.height) / 2)
             .min(geometry.total_height.saturating_sub(1));
-        let Some(row) = geometry.row_at_offset(probe) else {
+        let Some(index) = geometry
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, bound)| {
+                row_for_bound(&self.planned_files, bound).is_some_and(ReviewRow::is_selectable)
+            })
+            .min_by_key(|(_, bound)| {
+                let midpoint = bound.top.saturating_add(bound.height / 2);
+                midpoint.abs_diff(probe)
+            })
+            .map(|(index, _)| index)
+        else {
             self.selected_file_id = None;
             self.selected_hunk_index = None;
             self.selected_row_key = None;
             return;
         };
-        self.selected_row_key = Some(row.key.clone());
-        self.selected_file_id = geometry
-            .sections
-            .get(row.file_index)
-            .map(|section| section.file_id.clone());
-        self.selected_hunk_index = row.hunk_index;
+        self.set_cursor_index(index);
+    }
+
+    fn move_cursor(&mut self, delta: i32, viewport: Viewport) {
+        let selectable = self.selectable_indices();
+        if selectable.is_empty() {
+            return;
+        }
+        let current = self
+            .selected_row_key
+            .as_ref()
+            .and_then(|key| {
+                selectable.iter().position(|index| {
+                    self.geometry
+                        .as_ref()
+                        .and_then(|geometry| geometry.rows.get(*index))
+                        .is_some_and(|row| &row.key == key)
+                })
+            })
+            .unwrap_or(0);
+        let next = signed_offset(current, delta, 1).min(selectable.len().saturating_sub(1));
+        self.set_cursor_index(selectable[next]);
+        self.ensure_cursor_visible(viewport, false);
+        self.refresh_snapshot();
+    }
+
+    fn selectable_indices(&self) -> Vec<usize> {
+        self.geometry
+            .as_ref()
+            .into_iter()
+            .flat_map(|geometry| geometry.rows.iter().enumerate())
+            .filter_map(|(index, bound)| {
+                row_for_bound(&self.planned_files, bound)
+                    .is_some_and(ReviewRow::is_selectable)
+                    .then_some(index)
+            })
+            .collect()
+    }
+
+    fn set_cursor_index(&mut self, index: usize) {
+        let Some((key, sides)) = self.geometry.as_ref().and_then(|geometry| {
+            let bound = geometry.rows.get(index)?;
+            let row = row_for_bound(&self.planned_files, bound)?;
+            Some((bound.key.clone(), row.available_sides()))
+        }) else {
+            return;
+        };
+        self.selected_file_id = Some(key.file_id.clone());
+        self.selected_hunk_index = key.hunk_index;
+        self.selected_row_key = Some(key);
+        self.snap_focused_side_for(sides);
+    }
+
+    fn snap_focused_side(&mut self) {
+        let sides = self
+            .selected_row_key
+            .as_ref()
+            .and_then(|key| self.geometry.as_ref()?.row_by_key(key))
+            .and_then(|bound| row_for_bound(&self.planned_files, bound))
+            .map(ReviewRow::available_sides);
+        if let Some(sides) = sides {
+            self.snap_focused_side_for(sides);
+        }
+    }
+
+    fn snap_focused_side_for(&mut self, (left, right): (bool, bool)) {
+        self.focused_side = match (left, right) {
+            (true, false) => ReviewSide::Left,
+            (false, true) => ReviewSide::Right,
+            _ => self.focused_side,
+        };
+    }
+
+    fn ensure_cursor_visible(&mut self, viewport: Viewport, center: bool) {
+        let Some(bound) = self
+            .selected_row_key
+            .as_ref()
+            .and_then(|key| self.geometry.as_ref()?.row_by_key(key))
+        else {
+            return;
+        };
+        let height = usize::from(viewport.height).max(1);
+        if center {
+            self.scroll_top = bound.top.saturating_sub(height / 2);
+        } else if bound.top < self.scroll_top {
+            self.scroll_top = bound.top;
+        } else if bound.top.saturating_add(bound.height) > self.scroll_top.saturating_add(height) {
+            self.scroll_top = bound
+                .top
+                .saturating_add(bound.height)
+                .saturating_sub(height);
+        }
+        self.scroll_top = self.scroll_top.min(self.max_scroll_top());
     }
 
     fn visible_hunk_targets(&self) -> Vec<HunkTarget> {
@@ -1762,6 +1911,7 @@ impl ReviewController {
                 old_line: key.old_line,
                 new_line: key.new_line,
             }),
+            focused_side: self.focused_side,
             layout: match self.effective_layout {
                 EffectiveLayout::Split => LayoutMode::Split,
                 EffectiveLayout::Stack => LayoutMode::Stack,
@@ -1967,6 +2117,92 @@ fn file_status(file: &DiffFile) -> ReviewFileStatus {
     }
 }
 
+fn row_for_bound<'a>(planned_files: &'a [PlannedFile], bound: &RowBounds) -> Option<&'a ReviewRow> {
+    planned_files
+        .get(bound.file_index)?
+        .plan
+        .rows
+        .get(bound.row_index)
+}
+
+fn first_selectable_index(
+    geometry: &ReviewGeometry,
+    planned_files: &[PlannedFile],
+) -> Option<usize> {
+    geometry.rows.iter().enumerate().find_map(|(index, bound)| {
+        row_for_bound(planned_files, bound)
+            .is_some_and(ReviewRow::is_selectable)
+            .then_some(index)
+    })
+}
+
+fn selectable_index_by_key(
+    geometry: &ReviewGeometry,
+    planned_files: &[PlannedFile],
+    key: &ReviewRowKey,
+) -> Option<usize> {
+    let bound = geometry.row_by_key(key)?;
+    row_for_bound(planned_files, bound)
+        .is_some_and(ReviewRow::is_selectable)
+        .then(|| {
+            geometry
+                .rows
+                .iter()
+                .position(|candidate| candidate.key == bound.key)
+                .expect("row returned by geometry belongs to geometry")
+        })
+}
+
+fn nearest_selectable_index(
+    geometry: &ReviewGeometry,
+    planned_files: &[PlannedFile],
+    reference: &ReviewRowKey,
+    matches: impl Fn(&ReviewRowKey) -> bool,
+) -> Option<usize> {
+    geometry
+        .rows
+        .iter()
+        .enumerate()
+        .filter(|(_, bound)| {
+            matches(&bound.key)
+                && row_for_bound(planned_files, bound).is_some_and(ReviewRow::is_selectable)
+        })
+        .min_by_key(|(_, bound)| semantic_line_distance(reference, &bound.key))
+        .map(|(index, _)| index)
+}
+
+fn nearest_selectable_index_for_file(
+    geometry: &ReviewGeometry,
+    planned_files: &[PlannedFile],
+    file_id: &str,
+    reference: Option<&ReviewRowKey>,
+) -> Option<usize> {
+    let fallback = ReviewRowKey {
+        file_id: file_id.to_owned(),
+        hunk_index: None,
+        kind: super::row::ReviewRowKind::DiffLine,
+        old_line: None,
+        new_line: None,
+        note_id: None,
+    };
+    nearest_selectable_index(
+        geometry,
+        planned_files,
+        reference.unwrap_or(&fallback),
+        |candidate| candidate.file_id == file_id,
+    )
+}
+
+fn semantic_line_distance(left: &ReviewRowKey, right: &ReviewRowKey) -> u32 {
+    match (
+        left.old_line.or(left.new_line),
+        right.old_line.or(right.new_line),
+    ) {
+        (Some(left), Some(right)) => left.abs_diff(right),
+        _ => u32::MAX,
+    }
+}
+
 fn application_only(action: &ReviewAction) -> bool {
     matches!(
         action,
@@ -1994,6 +2230,7 @@ fn empty_snapshot() -> ReviewSnapshot {
         selected_file_id: None,
         selected_hunk_index: None,
         selected_position: None,
+        focused_side: ReviewSide::Left,
         layout: LayoutMode::Stack,
         show_sidebar: false,
         sidebar_width: DEFAULT_SIDEBAR_WIDTH,

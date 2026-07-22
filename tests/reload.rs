@@ -138,5 +138,6 @@ fn replacing_files_preserves_selected_file_and_viewport_anchor() {
     let after = controller.snapshot(viewport);
 
     assert_eq!(after.selected_file_id, before.selected_file_id);
+    assert_eq!(after.selected_position, before.selected_position);
     assert!(after.scroll_top > 0);
 }

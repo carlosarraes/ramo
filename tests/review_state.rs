@@ -6,7 +6,7 @@ use ramo::diff::model::{
 };
 use ramo::review::{
     HunkTarget, ReviewAction, ReviewController, ReviewEffect, ReviewFileStatus, ReviewOptions,
-    ScrollUnit, SidebarEntrySnapshot, Viewport,
+    ReviewSide, ScrollUnit, SidebarEntrySnapshot, Viewport,
 };
 
 fn file(path: &str, previous_path: Option<&str>, hunk_count: usize) -> DiffFile {
@@ -273,6 +273,83 @@ fn navigation_scrolls_clamps_and_wraps_hunks_and_files() {
     assert_eq!(bottom.scroll_top, bottom.max_scroll_top);
     controller.apply(ReviewAction::JumpTop, view);
     assert_eq!(controller.snapshot(view).scroll_top, 0);
+}
+
+#[test]
+fn semantic_cursor_moves_between_diff_rows_and_clamps_at_review_bounds() {
+    let mut controller = ReviewController::new(
+        vec![file("a.rs", None, 2), file("b.rs", None, 1)],
+        ReviewOptions::default(),
+    );
+    let view = viewport(80, 8);
+
+    let first = controller.snapshot(view).selected_position.clone().unwrap();
+    assert_eq!(first.old_line, Some(1));
+    assert_eq!(first.new_line, None);
+
+    controller.apply(ReviewAction::MoveCursor(1), view);
+    let second = controller.snapshot(view).selected_position.clone().unwrap();
+    assert_eq!(second.old_line, None);
+    assert_eq!(second.new_line, Some(1));
+    assert_ne!(second, first);
+
+    controller.apply(ReviewAction::JumpBottom, view);
+    let bottom = controller.snapshot(view).clone();
+    assert_eq!(bottom.selected_position.unwrap().new_line, Some(2));
+    assert_eq!(bottom.scroll_top, bottom.max_scroll_top);
+    controller.apply(ReviewAction::MoveCursor(1), view);
+    assert_eq!(
+        controller
+            .snapshot(view)
+            .selected_position
+            .as_ref()
+            .and_then(|position| position.new_line),
+        Some(2)
+    );
+
+    controller.apply(ReviewAction::JumpTop, view);
+    assert_eq!(
+        controller
+            .snapshot(view)
+            .selected_position
+            .as_ref()
+            .and_then(|position| position.old_line),
+        Some(1)
+    );
+    controller.apply(ReviewAction::MoveHunk(1), view);
+    let hunk = controller.snapshot(view).selected_position.clone().unwrap();
+    assert_eq!(hunk.hunk_index, Some(1));
+    assert!(hunk.old_line.is_some() || hunk.new_line.is_some());
+    controller.apply(ReviewAction::MoveFile(1), view);
+    let file = controller.snapshot(view).selected_position.clone().unwrap();
+    assert_eq!(file.file_id, "file:b.rs->b.rs");
+    assert!(file.old_line.is_some() || file.new_line.is_some());
+}
+
+#[test]
+fn focused_side_tracks_row_availability_and_explicit_context_focus() {
+    let mut split = file("a.rs", None, 1);
+    let deletion = split.hunks[0].lines[0].clone();
+    let addition = split.hunks[0].lines[1].clone();
+    let context = split.hunks[0].lines[2].clone();
+    split.hunks[0].lines = vec![deletion, context, addition];
+    let mut controller = ReviewController::new(vec![split], ReviewOptions::default());
+    let view = viewport(180, 8);
+
+    assert_eq!(controller.snapshot(view).focused_side, ReviewSide::Left);
+    controller.apply(ReviewAction::FocusSide(ReviewSide::Right), view);
+    assert_eq!(controller.snapshot(view).focused_side, ReviewSide::Left);
+
+    controller.apply(ReviewAction::MoveCursor(1), view);
+    controller.apply(ReviewAction::FocusSide(ReviewSide::Right), view);
+    assert_eq!(controller.snapshot(view).focused_side, ReviewSide::Right);
+    controller.apply(ReviewAction::FocusSide(ReviewSide::Left), view);
+    assert_eq!(controller.snapshot(view).focused_side, ReviewSide::Left);
+
+    controller.apply(ReviewAction::MoveCursor(1), view);
+    assert_eq!(controller.snapshot(view).focused_side, ReviewSide::Right);
+    controller.apply(ReviewAction::FocusSide(ReviewSide::Left), view);
+    assert_eq!(controller.snapshot(view).focused_side, ReviewSide::Right);
 }
 
 #[test]

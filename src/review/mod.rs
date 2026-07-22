@@ -17,6 +17,6 @@ pub use selection::{
 };
 pub use state::{
     HunkTarget, ReviewAction, ReviewController, ReviewEffect, ReviewFileSnapshot, ReviewFileStatus,
-    ReviewHit, ReviewOptions, ReviewPoint, ReviewPosition, ReviewSnapshot, ReviewViewPreferences,
-    ScrollUnit, SidebarEntrySnapshot, Viewport,
+    ReviewHit, ReviewOptions, ReviewPoint, ReviewPosition, ReviewSide, ReviewSnapshot,
+    ReviewViewPreferences, ScrollUnit, SidebarEntrySnapshot, Viewport,
 };

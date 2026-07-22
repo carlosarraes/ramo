@@ -138,6 +138,20 @@ impl ReviewRow {
             | Self::Note { key, .. } => key,
         }
     }
+
+    pub(super) fn is_selectable(&self) -> bool {
+        matches!(self, Self::Split { .. } | Self::Stack { .. })
+    }
+
+    pub(super) fn available_sides(&self) -> (bool, bool) {
+        match self {
+            Self::Split { left, right, .. } => {
+                (left.kind != CellKind::Empty, right.kind != CellKind::Empty)
+            }
+            Self::Stack { .. } => (true, true),
+            _ => (false, false),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,7 +220,12 @@ pub(crate) fn build_row_plan_with_context(
             EffectiveLayout::Stack => build_stack_rows(file, hunk_index, &hunk.lines, &mut rows),
         }
 
-        if let Some(anchor) = rows.get(hunk_start).map(ReviewRow::key).cloned() {
+        if let Some(anchor) = rows[hunk_start..]
+            .iter()
+            .find(|row| row.is_selectable())
+            .map(ReviewRow::key)
+            .cloned()
+        {
             hunk_anchor_keys.push(anchor);
         }
     }
