@@ -2220,8 +2220,6 @@ fn application_only(action: &ReviewAction) -> bool {
             | ReviewAction::ToggleLineNumbers
             | ReviewAction::ToggleHunkHeaders
             | ReviewAction::ToggleAgentNotes
-            | ReviewAction::MoveHunk(_)
-            | ReviewAction::MoveFile(_)
             | ReviewAction::MoveAnnotatedHunk(_)
             | ReviewAction::SelectFile(_)
     )

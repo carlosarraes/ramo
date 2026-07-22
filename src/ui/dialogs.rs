@@ -28,7 +28,8 @@ pub fn help_text(can_refresh: bool) -> String {
     };
     format!(
         "Navigation\n\
-         ↑ / ↓       move line-by-line\n\
+         j / k, ↑ / ↓ previous / next line\n\
+         h / l       focus left / right\n\
          Space / f   page down\n\
          b           page up\n\
          Shift+Space page up\n\
@@ -43,7 +44,7 @@ pub fn help_text(can_refresh: bool) -> String {
          s / t       sidebar / theme selector\n\
          a / z       AI notes / unchanged context\n\
          A           agent skill setup\n\
-         l / w / m   lines / wrap / hunk headers\n\
+         n / w / m   numbers / wrap / hunk headers\n\
          e           open file in editor\n\
          \nReview\n\
          /           focus file filter\n\

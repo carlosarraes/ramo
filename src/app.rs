@@ -863,13 +863,7 @@ impl App {
             Mode::CommentNormal => self.handle_comment_normal_key(key),
             Mode::Command => self.handle_command_key(key),
             Mode::TmuxPanePick => self.handle_tmux_pick_key(key),
-            _ => {
-                if map_key_event(key, InputMode::Normal, self.pager_mode).is_some() {
-                    self.handle_ui_key(key, viewport);
-                } else {
-                    self.handle_nav_key(key, usize::from(viewport.height));
-                }
-            }
+            _ => self.handle_ui_key(key, viewport),
         }
     }
 
@@ -1246,6 +1240,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     fn handle_nav_key(&mut self, key: KeyEvent, viewport_height: usize) {
         let half_page = viewport_height / 2;
         self.toast = None;

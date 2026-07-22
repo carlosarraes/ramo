@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::core::input::LayoutMode;
-use crate::review::{ReviewAction, ScrollUnit};
+use crate::review::{ReviewAction, ReviewSide, ScrollUnit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
@@ -100,14 +100,10 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
     }
     let review = |action| Some(AppAction::Review(action));
     match event.code {
-        KeyCode::Down | KeyCode::Char('j') => review(ReviewAction::Scroll {
-            delta: 1,
-            unit: ScrollUnit::Step,
-        }),
-        KeyCode::Up | KeyCode::Char('k') => review(ReviewAction::Scroll {
-            delta: -1,
-            unit: ScrollUnit::Step,
-        }),
+        KeyCode::Down | KeyCode::Char('j') => review(ReviewAction::MoveCursor(1)),
+        KeyCode::Up | KeyCode::Char('k') => review(ReviewAction::MoveCursor(-1)),
+        KeyCode::Char('h') => review(ReviewAction::FocusSide(ReviewSide::Left)),
+        KeyCode::Char('l') => review(ReviewAction::FocusSide(ReviewSide::Right)),
         KeyCode::Left => review(ReviewAction::ScrollHorizontal(
             if event.modifiers.contains(KeyModifiers::SHIFT) {
                 -8
@@ -164,7 +160,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
         KeyCode::Char('V') => Some(AppAction::BeginSelection),
         KeyCode::Char('y') => Some(AppAction::YankSelection),
-        KeyCode::Char('l') => review(ReviewAction::ToggleLineNumbers),
+        KeyCode::Char('n') => review(ReviewAction::ToggleLineNumbers),
         KeyCode::Char('w') => review(ReviewAction::ToggleWrap),
         KeyCode::Char('m') => review(ReviewAction::ToggleHunkHeaders),
         KeyCode::Char('e') => review(ReviewAction::EditSelectedFile),
@@ -213,8 +209,12 @@ fn pager_action(action: &AppAction) -> bool {
         AppAction::Review(
             ReviewAction::Scroll { .. }
                 | ReviewAction::ScrollHorizontal(_)
+                | ReviewAction::MoveCursor(_)
+                | ReviewAction::FocusSide(_)
                 | ReviewAction::JumpTop
                 | ReviewAction::JumpBottom
+                | ReviewAction::MoveHunk(_)
+                | ReviewAction::MoveFile(_)
                 | ReviewAction::ToggleWrap
                 | ReviewAction::ToggleSidebar
                 | ReviewAction::StartNote

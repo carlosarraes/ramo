@@ -5,7 +5,7 @@ use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use ramo::review::{ReviewAction, ScrollUnit, Viewport};
+use ramo::review::{ReviewAction, ReviewSide, ScrollUnit, Viewport};
 use ramo::ui::input::{AppAction, InputMode, map_key_event};
 use std::path::PathBuf;
 
@@ -22,24 +22,15 @@ fn direct_hunk_keymap_has_no_menu_binding() {
     let cases = [
         (
             key(KeyCode::Down),
-            AppAction::Review(ReviewAction::Scroll {
-                delta: 1,
-                unit: ScrollUnit::Step,
-            }),
+            AppAction::Review(ReviewAction::MoveCursor(1)),
         ),
         (
             key(KeyCode::Char('j')),
-            AppAction::Review(ReviewAction::Scroll {
-                delta: 1,
-                unit: ScrollUnit::Step,
-            }),
+            AppAction::Review(ReviewAction::MoveCursor(1)),
         ),
         (
             key(KeyCode::Up),
-            AppAction::Review(ReviewAction::Scroll {
-                delta: -1,
-                unit: ScrollUnit::Step,
-            }),
+            AppAction::Review(ReviewAction::MoveCursor(-1)),
         ),
         (
             key(KeyCode::Left),
@@ -215,7 +206,15 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
             review(ReviewAction::ToggleAgentNotes),
         ),
         (
+            key(KeyCode::Char('h')),
+            review(ReviewAction::FocusSide(ReviewSide::Left)),
+        ),
+        (
             key(KeyCode::Char('l')),
+            review(ReviewAction::FocusSide(ReviewSide::Right)),
+        ),
+        (
+            key(KeyCode::Char('n')),
             review(ReviewAction::ToggleLineNumbers),
         ),
         (key(KeyCode::Char('w')), review(ReviewAction::ToggleWrap)),
@@ -300,6 +299,18 @@ fn focused_text_and_pager_precedence_suppress_global_actions() {
     assert_eq!(
         map_key_event(key(KeyCode::Char('w')), InputMode::Normal, true),
         Some(AppAction::Review(ReviewAction::ToggleWrap))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('j')), InputMode::Normal, true),
+        Some(AppAction::Review(ReviewAction::MoveCursor(1)))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('h')), InputMode::Normal, true),
+        Some(AppAction::Review(ReviewAction::FocusSide(ReviewSide::Left)))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char(']')), InputMode::Normal, true),
+        Some(AppAction::Review(ReviewAction::MoveHunk(1)))
     );
     assert_eq!(
         map_key_event(key(KeyCode::Char('q')), InputMode::Normal, true),
@@ -410,11 +421,31 @@ fn review_file() -> DiffFile {
 fn app_keys_mutate_the_rendering_controller_and_dialog_modes_own_closing_keys() {
     let mut app = App::new_with_config(vec![review_file()], &ResolvedConfig::default(), false);
     let view = Viewport {
-        width: 80,
+        width: 180,
         height: 8,
     };
     app.handle_ui_key(key(KeyCode::Char('j')), view);
-    assert_eq!(app.review_controller.snapshot(view).scroll_top, 1);
+    assert_eq!(
+        app.review_controller
+            .snapshot(view)
+            .selected_position
+            .as_ref()
+            .and_then(|position| position.new_line),
+        Some(2)
+    );
+    app.handle_ui_key(key(KeyCode::Char('h')), view);
+    assert_eq!(
+        app.review_controller.snapshot(view).focused_side,
+        ReviewSide::Left
+    );
+    app.handle_ui_key(key(KeyCode::Char('l')), view);
+    assert_eq!(
+        app.review_controller.snapshot(view).focused_side,
+        ReviewSide::Right
+    );
+    assert!(app.review_controller.snapshot(view).line_numbers);
+    app.handle_ui_key(key(KeyCode::Char('n')), view);
+    assert!(!app.review_controller.snapshot(view).line_numbers);
 
     app.handle_ui_key(key(KeyCode::Char('?')), view);
     assert_eq!(app.input_mode(), InputMode::Help);
