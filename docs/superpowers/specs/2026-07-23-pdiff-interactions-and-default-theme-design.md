@@ -14,6 +14,8 @@ UI:
   be sent to Claude or another tmux target.
 - `Enter` inserts a newline in the note editor, while old pdiff used Enter to
   submit and Shift-Enter to insert a newline.
+- Starting a note from a visual selection collapses its target to the cursor's
+  final line, and saving the note leaves the visual-selection anchor active.
 
 The automatic dark theme also still resolves to GitHub Dark. The existing
 `tokyo-night` theme already uses Recife's `#1a1b26` background and `#a9b1d6`
@@ -28,6 +30,8 @@ foreground, matching the palette published by
 - Restore send-and-save from the current native note editor.
 - Restore old pdiff note completion while retaining `Ctrl-S` as an additional
   save binding.
+- Preserve visual ranges as note targets and return to normal navigation after
+  the note is saved or cancelled.
 - Make Tokyo Night the automatic dark default without changing explicit theme
   selections or the automatic light default.
 
@@ -86,6 +90,12 @@ The current native note editor uses these controls:
 - `Ctrl-T`: send the note with its bounded file/line/code context.
 - Escape: cancel the draft.
 
+When `c` starts a note from a visual selection, the draft target contains the
+full selected old/new line range rather than only the final cursor row. The
+range is preserved independently of the painted selection. Saving or cancelling
+the draft clears the visual anchor and painted range, returning the review to
+normal navigation.
+
 `Ctrl-T` follows the same remembered-target and picker behavior as selection
 sending. Ramo commits the human note only after tmux delivery succeeds. A
 cancelled picker or failed delivery leaves the draft open and unchanged so the
@@ -105,8 +115,12 @@ behavior remains unchanged.
 
 - `ui::input` owns modifier-aware mappings for navigation, note completion, and
   note sending.
+- `ReviewController` converts an optional visual `SelectionPoint` pair into a
+  stable `NoteTarget`, restricted to the selected file and available old/new
+  line numbers.
 - `App` keeps the existing tmux target state and pending payload, but represents
-  whether a successful send must commit a native note draft explicitly.
+  whether a successful send must commit a native note draft explicitly. It
+  clears visual-selection state when note editing finishes.
 - `ui::dialogs` owns a centered tmux-picker overlay rendered by the current
   review UI. The legacy side-by-side renderer is not reused.
 - `ui::themes` changes only the automatic dark default constant; Tokyo Night's
@@ -117,15 +131,19 @@ labels, selected text, or note text as shell input.
 
 ## Testing Seams
 
-Tests exercise behavior through four existing public seams:
+Tests exercise behavior through five existing public seams:
 
 1. `map_key_event` verifies modifier-aware navigation and note controls.
-2. The Ratatui test backend verifies that the current renderer displays the
+2. `ReviewController` verifies that forward and reverse visual selections
+   produce complete old/new note ranges and that a single-row note is unchanged.
+3. The Ratatui test backend verifies that the current renderer displays the
    pane picker, selected target, and controls at normal and small terminal
    sizes.
-3. PTY/tmux integration verifies that `Ctrl-T` visibly opens the picker and
-   that selection and note payloads reach a real isolated tmux pane.
-4. `ThemeRegistry::resolve` verifies automatic dark/light selection and
+4. PTY/tmux integration verifies that `Ctrl-T` visibly opens the picker, that
+   selection and note payloads reach a real isolated tmux pane, that the draft
+   displays the complete visual range, and that saving leaves no active visual
+   selection.
+5. `ThemeRegistry::resolve` verifies automatic dark/light selection and
    explicit-theme stability.
 
 Each regression test must fail against `v0.0.9` behavior before production code
