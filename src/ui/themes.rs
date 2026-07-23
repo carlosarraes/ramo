@@ -4,7 +4,7 @@ use ratatui::style::{Color, Style};
 
 use crate::config::CustomThemeConfig;
 
-pub const DEFAULT_DARK_THEME_ID: &str = "github-dark-default";
+pub const DEFAULT_DARK_THEME_ID: &str = "tokyo-night";
 pub const DEFAULT_LIGHT_THEME_ID: &str = "github-light-default";
 
 pub const BUNDLED_THEME_IDS: &[&str] = &[
@@ -240,7 +240,7 @@ impl ThemeRegistry {
 
 pub fn normalize_builtin_theme_id(id: &str) -> Option<&'static str> {
     let canonical = match id {
-        "graphite" => DEFAULT_DARK_THEME_ID,
+        "graphite" => "github-dark-default",
         "midnight" => "github-dark-dimmed",
         "paper" => DEFAULT_LIGHT_THEME_ID,
         "ember" => "dark-plus",

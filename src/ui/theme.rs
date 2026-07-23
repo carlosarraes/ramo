@@ -1,7 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::diff::model::LineType;
-use crate::ui::themes::{ReviewLineStyle, ThemeRegistry};
+use crate::ui::themes::{DEFAULT_DARK_THEME_ID, ReviewLineStyle, ThemeRegistry};
 
 pub struct Theme {
     pub addition: Style,
@@ -23,7 +23,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+        let theme = ThemeRegistry::default().resolve(DEFAULT_DARK_THEME_ID, None, false);
         Self {
             addition: theme.row_style(ReviewLineStyle::Added),
             deletion: theme.row_style(ReviewLineStyle::Removed),

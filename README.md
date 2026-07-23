@@ -133,7 +133,7 @@ The sidecar is JSON. Its file order leads the review, renamed files match their 
 
 Ranges are positive, inclusive, 1-based `[start, end]` pairs named `oldRange` and/or `newRange`. Optional note fields are `id`, `rationale`, `markup`, `tags`, `confidence`, `source`, `title`, `author`, `createdAt`, `updatedAt`, and `editable`. The sidecar is limited to 1 MiB, 2,000 files, and 10,000 annotations; each note allows 64 KiB of markup and 64 KiB of combined summary/rationale text. Text and markup are terminal-control sanitized.
 
-Press `a` to reveal or hide AI/agent notes and `{`/`}` to move between annotated hunks. External notes marked as `source: "user"` remain visible; only notes authored interactively in this `ramo` process are exported as Markdown. Press `c` to start an inline human note, Enter for a newline, `Ctrl-S` to save, or Escape to cancel. Clicking a saved human note reopens it for editing; saving it empty removes it.
+Press `a` to reveal or hide AI/agent notes and `{`/`}` to move between annotated hunks. External notes marked as `source: "user"` remain visible; only notes authored interactively in this `ramo` process are exported as Markdown. Press `c` to start an inline human note, Enter or `Ctrl-S` to save, Shift-Enter for a newline, or Escape to cancel. Clicking a saved human note reopens it for editing; saving it empty removes it.
 
 `--agent-context -` reads the sidecar from stdin only when the review itself does not consume stdin. Patch-stdin and pager-stdin reviews must use a sidecar file.
 
@@ -227,7 +227,7 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `h` / `l` | Focus the left/right side in split layout |
 | Left/Right | Scroll code horizontally; Shift moves faster |
 | `Space` / `f`, `b` | Page down/up |
-| `d` / `u` | Half-page down/up |
+| `d` / `u`, `Ctrl-d` / `Ctrl-u` | Half-page down/up |
 | `g` / `G`, Home/End | Jump to top/bottom |
 | `[` / `]` | Previous/next hunk |
 | `,` / `.` | Previous/next file |
@@ -240,13 +240,15 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `/` | Focus the file filter; `Tab` returns to review; Escape clears and exits |
 | `t`, `?` | Theme selector and controls help |
 | `V`, `y` | Select lines and copy through OSC 52 |
-| `Ctrl-t`, `Ctrl-Shift-t` | Send selection to tmux / choose a new target |
-| `c` | Create an inline human review note |
+| `Ctrl-t`, `Ctrl-Shift-t` | Send the current line/selection to tmux / choose a new target |
+| `c` | Create an inline human review note; Enter saves, Shift-Enter adds a line, `Ctrl-s` also saves |
 | `e`, `r` | Open in `$EDITOR` / reload now |
 | `Ctrl-z` | Suspend and return terminal ownership on Unix |
 | `q` | Quit |
 
 Ordinary line movement follows semantic diff rows rather than treating the viewport as the selection. Page and wheel scrolling move the viewport and place the cursor on the selectable row nearest its center. Hunk and file jumps land on their first diff row; `g` and `G` clamp to the first and last diff rows.
+
+The first `Ctrl-t` opens a visible tmux pane picker; `j`/`k` chooses a target, Enter sends, and Escape cancels. Ramo remembers the target for later sends, while `Ctrl-Shift-t` always asks again. Inside a draft note, `Ctrl-t` sends the selected range, bounded code context, and comment, then saves the note only after tmux accepts the payload.
 
 The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel events scroll code horizontally. Left-click selects sidebar files or collapsed context. The scrollbar and sidebar divider are draggable. Dragged text uses terminal-cell-aware selection, including full-width Unicode characters, and copies through the same OSC 52 path as `V`/`y`.
 
@@ -273,7 +275,7 @@ Press `t` to preview embedded or custom themes. When interactive view settings c
 
 After an installed-version change, `ramo` shows a one-time local reminder to refresh any copied agent skill with `ramo skill path`. It also performs an opportunistic, nonblocking `git ls-remote` query for newer GitHub release tags: the first check is delayed 1.2 seconds, the child is killed after five seconds, failures or a missing optional Git executable are ignored, and a long-running review checks again every six hours. Notices are deduplicated, queued for seven seconds each, and suppressed in pager mode. Set `RAMO_DISABLE_UPDATE_NOTICE=1` (or Hunk's compatibility name `HUNK_DISABLE_UPDATE_NOTICE=1`) to disable both update notices. This adds no TLS library or mandatory runtime dependency to the `ramo` executable.
 
-The default `theme = "auto"` reads `COLORFGBG` when available and otherwise selects the dark GitHub default. Startup never sends an active terminal background query, so terminal responses cannot be mistaken for keyboard input. Explicit and custom themes skip auto resolution.
+The default `theme = "auto"` reads `COLORFGBG` when available, uses GitHub Light for a light terminal, and otherwise selects Tokyo Night, whose dark blue palette is close to tmux-recife. Startup never sends an active terminal background query, so terminal responses cannot be mistaken for keyboard input. Explicit and custom themes skip auto resolution.
 
 All of this ships in the same Rust executable. Syntax highlighting uses Syntect's pure-Rust regex backend; the dependency graph contains no Oniguruma C implementation. `ramo` does not invoke Node.js, Bun, TypeScript, a browser, or Hunk at runtime.
 

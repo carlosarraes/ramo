@@ -276,7 +276,7 @@ fn write_navigation_patch(path: &Path) {
 
 fn selected_hunk_color() -> vt100::Color {
     let color = ramo::ui::themes::ThemeRegistry::default()
-        .resolve("github-dark-default", None, false)
+        .resolve(ramo::ui::themes::DEFAULT_DARK_THEME_ID, None, false)
         .selected_hunk;
     match color {
         ratatui::style::Color::Rgb(red, green, blue) => vt100::Color::Rgb(red, green, blue),

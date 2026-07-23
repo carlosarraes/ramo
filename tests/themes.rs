@@ -94,10 +94,7 @@ fn registry_preserves_hunks_reference_order_and_legacy_aliases() {
 #[test]
 fn fallback_auto_and_transparent_surfaces_are_predictable() {
     let registry = ThemeRegistry::default();
-    assert_eq!(
-        registry.resolve("missing", None, false).id,
-        "github-dark-default"
-    );
+    assert_eq!(registry.resolve("missing", None, false).id, "tokyo-night");
     assert_eq!(
         registry
             .resolve("auto", Some(TerminalAppearance::Light), false)
@@ -108,8 +105,15 @@ fn fallback_auto_and_transparent_surfaces_are_predictable() {
         registry
             .resolve("auto", Some(TerminalAppearance::Dark), false)
             .id,
+        "tokyo-night"
+    );
+    assert_eq!(
+        registry.resolve("github-dark-default", None, false).id,
         "github-dark-default"
     );
+    let recife_like = registry.resolve("tokyo-night", None, false);
+    assert_eq!(recife_like.background, Color::Rgb(0x1a, 0x1b, 0x26));
+    assert_eq!(recife_like.text, Color::Rgb(0xa9, 0xb1, 0xd6));
 
     let opaque = registry.resolve("github-dark-default", None, false);
     let transparent = registry.resolve("github-dark-default", None, true);

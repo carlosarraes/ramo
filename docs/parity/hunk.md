@@ -69,7 +69,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Copied-decoration preference | verified | `ReviewOptions::copy_decorations` projects the rendered line-number/change-marker gutter | `tests/ui_render.rs::copied_decorations_config_includes_the_rendered_gutter_for_line_selection` |
 | `transparentBackground` config compatibility alias | verified | typed camel-case compatibility field resolves ahead of the snake-case key | `tests/config_resolution.rs::transparent_background_accepts_hunks_camel_case_compatibility_key` |
 | Built-in and custom theme definitions | verified | `src/ui/themes.rs` | `tests/themes.rs`, `tests/ui_dialogs.rs` |
-| Terminal background auto-detection | verified | environment-only `COLORFGBG` hint with deterministic dark fallback; no active terminal query | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `auto_theme_starts_without_querying_or_waiting_for_terminal_input`, `tests/pty_ui.rs::semantic_navigation_moves_the_rendered_cursor_without_startup_input` |
+| Terminal background auto-detection | verified | environment-only `COLORFGBG` hint with deterministic Tokyo Night dark fallback; no active terminal query | `tests/terminal_appearance.rs::osc11_parsing_classification_and_environment_fallback_match_hunk`, `auto_theme_starts_without_querying_or_waiting_for_terminal_input`, `tests/pty_ui.rs::semantic_navigation_moves_the_rendered_cursor_without_startup_input`, `tests/themes.rs::fallback_auto_and_transparent_surfaces_are_predictable` |
 | Legacy Hunk theme aliases/syntax translation | verified | alias normalization plus semantic-role-to-TextMate translation with exact-scope precedence | `tests/themes.rs::registry_preserves_hunks_reference_order_and_legacy_aliases`, `deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice` |
 | Compatibility startup notices | verified | resolved config notices enter a timed, deduplicated native queue; pager mode suppresses application notices | `tests/themes.rs::deprecated_semantic_syntax_is_translated_and_emits_one_startup_notice`, `tests/pty_ui.rs::deprecated_theme_syntax_surfaces_a_native_startup_notice`, `local_and_remote_startup_notices_are_shown_in_order`, `tests/pty_pager.rs::patch_pager_suppresses_application_startup_notices` |
 | Local copied-skill refresh notice after upgrades | verified | failure-tolerant version state in `src/startup_notice.rs`, disabled by `RAMO_DISABLE_UPDATE_NOTICE=1` or Hunk's compatibility variable | `tests/startup_notices.rs::copied_skill_refresh_notice_is_local_one_time_and_failure_tolerant`, `tests/pty_ui.rs::installed_version_change_surfaces_a_local_copied_skill_notice_once` |
@@ -139,7 +139,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `h`/`l` split-side focus | verified | side availability snapping in `ReviewController` plus input/render tests |
 | Left/Right horizontal scrolling | verified | typed horizontal actions plus input/state tests |
 | Space/`f` page down, `b` page up, Shift-Space | verified | `tests/ui_input.rs`, `tests/review_state.rs` |
-| `d`/`u` half-page scrolling | verified | `tests/ui_input.rs`, `tests/review_state.rs` |
+| `d`/`u` and `Ctrl-D`/`Ctrl-U` half-page scrolling | verified | identical typed half-page actions in `tests/ui_input.rs`, controller bounds in `tests/review_state.rs` |
 | `g`/`G`, Home/End bounds | verified | input and controller navigation tests |
 | `[`/`]` hunk navigation | verified | input and wrapping navigation tests |
 | `,`/`.` file navigation | verified | input, state, and multi-file PTY tests |
@@ -156,11 +156,11 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `e` editor | verified | typed effect, literal native command runner, terminal handoff | `tests/editor.rs`, `tests/pty_watch.rs::editor_key_launches_literal_file_and_line_argv_then_resumes_the_review` |
 | `r` reload | verified | typed effect through `WatchRuntime::manual_reload` | `tests/reload.rs`, `tests/pty_watch.rs::manual_r_reloads_a_direct_file_without_watch_mode` |
 | `/` file filter | verified | state/input and literal-key PTY tests |
-| `c` create review note | verified | controller-owned inline draft; note input owns literal keys | `tests/notes_state.rs`, `tests/pty_notes.rs::human_note_draft_owns_keys_saves_inline_and_exports_markdown`, `escape_cancels_a_fresh_inline_draft` |
+| `c` create review note | verified | controller-owned inline draft preserves visual old/new ranges; Enter/Ctrl-S save, Shift-Enter inserts a line, and save/cancel clear visual mode | `tests/notes_state.rs::visual_selection_becomes_the_complete_note_target_in_both_directions`, `tests/pty_notes.rs::visual_note_keeps_the_range_then_returns_to_normal_navigation`, `human_note_draft_owns_keys_saves_inline_and_exports_markdown` |
 | Tab focus toggle | verified | filter-aware typed input and PTY test |
 | `?` help | verified | input/dialog and PTY tests |
 | `q` quit | verified | typed quit/save reduction | pager/UI PTY restoration tests |
-| Existing Vim selection/yank/tmux actions on new bindings | verified | stable review selection projection plus OSC 52/tmux routing | selection/input/render tests and `tests/integrations.rs::real_tmux_server_receives_the_exact_native_buffer` |
+| Existing Vim selection/yank/tmux actions on new bindings | verified | stable review selection projection plus OSC 52/tmux routing; native picker is visible and note sends save only after delivery | selection/input/render tests, `tests/integrations.rs::real_tmux_server_receives_the_exact_native_buffer`, `tests/pty_tmux.rs::picker_is_visible_and_native_note_saves_only_after_tmux_delivery` |
 
 ### Mouse actions
 
