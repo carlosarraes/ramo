@@ -160,6 +160,28 @@ fn inclusive_drag_selection(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TmuxSendCompletion {
+    Review,
+    SaveLegacyAnnotation,
+    SaveHumanNote { viewport: Viewport },
+}
+
+fn format_annotation_for_tmux(annotation: &Annotation) -> String {
+    let language = Path::new(&annotation.file)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("diff");
+    format!(
+        "`{} {}`:\n\n```{}\n{}\n```\n\n{}",
+        annotation.file,
+        annotation.display_range,
+        language,
+        annotation.diff_context,
+        annotation.comment,
+    )
+}
+
 pub struct App {
     pub files: Vec<DiffFile>,
     pub flat_lines: Vec<FlatLine>,
@@ -207,7 +229,7 @@ pub struct App {
     pub tmux_cursor: usize,
     pub tmux_last_target: Option<(String, crate::tmux::PasteMode)>,
     pub tmux_pending_text: String,
-    pub tmux_save_annotation_on_send: bool,
+    tmux_completion: TmuxSendCompletion,
     reload_requested: bool,
     editor_request: Option<(String, Option<u32>)>,
     suspend_requested: bool,
@@ -340,7 +362,7 @@ impl App {
             tmux_cursor: 0,
             tmux_last_target: None,
             tmux_pending_text: String::new(),
-            tmux_save_annotation_on_send: false,
+            tmux_completion: TmuxSendCompletion::Review,
             reload_requested: false,
             editor_request: None,
             suspend_requested: false,
@@ -851,6 +873,12 @@ impl App {
             }
             InputMode::Normal | InputMode::Filter => {}
         }
+        if matches!(self.mode, Mode::TmuxPanePick) {
+            frame.render_widget(
+                DialogOverlay::tmux(&self.review_theme, &self.tmux_panes, self.tmux_cursor),
+                area,
+            );
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, viewport: Viewport) {
@@ -1082,7 +1110,20 @@ impl App {
                     let text = self
                         .review_controller
                         .selection_text(anchor, focus, viewport);
-                    self.request_tmux_send(text, false);
+                    self.request_tmux_send(text, TmuxSendCompletion::Review);
+                }
+            }
+            AppAction::SendNote { reset_target } => {
+                if reset_target {
+                    self.tmux_last_target = None;
+                }
+                self.review_controller
+                    .update_human_note_draft(&self.comment_buf, viewport);
+                if let Some(annotation) = self.review_controller.human_note_draft_annotation() {
+                    self.request_tmux_send(
+                        format_annotation_for_tmux(&annotation),
+                        TmuxSendCompletion::SaveHumanNote { viewport },
+                    );
                 }
             }
             AppAction::Suspend => self.suspend_requested = true,
@@ -1121,7 +1162,11 @@ impl App {
                 self.input_mode = InputMode::Theme;
             }
             ReviewEffect::StartNote => {
-                if self.review_controller.begin_human_note(viewport).is_some() {
+                if self
+                    .review_controller
+                    .begin_human_note(self.review_selection, viewport)
+                    .is_some()
+                {
                     self.comment_buf.clear();
                     self.input_mode = InputMode::Note;
                 }
@@ -1131,6 +1176,11 @@ impl App {
             ReviewEffect::Quit => self.request_quit(viewport),
             ReviewEffect::None | ReviewEffect::Redraw => {}
         }
+    }
+
+    fn clear_review_selection(&mut self) {
+        self.review_keyboard_anchor = None;
+        self.review_selection = None;
     }
 
     fn current_view_preferences(&self) -> ViewPreferences {
@@ -1209,6 +1259,7 @@ impl App {
                 self.review_controller.cancel_human_note_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
+                self.clear_review_selection();
             }
             InputMode::Help | InputMode::AgentSkill | InputMode::Filter | InputMode::SavePrompt => {
                 self.input_mode = InputMode::Normal;
@@ -1235,6 +1286,7 @@ impl App {
                 self.review_controller.save_human_note_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
+                self.clear_review_selection();
             }
             InputMode::SavePrompt => {
                 self.save_and_quit(self.current_view_preferences());
@@ -1338,14 +1390,14 @@ impl App {
             {
                 self.tmux_last_target = None;
                 let text = self.yank_text(self.cursor, self.cursor);
-                self.request_tmux_send(text, false);
+                self.request_tmux_send(text, TmuxSendCompletion::Review);
             }
             KeyCode::Char('t')
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     && matches!(self.mode, Mode::Normal) =>
             {
                 let text = self.yank_text(self.cursor, self.cursor);
-                self.request_tmux_send(text, false);
+                self.request_tmux_send(text, TmuxSendCompletion::Review);
             }
             KeyCode::Char('t')
                 if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -1353,7 +1405,7 @@ impl App {
             {
                 if let Some((start, end)) = self.selection_range() {
                     let text = self.yank_text(start, end);
-                    self.request_tmux_send(text, false);
+                    self.request_tmux_send(text, TmuxSendCompletion::Review);
                 }
             }
             KeyCode::Char('c') if matches!(self.mode, Mode::Normal | Mode::VisualLine { .. }) => {
@@ -1421,7 +1473,7 @@ impl App {
             }
             KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let text = self.build_comment_context();
-                self.request_tmux_send(text, true);
+                self.request_tmux_send(text, TmuxSendCompletion::SaveLegacyAnnotation);
             }
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.comment_buf.push('\n');
@@ -1680,7 +1732,7 @@ impl App {
         });
     }
 
-    fn request_tmux_send(&mut self, text: String, save_annotation: bool) {
+    fn request_tmux_send(&mut self, text: String, completion: TmuxSendCompletion) {
         if text.trim().is_empty() {
             self.toast = Some("nothing to send".to_string());
             return;
@@ -1691,7 +1743,7 @@ impl App {
         }
 
         self.tmux_pending_text = text;
-        self.tmux_save_annotation_on_send = save_annotation;
+        self.tmux_completion = completion;
 
         // Try direct-send to remembered target
         if let Some((target, mode)) = self.tmux_last_target.clone() {
@@ -1713,24 +1765,30 @@ impl App {
             Err(e) => {
                 self.toast = Some(format!("tmux list failed: {e}"));
                 self.tmux_pending_text.clear();
-                self.tmux_save_annotation_on_send = false;
+                self.tmux_completion = TmuxSendCompletion::Review;
                 return;
             }
         };
         if panes.is_empty() {
             self.toast = Some("no other panes".to_string());
             self.tmux_pending_text.clear();
-            self.tmux_save_annotation_on_send = false;
+            self.tmux_completion = TmuxSendCompletion::Review;
             return;
         }
         self.tmux_panes = panes;
         self.tmux_cursor = 0;
+        if matches!(
+            self.tmux_completion,
+            TmuxSendCompletion::SaveHumanNote { .. }
+        ) {
+            self.input_mode = InputMode::Normal;
+        }
         self.mode = Mode::TmuxPanePick;
     }
 
     fn dispatch_tmux_send(&mut self, target: &str, mode: crate::tmux::PasteMode) {
         let text = std::mem::take(&mut self.tmux_pending_text);
-        let save = std::mem::take(&mut self.tmux_save_annotation_on_send);
+        let completion = std::mem::replace(&mut self.tmux_completion, TmuxSendCompletion::Review);
         match crate::tmux::send_to_pane(target, &text, mode) {
             Ok(()) => {
                 self.tmux_last_target = Some((target.to_string(), mode));
@@ -1745,12 +1803,22 @@ impl App {
                     target,
                     mode_label,
                 ));
-                if save {
-                    self.submit_comment();
+                match completion {
+                    TmuxSendCompletion::Review => {}
+                    TmuxSendCompletion::SaveLegacyAnnotation => self.submit_comment(),
+                    TmuxSendCompletion::SaveHumanNote { viewport } => {
+                        self.review_controller.save_human_note_draft(viewport);
+                        self.comment_buf.clear();
+                        self.input_mode = InputMode::Normal;
+                        self.clear_review_selection();
+                    }
                 }
             }
             Err(e) => {
                 self.toast = Some(format!("send failed: {e}"));
+                if matches!(completion, TmuxSendCompletion::SaveHumanNote { .. }) {
+                    self.input_mode = InputMode::Note;
+                }
             }
         }
         self.tmux_panes.clear();
@@ -1759,10 +1827,13 @@ impl App {
     }
 
     fn cancel_tmux_picker(&mut self) {
+        let completion = std::mem::replace(&mut self.tmux_completion, TmuxSendCompletion::Review);
         self.tmux_panes.clear();
         self.tmux_cursor = 0;
         self.tmux_pending_text.clear();
-        self.tmux_save_annotation_on_send = false;
+        if matches!(completion, TmuxSendCompletion::SaveHumanNote { .. }) {
+            self.input_mode = InputMode::Note;
+        }
         self.mode = Mode::Normal;
     }
 

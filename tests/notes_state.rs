@@ -28,6 +28,21 @@ fn annotated_file() -> DiffFile {
     changeset.files.remove(0)
 }
 
+fn added_file(line_count: u32) -> DiffFile {
+    let additions = (1..=line_count)
+        .map(|line| format!("+line {line}\n"))
+        .collect::<String>();
+    let patch = format!(
+        "diff --git a/src/range.rs b/src/range.rs\n\
+         new file mode 100644\n\
+         --- /dev/null\n\
+         +++ b/src/range.rs\n\
+         @@ -0,0 +1,{line_count} @@\n\
+         {additions}"
+    );
+    parse_unified_diff(&patch).remove(0)
+}
+
 #[test]
 fn targets_prefer_new_lines_and_overlap_the_correct_hunks() {
     let file = annotated_file();
@@ -159,7 +174,7 @@ fn controller_drafts_save_edit_cancel_remove_and_clear_by_stable_id() {
     );
     controller.snapshot(viewport);
 
-    let draft_id = controller.begin_human_note(viewport).unwrap();
+    let draft_id = controller.begin_human_note(None, viewport).unwrap();
     assert!(draft_id.starts_with("draft:"));
     assert_eq!(controller.snapshot(viewport).note_count, 2);
     controller.update_human_note_draft("first body", viewport);
@@ -188,4 +203,46 @@ fn controller_drafts_save_edit_cancel_remove_and_clear_by_stable_id() {
         2
     );
     assert!(controller.human_notes().is_empty());
+}
+
+#[test]
+fn visual_selection_becomes_the_complete_note_target_in_both_directions() {
+    let viewport = Viewport {
+        width: 100,
+        height: 20,
+    };
+    let mut controller = ReviewController::new(
+        vec![added_file(5)],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            ..ReviewOptions::default()
+        },
+    );
+    controller.snapshot(viewport);
+    let (anchor, _) = controller.selected_line_range(viewport).unwrap();
+    controller.apply(ReviewAction::MoveCursor(2), viewport);
+    let (_, focus) = controller.selected_line_range(viewport).unwrap();
+
+    controller
+        .begin_human_note(Some((anchor, focus)), viewport)
+        .unwrap();
+    let target = &controller.human_note_draft().unwrap().target;
+    assert_eq!(target.old_range, None);
+    assert_eq!(target.new_range, Some(LineRange { start: 1, end: 3 }));
+    controller.update_human_note_draft("Explain this range", viewport);
+    let annotation = controller.human_note_draft_annotation().unwrap();
+    assert_eq!(annotation.file, "src/range.rs");
+    assert_eq!(annotation.display_range, "R1–R3");
+    assert_eq!(annotation.comment, "Explain this range");
+    assert!(annotation.diff_context.contains("+line 1"));
+    assert!(annotation.diff_context.contains("+line 3"));
+
+    controller.cancel_human_note_draft(viewport);
+    controller
+        .begin_human_note(Some((focus, anchor)), viewport)
+        .unwrap();
+    assert_eq!(
+        controller.human_note_draft().unwrap().target.new_range,
+        Some(LineRange { start: 1, end: 3 })
+    );
 }

@@ -27,6 +27,7 @@ pub enum AppAction {
     BeginSelection,
     YankSelection,
     SendSelection { reset_target: bool },
+    SendNote { reset_target: bool },
     Suspend,
     OpenAgentSkill,
     CopyAgentSkill,
@@ -87,10 +88,28 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
     if event.code == KeyCode::Char('z') && event.modifiers.contains(KeyModifiers::CONTROL) {
         return Some(AppAction::Suspend);
     }
-    if event.code == KeyCode::Char('t') && event.modifiers.contains(KeyModifiers::CONTROL) {
+    if matches!(event.code, KeyCode::Char('t' | 'T'))
+        && event.modifiers.contains(KeyModifiers::CONTROL)
+    {
         return Some(AppAction::SendSelection {
             reset_target: event.modifiers.contains(KeyModifiers::SHIFT),
         });
+    }
+    if event.modifiers.contains(KeyModifiers::CONTROL) {
+        let action = match event.code {
+            KeyCode::Char('d') => Some(ReviewAction::Scroll {
+                delta: 1,
+                unit: ScrollUnit::HalfPage,
+            }),
+            KeyCode::Char('u') => Some(ReviewAction::Scroll {
+                delta: -1,
+                unit: ScrollUnit::HalfPage,
+            }),
+            _ => None,
+        };
+        if let Some(action) = action {
+            return Some(AppAction::Review(action));
+        }
     }
     if event
         .modifiers
@@ -176,16 +195,29 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
 }
 
 fn map_text(event: KeyEvent, mode: InputMode) -> Option<AppAction> {
+    if mode == InputMode::Note {
+        if matches!(event.code, KeyCode::Char('t' | 'T'))
+            && event.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            return Some(AppAction::SendNote {
+                reset_target: event.modifiers.contains(KeyModifiers::SHIFT),
+            });
+        }
+        if event.code == KeyCode::Char('s') && event.modifiers.contains(KeyModifiers::CONTROL) {
+            return Some(AppAction::Confirm);
+        }
+        if event.code == KeyCode::Enter {
+            return Some(if event.modifiers.contains(KeyModifiers::SHIFT) {
+                AppAction::Insert('\n')
+            } else {
+                AppAction::Confirm
+            });
+        }
+    }
     match event.code {
         KeyCode::Tab if mode == InputMode::Filter => Some(AppAction::ToggleFocus),
         KeyCode::Esc => Some(AppAction::Cancel),
         KeyCode::Backspace => Some(AppAction::Backspace),
-        KeyCode::Enter if mode == InputMode::Note => Some(AppAction::Insert('\n')),
-        KeyCode::Char('s')
-            if mode == InputMode::Note && event.modifiers.contains(KeyModifiers::CONTROL) =>
-        {
-            Some(AppAction::Confirm)
-        }
         KeyCode::Char(character) if !event.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(AppAction::Insert(character))
         }

@@ -17,6 +17,10 @@ fn shifted(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::SHIFT)
 }
 
+fn controlled(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::CONTROL)
+}
+
 #[test]
 fn direct_hunk_keymap_has_no_menu_binding() {
     let cases = [
@@ -236,20 +240,18 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
         assert_eq!(map_key_event(event, InputMode::Normal, false), expected);
     }
     assert_eq!(
-        map_key_event(
-            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
-            InputMode::Normal,
-            false,
-        ),
-        None
+        map_key_event(controlled(KeyCode::Char('d')), InputMode::Normal, false),
+        review(ReviewAction::Scroll {
+            delta: 1,
+            unit: ScrollUnit::HalfPage,
+        })
     );
     assert_eq!(
-        map_key_event(
-            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
-            InputMode::Normal,
-            false,
-        ),
-        None
+        map_key_event(controlled(KeyCode::Char('u')), InputMode::Normal, false),
+        review(ReviewAction::Scroll {
+            delta: -1,
+            unit: ScrollUnit::HalfPage,
+        })
     );
     assert_eq!(
         map_key_event(
@@ -272,13 +274,46 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
     assert_eq!(
         map_key_event(
             KeyEvent::new(
-                KeyCode::Char('t'),
+                KeyCode::Char('T'),
                 KeyModifiers::CONTROL | KeyModifiers::SHIFT,
             ),
             InputMode::Normal,
             false,
         ),
         Some(AppAction::SendSelection { reset_target: true })
+    );
+}
+
+#[test]
+fn note_mode_saves_sends_and_only_shift_enter_inserts_a_newline() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::Note, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(shifted(KeyCode::Enter), InputMode::Note, false),
+        Some(AppAction::Insert('\n'))
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('s')), InputMode::Note, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('t')), InputMode::Note, false),
+        Some(AppAction::SendNote {
+            reset_target: false,
+        })
+    );
+    assert_eq!(
+        map_key_event(
+            KeyEvent::new(
+                KeyCode::Char('T'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            InputMode::Note,
+            false,
+        ),
+        Some(AppAction::SendNote { reset_target: true })
     );
 }
 

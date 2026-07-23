@@ -32,6 +32,14 @@ const MIN_SIDEBAR_WIDTH: u16 = 20;
 const MIN_CONTENT_WIDTH: u16 = 40;
 const SIDEBAR_DIVIDER_WIDTH: u16 = 1;
 
+fn line_range(lines: impl Iterator<Item = u32>) -> Option<LineRange> {
+    let lines = lines.collect::<Vec<_>>();
+    Some(LineRange {
+        start: *lines.iter().min()?,
+        end: *lines.iter().max()?,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Viewport {
     pub width: u16,
@@ -632,37 +640,71 @@ impl ReviewController {
         self.human_note_draft.as_ref()
     }
 
-    pub fn begin_human_note(&mut self, viewport: Viewport) -> Option<String> {
+    pub fn human_note_draft_annotation(&self) -> Option<Annotation> {
+        let draft = self.human_note_draft.as_ref()?;
+        let file = self
+            .files
+            .iter()
+            .find(|file| file.id == draft.target.file_id)?;
+        Some(Annotation {
+            file: file.path.clone(),
+            flat_start: 0,
+            flat_end: 0,
+            display_range: target_display_range(&draft.target),
+            diff_context: target_diff_context(file, &draft.target),
+            comment: draft.body.clone(),
+        })
+    }
+
+    pub fn begin_human_note(
+        &mut self,
+        selection: Option<(SelectionPoint, SelectionPoint)>,
+        viewport: Viewport,
+    ) -> Option<String> {
         self.ensure_geometry(viewport);
-        let file_id = self.selected_file_id.as_deref()?;
-        let file = self.files.iter().find(|file| file.id == file_id)?;
-        let new_range = self
-            .selected_row_key
-            .as_ref()
-            .and_then(|key| key.new_line)
-            .map(|line| LineRange {
-                start: line,
-                end: line,
-            });
-        let old_range = self
-            .selected_row_key
-            .as_ref()
-            .and_then(|key| key.old_line)
-            .map(|line| LineRange {
-                start: line,
-                end: line,
-            });
+        let target = self.note_target_for_selection(selection)?;
         let id = format!("draft:{}", self.next_human_note_id);
         self.next_human_note_id = self.next_human_note_id.saturating_add(1);
         self.human_note_draft = Some(HumanNoteDraft {
             id: id.clone(),
-            target: resolve_ranges_target(file, old_range, new_range),
+            target,
             body: String::new(),
             editing: None,
         });
         self.dirty = true;
         self.rebuild(viewport, true);
         Some(id)
+    }
+
+    fn note_target_for_selection(
+        &self,
+        selection: Option<(SelectionPoint, SelectionPoint)>,
+    ) -> Option<NoteTarget> {
+        let geometry = self.geometry.as_ref()?;
+        let (start, end) = if let Some((anchor, focus)) = selection {
+            (anchor.row.min(focus.row), anchor.row.max(focus.row))
+        } else {
+            let selected = self.selected_row_key.as_ref()?;
+            let index = geometry
+                .rows
+                .iter()
+                .position(|bound| &bound.key == selected)?;
+            (index, index)
+        };
+        let anchor = geometry.rows.get(start)?;
+        let file = self
+            .files
+            .iter()
+            .find(|file| file.id == anchor.key.file_id)?;
+        let rows = geometry
+            .rows
+            .get(start..=end.min(geometry.rows.len().saturating_sub(1)))?;
+        let matching = rows
+            .iter()
+            .filter(|row| row.key.file_id == anchor.key.file_id);
+        let old_range = line_range(matching.clone().filter_map(|row| row.key.old_line));
+        let new_range = line_range(matching.filter_map(|row| row.key.new_line));
+        Some(resolve_ranges_target(file, old_range, new_range))
     }
 
     pub fn update_human_note_draft(&mut self, body: &str, viewport: Viewport) -> bool {

@@ -33,7 +33,7 @@ pub fn help_text(can_refresh: bool) -> String {
          Space / f   page down\n\
          b           page up\n\
          Shift+Space page up\n\
-         d / u       half page down / up\n\
+         d / u / ^D / ^U half page down / up\n\
          [ / ]       previous / next hunk\n\
          , / .       previous / next file\n\
          {{ / }}       previous / next comment\n\
@@ -49,6 +49,8 @@ pub fn help_text(can_refresh: bool) -> String {
          \nReview\n\
          /           focus file filter\n\
          c           create review note\n\
+         Enter save  Shift+Enter newline\n\
+         Ctrl-S save Ctrl-T send\n\
          Tab         toggle files/filter focus\n\
          ?           close help\n\
          {quit}"
@@ -124,6 +126,11 @@ pub enum DialogOverlay<'a> {
         theme: &'a AppTheme,
         text: &'a str,
     },
+    Tmux {
+        theme: &'a AppTheme,
+        panes: &'a [crate::tmux::TmuxPane],
+        selected: usize,
+    },
 }
 
 impl<'a> DialogOverlay<'a> {
@@ -145,6 +152,13 @@ impl<'a> DialogOverlay<'a> {
     }
     pub fn note(theme: &'a AppTheme, text: &'a str) -> Self {
         Self::Note { theme, text }
+    }
+    pub fn tmux(theme: &'a AppTheme, panes: &'a [crate::tmux::TmuxPane], selected: usize) -> Self {
+        Self::Tmux {
+            theme,
+            panes,
+            selected,
+        }
     }
 }
 
@@ -202,8 +216,30 @@ impl Widget for DialogOverlay<'_> {
                 buffer,
                 theme,
                 "Review note",
-                format!("{text}\n\nCtrl-S save   Esc cancel"),
+                format!(
+                    "{text}\n\nEnter save   Shift+Enter newline\nCtrl-S save   Ctrl-T send   Esc cancel"
+                ),
             ),
+            Self::Tmux {
+                theme,
+                panes,
+                selected,
+            } => {
+                let dialog =
+                    centered_rect(82, (panes.len() as u16).saturating_add(5).min(22), area);
+                let mut lines = vec![
+                    Line::from("Enter send   Esc cancel".to_owned()),
+                    Line::from("j/k move   g/G first/last".to_owned()),
+                ];
+                lines.extend(panes.iter().enumerate().map(|(index, pane)| {
+                    let marker = if index == selected { "› " } else { "  " };
+                    Line::from(vec![
+                        Span::styled(marker, Style::default().fg(theme.accent)),
+                        Span::styled(pane.label.clone(), Style::default().fg(theme.text)),
+                    ])
+                }));
+                render_lines(dialog, buffer, theme, "Send to tmux", lines);
+            }
         }
     }
 }

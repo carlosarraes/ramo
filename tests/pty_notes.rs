@@ -124,6 +124,30 @@ impl PtyProcess {
         parser.process(&self.raw);
         parser.screen().contents()
     }
+
+    fn read_screen_until(&mut self, needle: &str) -> String {
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            let screen = self.screen_text();
+            if screen.contains(needle) {
+                return screen;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self
+                .chunks
+                .recv_timeout(remaining.min(Duration::from_millis(50)))
+            {
+                Ok(chunk) => self.raw.extend(chunk),
+                Err(RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
+                Err(RecvTimeoutError::Timeout) => {
+                    panic!("PTY screen deadline waiting for {needle:?}; screen: {screen:?}")
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    panic!("PTY ended before screen contained {needle:?}")
+                }
+            }
+        }
+    }
 }
 
 impl Drop for PtyProcess {
@@ -149,6 +173,21 @@ fn disable_save_prompt(config_home: &Path) {
     let path = config_home.join("ramo/config.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "prompt_save_view_preferences = false\n").unwrap();
+}
+
+fn range_patch(path: &Path) {
+    std::fs::write(
+        path,
+        concat!(
+            "diff --git a/src/range.rs b/src/range.rs\n",
+            "new file mode 100644\n",
+            "--- /dev/null\n",
+            "+++ b/src/range.rs\n",
+            "@@ -0,0 +1,5 @@\n",
+            "+one\n+two\n+three\n+four\n+five\n",
+        ),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -208,19 +247,59 @@ fn human_note_draft_owns_keys_saves_inline_and_exports_markdown() {
     process.send("c");
     let draft = process.read_until("Draft note");
     assert!(draft.contains("Write a note"));
-    process.send("Please keep ] literal.\rSecond line.\x13");
-    process.read_until("Your note");
+    process.send("Please keep ] literal.\r");
+    process.read_screen_until("Your note");
     std::thread::sleep(Duration::from_millis(100));
     let saved = process.screen_text();
     assert!(saved.contains("Please keep ] literal."), "{saved}");
-    assert!(saved.contains("Second line."), "{saved}");
     process.send("q");
     assert_eq!(process.wait(), 0);
 
     let markdown = std::fs::read_to_string(output).unwrap();
     assert!(markdown.contains("Please keep ] literal."));
-    assert!(markdown.contains("Second line."));
     assert!(markdown.contains("src/main.rs"));
+}
+
+#[test]
+fn visual_note_keeps_the_range_then_returns_to_normal_navigation() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    disable_save_prompt(&config_home);
+    let patch = temp.path().join("range.patch");
+    let output = temp.path().join("review.md");
+    range_patch(&patch);
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &[
+            "--output",
+            output.to_str().unwrap(),
+            "patch",
+            patch.to_str().unwrap(),
+            "--mode",
+            "stack",
+        ],
+        &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
+    );
+
+    process.read_screen_until("one");
+    process.send("Vjjc");
+    process.read_screen_until("R1–R3");
+    process.send("range note\r");
+    process.read_screen_until("Your note");
+    process.send("jc");
+    let next = process.read_screen_until("Draft note");
+    assert!(next.contains("R4"), "{next}");
+    assert!(!next.contains("R1–R4"), "{next}");
+    process.send("\x1b");
+    std::thread::sleep(Duration::from_millis(100));
+    process.send("jc");
+    let after_cancel = process.read_screen_until("Draft note");
+    assert!(after_cancel.contains("R5"), "{after_cancel}");
+    assert!(after_cancel.contains("Draft note"), "{after_cancel}");
+    process.send("\x1b");
+    std::thread::sleep(Duration::from_millis(100));
+    process.send("q");
+    assert_eq!(process.wait(), 0);
 }
 
 #[test]
