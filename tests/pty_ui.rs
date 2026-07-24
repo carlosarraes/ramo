@@ -592,7 +592,7 @@ fn remote_update_notice_uses_an_optional_nonblocking_git_query() {
     let bin = temp.path().join("bin");
     let git = bin.join("git");
     std::fs::create_dir(&bin).unwrap();
-    std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.10\\n'\n").unwrap();
+    std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.11\\n'\n").unwrap();
     std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
     let config_home = temp.path().join("config");
     let fixture = fixture();
@@ -608,7 +608,7 @@ fn remote_update_notice_uses_an_optional_nonblocking_git_query() {
         ],
     );
 
-    process.read_until("Update available: 0.0.10");
+    process.read_until("Update available: 0.0.11");
     process.send("q");
     assert_eq!(process.wait(), 0);
 }
@@ -676,7 +676,7 @@ fn local_and_remote_startup_notices_are_shown_in_order() {
     let bin = temp.path().join("bin");
     let git = bin.join("git");
     std::fs::create_dir(&bin).unwrap();
-    std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.10\\n'\n").unwrap();
+    std::fs::write(&git, "#!/bin/sh\nprintf 'abc\\trefs/tags/v0.0.11\\n'\n").unwrap();
     std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
     let config_home = temp.path().join("config");
     let config = config_home.join("ramo/config.toml");
@@ -707,7 +707,7 @@ fn local_and_remote_startup_notices_are_shown_in_order() {
 
     process.read_until("Deprecated [custom_theme.syntax]");
     let after_local = process.mark();
-    process.read_since_until(after_local, "Update available: 0.0.10");
+    process.read_since_until(after_local, "Update available: 0.0.11");
     process.send("q");
     assert_eq!(process.wait(), 0);
 }
