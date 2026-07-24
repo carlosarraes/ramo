@@ -70,17 +70,19 @@ impl PtyProcess {
     }
 
     fn send(&mut self, text: &str) {
-        self.writer.as_mut().unwrap().write_all(text.as_bytes()).unwrap();
+        self.writer
+            .as_mut()
+            .unwrap()
+            .write_all(text.as_bytes())
+            .unwrap();
         self.writer.as_mut().unwrap().flush().unwrap();
     }
 
     fn read_until(&mut self, needle: &str) -> String {
         let deadline = Instant::now() + DEADLINE;
         loop {
-            let clean = ramo::input::sanitize_terminal_text(
-                &String::from_utf8_lossy(&self.raw),
-                false,
-            );
+            let clean =
+                ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
             if clean.contains(needle) {
                 return clean;
             }

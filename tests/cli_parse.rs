@@ -243,6 +243,7 @@ fn pr_accepts_a_positive_number_and_review_flags() {
             if options.mode == Some(LayoutMode::Split)
                 && options.theme.as_deref() == Some("tokyo-night")
                 && options.watch == Some(false)
+                && options.pager == Some(false)
     ));
 }
 

@@ -83,6 +83,7 @@ pub fn normalize(cli: Cli, stdin_is_terminal: bool) -> Result<Invocation, CliErr
 fn normalize_pr(args: PrArgs) -> ReviewInput {
     let mut options = common_options(args.review, false, None);
     options.watch = Some(false);
+    options.pager = Some(false);
     ReviewInput::PullRequest {
         number: args.number,
         options,
