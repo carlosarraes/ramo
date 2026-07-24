@@ -3,6 +3,7 @@ mod context;
 pub(crate) mod emphasis;
 pub(crate) mod geometry;
 mod navigation;
+mod progress;
 pub(crate) mod row;
 mod selection;
 pub(crate) mod state;

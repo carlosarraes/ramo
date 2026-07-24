@@ -23,6 +23,7 @@ use super::geometry::{
     resolve_responsive_layout, split_columns, stack_columns,
 };
 use super::navigation::{signed_offset, wrapping_index};
+use super::progress::ReviewProgress;
 use super::row::{
     EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, ReviewRowKind,
     build_row_plan_with_notes, compacted_file_plan,
@@ -277,6 +278,12 @@ pub enum ReviewHit {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewSnapshot {
+    pub total_files: usize,
+    pub total_additions: usize,
+    pub total_deletions: usize,
+    pub reviewed_lines: usize,
+    pub total_changed_lines: usize,
+    pub reviewed_percent: u8,
     pub visible_files: Vec<ReviewFileSnapshot>,
     pub sidebar_entries: Vec<SidebarEntrySnapshot>,
     pub selected_file_id: Option<String>,
@@ -327,6 +334,7 @@ pub struct ReviewController {
     test_file_matcher: TestFileMatcher,
     test_files_compacted: bool,
     expanded_test_files: HashSet<String>,
+    progress: ReviewProgress,
 }
 
 pub(crate) struct ReviewRenderView<'a> {
@@ -344,6 +352,7 @@ impl ReviewController {
         let selected_file_id = files.first().map(|file| file.id.clone());
         let test_file_matcher = TestFileMatcher::new(&options.test_file_patterns)
             .expect("test file patterns must be validated before review construction");
+        let progress = ReviewProgress::new(&files);
         Self {
             files,
             options,
@@ -372,6 +381,7 @@ impl ReviewController {
             test_file_matcher,
             test_files_compacted: false,
             expanded_test_files: HashSet::new(),
+            progress,
         }
     }
 
@@ -1019,6 +1029,7 @@ impl ReviewController {
 
     pub fn snapshot(&mut self, viewport: Viewport) -> &ReviewSnapshot {
         self.ensure_geometry(viewport);
+        self.observe_viewport_progress(viewport);
         &self.snapshot
     }
 
@@ -1035,6 +1046,7 @@ impl ReviewController {
 
     pub(crate) fn render_view(&mut self, viewport: Viewport) -> ReviewRenderView<'_> {
         self.ensure_geometry(viewport);
+        self.observe_viewport_progress(viewport);
         ReviewRenderView {
             files: &self.files,
             visible_indices: &self.visible_indices,
@@ -1401,6 +1413,7 @@ impl ReviewController {
         let selected_hunk_index = self.selected_hunk_index;
 
         self.files = files;
+        self.progress.replace_files(&self.files);
         self.human_notes
             .retain(|note| self.files.iter().any(|file| file.id == note.target.file_id));
         self.live_notes
@@ -1558,6 +1571,17 @@ impl ReviewController {
             ReviewAction::ToggleTestFiles => {
                 self.test_files_compacted = !self.test_files_compacted;
                 self.expanded_test_files.clear();
+                if self.test_files_compacted {
+                    let test_file_ids = self
+                        .files
+                        .iter()
+                        .filter(|file| self.test_file_matcher.is_match(&file.path))
+                        .map(|file| file.id.clone())
+                        .collect::<Vec<_>>();
+                    for file_id in test_file_ids {
+                        self.progress.mark_file_reviewed(&file_id);
+                    }
+                }
                 self.dirty = true;
                 self.rebuild(viewport, true);
                 ReviewEffect::Redraw
@@ -1605,6 +1629,24 @@ impl ReviewController {
             self.expanded_test_files.insert(file_id);
             self.dirty = true;
             self.rebuild(viewport, true);
+        }
+    }
+
+    fn observe_viewport_progress(&mut self, viewport: Viewport) {
+        let bottom = self.scroll_top.saturating_add(usize::from(viewport.height));
+        let keys = self
+            .geometry
+            .as_ref()
+            .into_iter()
+            .flat_map(|geometry| geometry.rows.iter())
+            .take_while(|bound| bound.top < bottom)
+            .flat_map(|bound| {
+                let planned = &self.planned_files[bound.file_index];
+                ReviewProgress::row_keys(&planned.file_id, &planned.plan.rows[bound.row_index])
+            })
+            .collect::<Vec<_>>();
+        if self.progress.observe_through(keys) {
+            self.refresh_snapshot();
         }
     }
 
@@ -2198,7 +2240,16 @@ impl ReviewController {
             .flat_map(|file| &file.plan.rows)
             .filter(|row| matches!(row, ReviewRow::Note { .. }))
             .count();
+        let total_additions = self.files.iter().map(|file| file.stats.additions).sum();
+        let total_deletions = self.files.iter().map(|file| file.stats.deletions).sum();
+        let progress = self.progress.snapshot();
         self.snapshot = ReviewSnapshot {
+            total_files: self.files.len(),
+            total_additions,
+            total_deletions,
+            reviewed_lines: progress.reviewed,
+            total_changed_lines: progress.total,
+            reviewed_percent: progress.percent,
             visible_files,
             sidebar_entries,
             selected_file_id: self.selected_file_id.clone(),
@@ -2517,6 +2568,12 @@ fn application_only(action: &ReviewAction) -> bool {
 
 fn empty_snapshot() -> ReviewSnapshot {
     ReviewSnapshot {
+        total_files: 0,
+        total_additions: 0,
+        total_deletions: 0,
+        reviewed_lines: 0,
+        total_changed_lines: 0,
+        reviewed_percent: 100,
         visible_files: Vec::new(),
         sidebar_entries: Vec::new(),
         selected_file_id: None,

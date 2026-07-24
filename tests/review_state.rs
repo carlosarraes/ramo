@@ -488,3 +488,84 @@ fn test_compaction_is_reversible_and_enter_expands_only_the_selected_file() {
             .all(|file| !file.compacted)
     );
 }
+
+#[test]
+fn reviewed_progress_advances_to_the_viewport_and_never_moves_backward() {
+    let view = viewport(80, 6);
+    let mut controller = ReviewController::new(
+        vec![file("src/large.rs", None, 12)],
+        ReviewOptions::default(),
+    );
+    let initial = controller.snapshot(view).clone();
+    assert!(initial.reviewed_lines > 0);
+    assert!(initial.reviewed_lines < initial.total_changed_lines);
+
+    controller.apply(ReviewAction::JumpBottom, view);
+    let completed = controller.snapshot(view).clone();
+    assert_eq!(completed.reviewed_percent, 100);
+
+    controller.apply(ReviewAction::JumpTop, view);
+    let returned = controller.snapshot(view).clone();
+    assert_eq!(returned.reviewed_lines, completed.reviewed_lines);
+    assert_eq!(returned.reviewed_percent, 100);
+}
+
+#[test]
+fn filtering_and_test_compaction_preserve_and_advance_progress() {
+    let view = viewport(80, 6);
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", None, 8), file("tests/lib.rs", None, 8)],
+        ReviewOptions::default(),
+    );
+    let before = controller.snapshot(view).reviewed_lines;
+    controller.apply(ReviewAction::SetFilter("tests".into()), view);
+    let filtered = controller.snapshot(view).reviewed_lines;
+    assert!(filtered >= before);
+
+    controller.apply(ReviewAction::ToggleTestFiles, view);
+    let compacted = controller.snapshot(view).clone();
+    assert_eq!(compacted.reviewed_percent, 100);
+
+    controller.apply(ReviewAction::ToggleTestFiles, view);
+    assert_eq!(controller.snapshot(view).reviewed_percent, 100);
+}
+
+#[test]
+fn replacement_keeps_reviewed_identities_and_leaves_new_lines_unreviewed() {
+    let view = viewport(80, 1);
+    let mut controller =
+        ReviewController::new(vec![file("src/lib.rs", None, 2)], ReviewOptions::default());
+    controller.apply(ReviewAction::JumpBottom, view);
+    assert_eq!(controller.snapshot(view).reviewed_percent, 100);
+
+    controller.replace_files(vec![file("src/lib.rs", None, 3)], view);
+    let with_new_hunk = controller.snapshot(view).clone();
+    assert_eq!(with_new_hunk.total_changed_lines, 6);
+    assert_eq!(with_new_hunk.reviewed_lines, 4);
+    assert_eq!(with_new_hunk.reviewed_percent, 66);
+
+    controller.replace_files(vec![file("src/lib.rs", None, 1)], view);
+    let after_removal = controller.snapshot(view).clone();
+    assert_eq!(after_removal.total_changed_lines, 2);
+    assert_eq!(after_removal.reviewed_lines, 2);
+    assert_eq!(after_removal.reviewed_percent, 100);
+}
+
+#[test]
+fn split_progress_counts_both_changed_sides() {
+    let view = viewport(180, 4);
+    let mut controller = ReviewController::new(
+        vec![file("src/split.rs", None, 8)],
+        ReviewOptions {
+            layout: LayoutMode::Split,
+            ..ReviewOptions::default()
+        },
+    );
+
+    let initial = controller.snapshot(view).clone();
+    assert!(initial.reviewed_lines >= 2);
+    assert!(initial.reviewed_lines < initial.total_changed_lines);
+
+    controller.apply(ReviewAction::JumpBottom, view);
+    assert_eq!(controller.snapshot(view).reviewed_percent, 100);
+}
