@@ -23,6 +23,7 @@ const PREFERENCE_KEYS: &[&str] = &[
     "transparent_background",
     "transparentBackground",
     "color_moved",
+    "test_file_patterns",
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
@@ -209,7 +210,30 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
         custom.syntax_scopes.extend(exact);
         custom.legacy_syntax.clear();
     }
+    validate_test_file_patterns(path, &config)?;
     Ok(Some(config))
+}
+
+fn validate_test_file_patterns(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
+    for layer in [
+        &config.global,
+        &config.diff,
+        &config.show,
+        &config.stash_show,
+        &config.patch,
+        &config.pager,
+        &config.difftool,
+    ] {
+        for pattern in layer.test_file_patterns.iter().flatten() {
+            crate::review::validate_test_file_pattern(pattern).map_err(|source| {
+                ConfigError::Parse {
+                    path: path.to_path_buf(),
+                    source,
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_keys(path: &Path, value: &toml::Value) -> Result<(), ConfigError> {

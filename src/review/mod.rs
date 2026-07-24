@@ -6,6 +6,7 @@ mod navigation;
 pub(crate) mod row;
 mod selection;
 pub(crate) mod state;
+mod test_files;
 
 pub use context::{
     CollapsedGap, ContextLine, ContextSourceLoader, GapKey, GapPosition, NativeContextSourceLoader,
@@ -20,3 +21,4 @@ pub use state::{
     ReviewFileSnapshot, ReviewFileStatus, ReviewHit, ReviewOptions, ReviewPoint, ReviewPosition,
     ReviewSide, ReviewSnapshot, ReviewViewPreferences, ScrollUnit, SidebarEntrySnapshot, Viewport,
 };
+pub(crate) use test_files::validate_test_file_pattern;

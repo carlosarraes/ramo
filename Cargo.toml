@@ -21,6 +21,7 @@ similar = "3"
 shell-words = "1"
 unicode-width = "0.2"
 notify = "8"
+globset = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

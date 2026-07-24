@@ -203,3 +203,40 @@ fn transparent_background_accepts_hunks_camel_case_compatibility_key() {
 
     assert!(resolved.transparent_background);
 }
+
+#[test]
+fn test_file_patterns_extend_across_config_layers() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user.toml");
+    let repo = temp.path().join("repo.toml");
+    std::fs::write(&user, "test_file_patterns = [\"qa/**\"]\n").unwrap();
+    std::fs::write(&repo, "[patch]\ntest_file_patterns = [\"checks/**\"]\n").unwrap();
+
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: Some(repo),
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+
+    assert_eq!(resolved.test_file_patterns, ["qa/**", "checks/**"]);
+}
+
+#[test]
+fn invalid_test_file_pattern_names_the_config_and_pattern() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user.toml");
+    std::fs::write(&user, "test_file_patterns = [\"[\"]\n").unwrap();
+
+    let error = ConfigResolver::new(ConfigPaths {
+        user: Some(user.clone()),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains(&user.display().to_string()));
+    assert!(error.contains("test_file_patterns"));
+    assert!(error.contains('['));
+}

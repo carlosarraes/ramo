@@ -50,6 +50,7 @@ pub struct ConfigLayer {
     #[doc(hidden)]
     pub transparent_background_camel: Option<bool>,
     pub color_moved: Option<bool>,
+    pub test_file_patterns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -89,6 +90,7 @@ pub struct ResolvedConfig {
     pub prompt_save_view_preferences: bool,
     pub transparent_background: bool,
     pub color_moved: bool,
+    pub test_file_patterns: Vec<String>,
     pub custom_theme: Option<CustomThemeConfig>,
     pub startup_notices: Vec<String>,
 }
@@ -110,6 +112,7 @@ impl Default for ResolvedConfig {
             prompt_save_view_preferences: true,
             transparent_background: false,
             color_moved: true,
+            test_file_patterns: Vec::new(),
             custom_theme: None,
             startup_notices: Vec::new(),
         }
@@ -146,6 +149,9 @@ impl ResolvedConfig {
                 .or(layer.transparent_background),
         );
         apply(&mut self.color_moved, layer.color_moved);
+        if let Some(patterns) = &layer.test_file_patterns {
+            self.test_file_patterns.extend(patterns.iter().cloned());
+        }
     }
 }
 
