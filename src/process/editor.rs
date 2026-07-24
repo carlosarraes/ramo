@@ -77,6 +77,7 @@ impl<E: CommandExecutor> EditorLauncher<E> {
                 argv: command.argv.clone(),
                 stdin: None,
                 inherit_stdio: true,
+                limits: None,
             })
             .map_err(EditorLaunchError::Spawn)?;
         if result.code == Some(0) {

@@ -61,6 +61,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
             ]),
             stdin: None,
             inherit_stdio: false,
+            limits: None,
         })?;
         require_success("list panes", &output)?;
         let text = String::from_utf8_lossy(&output.stdout);
@@ -87,6 +88,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
             argv: self.argv(&["display-message", "-p", "-t", id, "#{pane_id}"]),
             stdin: None,
             inherit_stdio: false,
+            limits: None,
         })?;
         Ok(output.code == Some(0))
     }
@@ -96,6 +98,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
             argv: self.argv(&["load-buffer", "-b", "ramo-send", "-"]),
             stdin: Some(text.as_bytes().to_vec()),
             inherit_stdio: false,
+            limits: None,
         })?;
         require_success("load buffer", &load)?;
 
@@ -108,6 +111,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
             argv,
             stdin: None,
             inherit_stdio: false,
+            limits: None,
         })?;
         require_success("paste buffer", &paste)
     }

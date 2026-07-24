@@ -16,6 +16,9 @@ fn success(stdout: &str) -> io::Result<CommandResult> {
         code: Some(0),
         stdout: stdout.as_bytes().to_vec(),
         stderr: Vec::new(),
+        stdout_truncated: false,
+        stderr_truncated: false,
+        timed_out: false,
     })
 }
 
@@ -111,6 +114,9 @@ fn tmux_plain_paste_and_failures_are_operation_specific() {
         code: Some(9),
         stdout: Vec::new(),
         stderr: b"permission denied".to_vec(),
+        stdout_truncated: false,
+        stderr_truncated: false,
+        timed_out: false,
     };
     let mut tmux = TmuxClient::new(RecordingExecutor {
         requests: Vec::new(),

@@ -73,6 +73,9 @@ fn launcher_inherits_stdio_and_reports_spawn_and_exit_failures() {
             code: Some(0),
             stdout: Vec::new(),
             stderr: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            timed_out: false,
         })),
     };
     let mut launcher = EditorLauncher::new(executor);
@@ -98,6 +101,9 @@ fn launcher_inherits_stdio_and_reports_spawn_and_exit_failures() {
             code: Some(7),
             stdout: Vec::new(),
             stderr: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            timed_out: false,
         })),
     });
     assert_eq!(
