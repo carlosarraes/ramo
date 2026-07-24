@@ -1,4 +1,6 @@
 #[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::path::Path;
 
 const POWERSHELL_INSTALLER: &str = include_str!("../install.ps1");
@@ -40,6 +42,10 @@ fn unix_installer_dry_run_selects_archives_without_network_or_filesystem_mutatio
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains(target), "{stdout}");
         assert!(
+            stdout.contains(&format!("Downloading ramo v0.0.6 for {target}...")),
+            "{stdout}"
+        );
+        assert!(
             stdout.contains(&format!(
                 "https://github.com/carlosarraes/ramo/releases/download/v0.0.6/ramo-{target}.tar.gz"
             )),
@@ -47,6 +53,73 @@ fn unix_installer_dry_run_selects_archives_without_network_or_filesystem_mutatio
         );
         assert!(!install.path().join("ramo").exists());
     }
+}
+
+#[cfg(unix)]
+fn fake_curl(temp: &Path) -> String {
+    let bin = temp.join("bin");
+    let curl = bin.join("curl");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::write(
+        &curl,
+        "#!/bin/sh\nprintf '%s\\n' \"$RAMO_TEST_CURL_RESPONSE\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+    format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_installer_resolves_the_latest_release_to_an_exact_version() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fake_curl(temp.path());
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh");
+    let output = std::process::Command::new("bash")
+        .args([
+            "-c",
+            "source \"$1\"; resolve_version latest carlosarraes/ramo",
+            "ramo-installer-test",
+        ])
+        .arg(script)
+        .env("PATH", path)
+        .env("RAMO_TEST_CURL_RESPONSE", r#"{"tag_name":"v0.0.12"}"#)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "v0.0.12");
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_installer_fails_when_github_has_no_latest_release_tag() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fake_curl(temp.path());
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh");
+    let output = std::process::Command::new("bash")
+        .args([
+            "-c",
+            "source \"$1\"; resolve_version latest carlosarraes/ramo",
+            "ramo-installer-test",
+        ])
+        .arg(script)
+        .env("PATH", path)
+        .env("RAMO_TEST_CURL_RESPONSE", "{}")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Unable to resolve the latest Ramo release from GitHub."),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[cfg(unix)]

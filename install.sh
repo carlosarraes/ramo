@@ -31,6 +31,32 @@ remove_legacy_binary() {
   esac
 }
 
+resolve_version() {
+  local requested="$1"
+  local repo="$2"
+  local response resolved
+
+  if [ "$requested" != "latest" ] || [ "${RAMO_INSTALL_DRY_RUN:-0}" = "1" ]; then
+    printf '%s\n' "$requested"
+    return
+  fi
+
+  response="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest")" || {
+    echo "Unable to resolve the latest Ramo release from GitHub." >&2
+    return 1
+  }
+  resolved="$(
+    printf '%s\n' "$response" |
+      sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+      head -n 1
+  )"
+  if [ -z "$resolved" ]; then
+    echo "Unable to resolve the latest Ramo release from GitHub." >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
 main() {
   local repo="carlosarraes/ramo"
   local version="${1:-latest}"
@@ -53,13 +79,17 @@ main() {
   esac
 
   target="${target_arch}-${target_os}"
+  if [ "$version" = "latest" ] && [ "${RAMO_INSTALL_DRY_RUN:-0}" != "1" ]; then
+    echo "Resolving latest Ramo release..."
+  fi
+  version="$(resolve_version "$version" "$repo")"
   if [ "$version" = "latest" ]; then
     download_url="https://github.com/${repo}/releases/latest/download/ramo-${target}.tar.gz"
   else
     download_url="https://github.com/${repo}/releases/download/${version}/ramo-${target}.tar.gz"
   fi
 
-  echo "Installing ramo for ${target}..."
+  echo "Downloading ramo ${version} for ${target}..."
   if [ "${RAMO_INSTALL_DRY_RUN:-0}" = "1" ]; then
     echo "Download: ${download_url}"
     echo "Install: ${INSTALL_DIR}/ramo"
