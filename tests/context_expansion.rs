@@ -193,6 +193,25 @@ fn native_loader_caches_each_spec_and_none_never_spawns() {
 }
 
 #[test]
+fn native_loader_never_attempts_remote_blobs() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut loader = NativeContextSourceLoader::new(
+        CountingRunner {
+            calls: Arc::clone(&calls),
+        },
+        "git",
+        1024,
+    );
+    let source = SourceSpec::RemoteBlob {
+        repository: "owner/repo".into(),
+        revision: "abc123".into(),
+        path: "src/lib.rs".into(),
+    };
+    assert_eq!(loader.load(&source), Err(SourceFailure::Unavailable));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn native_loader_invalidation_reads_reloaded_file_contents() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("source.rs");

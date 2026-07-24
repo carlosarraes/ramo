@@ -60,6 +60,7 @@ fn context(author: &str, viewer: &str) -> PullRequestReviewContext {
         title: "Improve review flow".into(),
         url: "https://github.com/owner/repo/pull/123".into(),
         base_ref: "main".into(),
+        base_revision: "base123".into(),
         head_ref: "feature".into(),
         captured_revision: "abc123".into(),
         author_login: author.into(),

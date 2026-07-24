@@ -84,6 +84,7 @@ pub struct PullRequestReviewContext {
     pub title: String,
     pub url: String,
     pub base_ref: String,
+    pub base_revision: String,
     pub head_ref: String,
     pub captured_revision: String,
     pub author_login: String,

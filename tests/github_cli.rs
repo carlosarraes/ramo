@@ -48,8 +48,9 @@ fn context() -> PullRequestReviewContext {
         title: "Improve review flow".into(),
         url: "https://github.com/owner/repo/pull/123".into(),
         base_ref: "main".into(),
+        base_revision: "base123".into(),
         head_ref: "feature".into(),
-        captured_revision: "abc123".into(),
+        captured_revision: "head123".into(),
         author_login: "author".into(),
         viewer_login: "reviewer".into(),
     }
@@ -67,7 +68,7 @@ fn resolve_and_diff_use_exact_literal_argv() {
             ),
             result(
                 0,
-                r#"{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","headRefName":"feature","headRefOid":"abc123"}"#,
+                r#"{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"base123","headRefName":"feature","headRefOid":"head123"}"#,
                 "",
             ),
             result(0, "diff --git a/a b/a\n", ""),
@@ -95,7 +96,7 @@ fn resolve_and_diff_use_exact_literal_argv() {
             "view",
             "123",
             "--json",
-            "number,title,url,author,baseRefName,headRefName,headRefOid"
+            "number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid"
         ]
     );
     assert_eq!(
@@ -217,6 +218,25 @@ fn missing_auth_and_malformed_metadata_are_actionable() {
     };
     let error = GithubCli::new(malformed).resolve_pr(123).unwrap_err();
     assert!(error.to_string().contains("repository"));
+
+    let missing_base = FakeExecutor {
+        results: VecDeque::from([
+            result(0, "reviewer", ""),
+            result(
+                0,
+                r#"{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo"}"#,
+                "",
+            ),
+            result(
+                0,
+                r#"{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"","headRefName":"feature","headRefOid":"head123"}"#,
+                "",
+            ),
+        ]),
+        ..FakeExecutor::default()
+    };
+    let error = GithubCli::new(missing_base).resolve_pr(123).unwrap_err();
+    assert!(error.to_string().contains("base revision"));
 }
 
 #[test]

@@ -209,7 +209,7 @@ impl<E: CommandExecutor> GithubCli<E> {
                 "view",
                 &number,
                 "--json",
-                "number,title,url,author,baseRefName,headRefName,headRefOid",
+                "number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid",
             ],
         )?;
         parse_json(GithubOperation::ResolvePullRequest, &text)
@@ -251,6 +251,7 @@ impl<E: CommandExecutor> GithubPullRequestSource for GithubCli<E> {
             ("URL", pull_request.url.as_str()),
             ("author login", pull_request.author.login.as_str()),
             ("base ref", pull_request.base_ref_name.as_str()),
+            ("base revision", pull_request.base_ref_oid.as_str()),
             ("head ref", pull_request.head_ref_name.as_str()),
             ("head revision", pull_request.head_ref_oid.as_str()),
         ] {
@@ -272,6 +273,7 @@ impl<E: CommandExecutor> GithubPullRequestSource for GithubCli<E> {
             title: pull_request.title,
             url: pull_request.url,
             base_ref: pull_request.base_ref_name,
+            base_revision: pull_request.base_ref_oid,
             head_ref: pull_request.head_ref_name,
             captured_revision: pull_request.head_ref_oid,
             author_login: pull_request.author.login,
@@ -406,6 +408,7 @@ struct RawPullRequest {
     url: String,
     author: RawAuthor,
     base_ref_name: String,
+    base_ref_oid: String,
     head_ref_name: String,
     head_ref_oid: String,
 }

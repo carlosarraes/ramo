@@ -88,6 +88,7 @@ impl<'a> SourceReader<'a> {
             SourceSpec::GitIndex { repo_root, path } => {
                 self.read_git(repo_root, format!(":{path}"))?
             }
+            SourceSpec::RemoteBlob { .. } => None,
         };
         self.cache.insert(spec.clone(), text.clone());
         Ok(text)

@@ -260,6 +260,9 @@ impl<R: CommandRunner> ContextSourceLoader for NativeContextSourceLoader<R> {
         if *spec == SourceSpec::None {
             return Ok(None);
         }
+        if matches!(spec, SourceSpec::RemoteBlob { .. }) {
+            return Err(SourceFailure::Unavailable);
+        }
         if let Some(cached) = self.cache.get(spec) {
             return cached.clone();
         }

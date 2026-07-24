@@ -53,6 +53,11 @@ pub enum SourceSpec {
         repo_root: PathBuf,
         path: String,
     },
+    RemoteBlob {
+        repository: String,
+        revision: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone)]

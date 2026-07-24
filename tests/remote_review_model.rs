@@ -1,3 +1,4 @@
+use ramo::diff::model::SourceSpec;
 use ramo::remote_review::{
     InlineCommentTarget, RemoteLineSide, RemoteReviewComment, RemoteReviewRequest, ReviewVerdict,
 };
@@ -33,4 +34,23 @@ fn inline_targets_are_inclusive_and_one_sided() {
         comments: vec![comment],
     };
     assert_eq!(request.comments.len(), 1);
+}
+
+#[test]
+fn remote_blob_sources_are_immutable_and_provider_neutral() {
+    let source = SourceSpec::RemoteBlob {
+        repository: "owner/repo".into(),
+        revision: "base123".into(),
+        path: "src/lib.rs".into(),
+    };
+    assert!(matches!(
+        source,
+        SourceSpec::RemoteBlob {
+            repository,
+            revision,
+            path,
+        } if repository == "owner/repo"
+            && revision == "base123"
+            && path == "src/lib.rs"
+    ));
 }
