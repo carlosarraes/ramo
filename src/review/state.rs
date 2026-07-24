@@ -11,6 +11,7 @@ use crate::notes::{
     NoteAnchorSide, NoteConfidence, NoteSource, NoteTarget, ReviewNote, annotated_hunks,
     note_box_layout, resolve_ranges_target,
 };
+use crate::remote_review::{InlineCommentTarget, RemoteLineSide};
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
 use super::context::{
@@ -38,6 +39,13 @@ fn line_range(lines: impl Iterator<Item = u32>) -> Option<LineRange> {
         start: *lines.iter().min()?,
         end: *lines.iter().max()?,
     })
+}
+
+fn remote_side_name(side: RemoteLineSide) -> &'static str {
+    match side {
+        RemoteLineSide::Left => "LEFT",
+        RemoteLineSide::Right => "RIGHT",
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +110,41 @@ pub enum ReviewSide {
     Left,
     Right,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InlineTargetError {
+    NoDiffLine,
+    CrossFile,
+    CrossSide,
+    EmptySide(RemoteLineSide),
+    Discontinuous(RemoteLineSide),
+}
+
+impl std::fmt::Display for InlineTargetError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoDiffLine => formatter.write_str("Select at least one diff line."),
+            Self::CrossFile => {
+                formatter.write_str("GitHub comments cannot cross files; split the selection.")
+            }
+            Self::CrossSide => {
+                formatter.write_str("GitHub comments cannot cross diff sides; split the selection.")
+            }
+            Self::EmptySide(side) => write!(
+                formatter,
+                "The selection has no line on the {} side; split the selection.",
+                remote_side_name(*side)
+            ),
+            Self::Discontinuous(side) => write!(
+                formatter,
+                "The {}-side lines are not contiguous; split the selection.",
+                remote_side_name(*side)
+            ),
+        }
+    }
+}
+
+impl std::error::Error for InlineTargetError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewAction {
@@ -668,12 +711,135 @@ impl ReviewController {
         self.human_note_draft = Some(HumanNoteDraft {
             id: id.clone(),
             target,
+            remote_target: None,
             body: String::new(),
             editing: None,
         });
         self.dirty = true;
         self.rebuild(viewport, true);
         Some(id)
+    }
+
+    pub fn begin_remote_human_note(
+        &mut self,
+        selection: Option<(SelectionPoint, SelectionPoint)>,
+        viewport: Viewport,
+    ) -> Result<Option<InlineCommentTarget>, InlineTargetError> {
+        self.ensure_geometry(viewport);
+        let geometry = self
+            .geometry
+            .as_ref()
+            .ok_or(InlineTargetError::NoDiffLine)?;
+        let (start, end) = if let Some((anchor, focus)) = selection {
+            (anchor.row.min(focus.row), anchor.row.max(focus.row))
+        } else {
+            let selected = self
+                .selected_row_key
+                .as_ref()
+                .ok_or(InlineTargetError::NoDiffLine)?;
+            let index = geometry
+                .rows
+                .iter()
+                .position(|bound| &bound.key == selected)
+                .ok_or(InlineTargetError::NoDiffLine)?;
+            (index, index)
+        };
+        let rows = geometry
+            .rows
+            .get(start..=end.min(geometry.rows.len().saturating_sub(1)))
+            .ok_or(InlineTargetError::NoDiffLine)?;
+        let file_id = rows
+            .first()
+            .map(|row| row.key.file_id.as_str())
+            .ok_or(InlineTargetError::NoDiffLine)?;
+        if rows.iter().any(|row| row.key.file_id != file_id) {
+            return Err(InlineTargetError::CrossFile);
+        }
+
+        let mut selected_side = None;
+        let mut lines = Vec::with_capacity(rows.len());
+        for bound in rows {
+            let row = self
+                .planned_files
+                .get(bound.file_index)
+                .and_then(|file| file.plan.rows.get(bound.row_index))
+                .ok_or(InlineTargetError::NoDiffLine)?;
+            let (side, line) = match (self.effective_layout, row) {
+                (EffectiveLayout::Split, super::row::ReviewRow::Split { left, right, .. }) => {
+                    match self.focused_side {
+                        ReviewSide::Left => (
+                            RemoteLineSide::Left,
+                            (left.kind != super::row::CellKind::Empty)
+                                .then_some(left.old_line)
+                                .flatten(),
+                        ),
+                        ReviewSide::Right => (
+                            RemoteLineSide::Right,
+                            (right.kind != super::row::CellKind::Empty)
+                                .then_some(right.new_line)
+                                .flatten(),
+                        ),
+                    }
+                }
+                (EffectiveLayout::Stack, super::row::ReviewRow::Stack { cell, .. }) => {
+                    match cell.kind {
+                        super::row::CellKind::Addition => (RemoteLineSide::Right, cell.new_line),
+                        super::row::CellKind::Deletion => (RemoteLineSide::Left, cell.old_line),
+                        super::row::CellKind::Context => (RemoteLineSide::Right, cell.new_line),
+                        super::row::CellKind::Empty => {
+                            return Err(InlineTargetError::NoDiffLine);
+                        }
+                    }
+                }
+                _ => return Err(InlineTargetError::NoDiffLine),
+            };
+            if selected_side.is_some_and(|selected| selected != side) {
+                return Err(InlineTargetError::CrossSide);
+            }
+            selected_side = Some(side);
+            lines.push(line.ok_or(InlineTargetError::EmptySide(side))?);
+        }
+        let side = selected_side.ok_or(InlineTargetError::NoDiffLine)?;
+        lines.dedup();
+        if lines.is_empty() {
+            return Err(InlineTargetError::EmptySide(side));
+        }
+        if lines.windows(2).any(|pair| pair[1] != pair[0] + 1) {
+            return Err(InlineTargetError::Discontinuous(side));
+        }
+        let file = self
+            .files
+            .iter()
+            .find(|file| file.id == file_id)
+            .ok_or(InlineTargetError::NoDiffLine)?;
+        let start_line = lines[0];
+        let end_line = *lines.last().expect("nonempty lines");
+        let remote_target = InlineCommentTarget {
+            path: file.path.clone(),
+            side,
+            start_line,
+            end_line,
+        };
+        let range = Some(LineRange {
+            start: start_line,
+            end: end_line,
+        });
+        let target = match side {
+            RemoteLineSide::Left => resolve_ranges_target(file, range, None),
+            RemoteLineSide::Right => resolve_ranges_target(file, None, range),
+        };
+        let id = format!("draft:{}", self.next_human_note_id);
+        self.next_human_note_id = self.next_human_note_id.saturating_add(1);
+        self.human_note_draft = Some(HumanNoteDraft {
+            id,
+            target,
+            remote_target: Some(remote_target.clone()),
+            body: String::new(),
+            editing: None,
+        });
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        Ok(Some(remote_target))
     }
 
     fn note_target_for_selection(
@@ -745,6 +911,7 @@ impl ReviewController {
             self.human_notes.push(HumanNote {
                 id: id.clone(),
                 target: draft.target,
+                remote_target: draft.remote_target,
                 body,
                 created_at: None,
                 updated_at: None,
@@ -763,6 +930,7 @@ impl ReviewController {
         self.human_note_draft = Some(HumanNoteDraft {
             id: format!("draft:{id}"),
             target: note.target,
+            remote_target: note.remote_target,
             body: note.body,
             editing: Some(note.id),
         });
@@ -791,6 +959,7 @@ impl ReviewController {
         self.human_notes.push(HumanNote {
             id: id.clone(),
             target: resolve_ranges_target(file, old_range, new_range),
+            remote_target: None,
             body: sanitize_terminal_text(body, false),
             created_at: None,
             updated_at: None,

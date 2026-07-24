@@ -25,6 +25,7 @@ pub struct NoteTarget {
 pub struct HumanNote {
     pub id: String,
     pub target: NoteTarget,
+    pub remote_target: Option<crate::remote_review::InlineCommentTarget>,
     pub body: String,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -34,6 +35,7 @@ pub struct HumanNote {
 pub struct HumanNoteDraft {
     pub id: String,
     pub target: NoteTarget,
+    pub remote_target: Option<crate::remote_review::InlineCommentTarget>,
     pub body: String,
     pub editing: Option<String>,
 }

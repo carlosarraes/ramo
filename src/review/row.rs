@@ -818,7 +818,10 @@ fn human_card(
     width: u16,
 ) -> NoteCard {
     let placement = note_box_layout(layout, note.target.anchor_side, width);
-    let location = target_location(file, &note.target);
+    let location = note.remote_target.as_ref().map_or_else(
+        || target_location(file, &note.target),
+        |target| target.display_label(),
+    );
     NoteCard {
         id: note.id.clone(),
         target: note.target.clone(),
@@ -851,7 +854,10 @@ fn draft_card(
         target: draft.target.clone(),
         source: NoteSource::User,
         title: "Draft note".into(),
-        location: target_location(file, &draft.target),
+        location: draft.remote_target.as_ref().map_or_else(
+            || target_location(file, &draft.target),
+            |target| target.display_label(),
+        ),
         lines: wrap_note_text(&body, usize::from(placement.content_width)),
         markup: None,
         tags: Vec::new(),
