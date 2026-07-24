@@ -20,6 +20,10 @@ use crate::config::{
 use crate::diff::model::{DiffFile, DiffLine, LineType};
 use crate::process::command::SystemCommandExecutor;
 use crate::process::editor::{EditorLauncher, build_editor_command};
+use crate::remote_review::{
+    PullRequestReviewContext, RemoteReviewComment, RemoteReviewPublisher, RemoteReviewRequest,
+    ReviewVerdict,
+};
 use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
     ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, Viewport,
@@ -167,6 +171,30 @@ enum TmuxSendCompletion {
     SaveHumanNote { viewport: Viewport },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteReviewOutcome {
+    Published,
+    Discarded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteReturnState {
+    Review,
+    Verdict,
+}
+
+struct RemoteReviewSession {
+    context: PullRequestReviewContext,
+    service: Box<dyn RemoteReviewPublisher>,
+    overall_body: String,
+    overall_body_edited: bool,
+    overall_edit_original: Option<String>,
+    message_title: String,
+    message_body: String,
+    message_return: RemoteReturnState,
+    outcome: Option<RemoteReviewOutcome>,
+}
+
 fn format_annotation_for_tmux(annotation: &Annotation) -> String {
     let language = Path::new(&annotation.file)
         .extension()
@@ -180,6 +208,14 @@ fn format_annotation_for_tmux(annotation: &Annotation) -> String {
         annotation.diff_context,
         annotation.comment,
     )
+}
+
+fn default_overall_body(count: usize) -> String {
+    match count {
+        0 => "Review submitted from Ramo.".into(),
+        1 => "Review submitted from Ramo with 1 inline comment.".into(),
+        count => format!("Review submitted from Ramo with {count} inline comments."),
+    }
 }
 
 pub struct App {
@@ -236,6 +272,7 @@ pub struct App {
     session_registration: Option<SessionRegistrationClient>,
     session_descriptor: Option<SessionDescriptor>,
     last_session_state: Option<SessionSnapshotState>,
+    remote_review: Option<RemoteReviewSession>,
 }
 
 impl App {
@@ -369,7 +406,32 @@ impl App {
             session_registration: None,
             session_descriptor: None,
             last_session_state: None,
+            remote_review: None,
         }
+    }
+
+    pub fn attach_pull_request(
+        &mut self,
+        context: PullRequestReviewContext,
+        service: Box<dyn RemoteReviewPublisher>,
+    ) {
+        self.remote_review = Some(RemoteReviewSession {
+            context,
+            service,
+            overall_body: String::new(),
+            overall_body_edited: false,
+            overall_edit_original: None,
+            message_title: String::new(),
+            message_body: String::new(),
+            message_return: RemoteReturnState::Review,
+            outcome: None,
+        });
+    }
+
+    pub fn remote_outcome(&self) -> Option<RemoteReviewOutcome> {
+        self.remote_review
+            .as_ref()
+            .and_then(|session| session.outcome)
     }
 
     pub fn attach_remote_update(&mut self, runtime: RemoteUpdateRuntime) {
@@ -840,6 +902,16 @@ impl App {
                 ),
                 status,
             );
+        } else if let Some(session) = &self.remote_review {
+            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+            frame.render_widget(
+                Paragraph::new(format!(" {}", session.context.status_label())).style(
+                    Style::default()
+                        .fg(self.review_theme.text)
+                        .bg(self.review_theme.panel_alt),
+                ),
+                status,
+            );
         }
         match self.input_mode {
             InputMode::Help => {
@@ -870,6 +942,48 @@ impl App {
             }
             InputMode::SavePrompt => {
                 frame.render_widget(DialogOverlay::save(&self.review_theme), area);
+            }
+            InputMode::PublishPrompt => {
+                if let Some(session) = &self.remote_review {
+                    frame.render_widget(
+                        DialogOverlay::publish(
+                            &self.review_theme,
+                            session.context.number,
+                            self.review_controller.human_notes().len(),
+                        ),
+                        area,
+                    );
+                }
+            }
+            InputMode::VerdictPrompt => {
+                if let Some(session) = &self.remote_review {
+                    frame.render_widget(
+                        DialogOverlay::verdict(
+                            &self.review_theme,
+                            session.context.is_self_authored(),
+                            &session.overall_body,
+                        ),
+                        area,
+                    );
+                }
+            }
+            InputMode::OverallComment => {
+                frame.render_widget(
+                    DialogOverlay::overall_comment(&self.review_theme, &self.comment_buf),
+                    area,
+                );
+            }
+            InputMode::Message => {
+                if let Some(session) = &self.remote_review {
+                    frame.render_widget(
+                        DialogOverlay::message(
+                            &self.review_theme,
+                            &session.message_title,
+                            &session.message_body,
+                        ),
+                        area,
+                    );
+                }
             }
             InputMode::Normal | InputMode::Filter => {}
         }
@@ -1041,6 +1155,7 @@ impl App {
                     self.review_controller
                         .update_human_note_draft(&self.comment_buf, viewport);
                 }
+                InputMode::OverallComment => self.comment_buf.push(character),
                 _ => {}
             },
             AppAction::Backspace => match self.input_mode {
@@ -1055,6 +1170,9 @@ impl App {
                     self.comment_buf.pop();
                     self.review_controller
                         .update_human_note_draft(&self.comment_buf, viewport);
+                }
+                InputMode::OverallComment => {
+                    self.comment_buf.pop();
                 }
                 _ => {}
             },
@@ -1078,6 +1196,14 @@ impl App {
                 };
             }
             AppAction::ToggleContext => {
+                if self.remote_review.is_some() {
+                    self.show_remote_message(
+                        "Unavailable for pull request",
+                        "Unchanged local source is unavailable for pull request snapshots.",
+                        RemoteReturnState::Review,
+                    );
+                    return;
+                }
                 self.toast = self
                     .review_controller
                     .toggle_context(self.context_loader.as_mut(), viewport)
@@ -1147,6 +1273,35 @@ impl App {
                 self.input_mode = InputMode::Normal;
                 self.should_quit = true;
             }
+            AppAction::ConfirmPublish => self.confirm_remote_publish(),
+            AppAction::KeepReviewing => {
+                self.input_mode = InputMode::Normal;
+            }
+            AppAction::DiscardRemoteReview => {
+                if let Some(session) = &mut self.remote_review {
+                    session.outcome = Some(RemoteReviewOutcome::Discarded);
+                }
+                self.input_mode = InputMode::Normal;
+                self.should_quit = true;
+            }
+            AppAction::ChooseVerdict(verdict) => self.submit_remote_review(verdict, viewport),
+            AppAction::EditOverallComment => {
+                if let Some(session) = &mut self.remote_review {
+                    session.overall_edit_original = Some(session.overall_body.clone());
+                    self.comment_buf.clone_from(&session.overall_body);
+                    self.input_mode = InputMode::OverallComment;
+                }
+            }
+            AppAction::SaveOverallComment => {
+                if let Some(session) = &mut self.remote_review {
+                    session.overall_body.clone_from(&self.comment_buf);
+                    session.overall_body_edited = true;
+                    session.overall_edit_original = None;
+                }
+                self.comment_buf.clear();
+                self.input_mode = InputMode::VerdictPrompt;
+            }
+            AppAction::DismissMessage => self.dismiss_remote_message(),
         }
     }
 
@@ -1162,7 +1317,23 @@ impl App {
                 self.input_mode = InputMode::Theme;
             }
             ReviewEffect::StartNote => {
-                if self
+                if self.remote_review.is_some() {
+                    match self
+                        .review_controller
+                        .begin_remote_human_note(self.review_selection, viewport)
+                    {
+                        Ok(Some(_)) => {
+                            self.comment_buf.clear();
+                            self.input_mode = InputMode::Note;
+                        }
+                        Ok(None) => {}
+                        Err(error) => self.show_remote_message(
+                            "Cannot publish this selection",
+                            &error.to_string(),
+                            RemoteReturnState::Review,
+                        ),
+                    }
+                } else if self
                     .review_controller
                     .begin_human_note(self.review_selection, viewport)
                     .is_some()
@@ -1171,8 +1342,34 @@ impl App {
                     self.input_mode = InputMode::Note;
                 }
             }
-            ReviewEffect::EditFile { path, line } => self.editor_request = Some((path, line)),
-            ReviewEffect::Reload => self.reload_requested = true,
+            ReviewEffect::EditFile { path, line } => {
+                if self.remote_review.is_some() {
+                    self.show_remote_message(
+                        "Unavailable for pull request",
+                        "The local checkout may not match this pull request snapshot.",
+                        RemoteReturnState::Review,
+                    );
+                } else {
+                    self.editor_request = Some((path, line));
+                }
+            }
+            ReviewEffect::Reload => {
+                if let Some(number) = self
+                    .remote_review
+                    .as_ref()
+                    .map(|session| session.context.number)
+                {
+                    self.show_remote_message(
+                        "Frozen pull request snapshot",
+                        &format!(
+                            "Pull request snapshots cannot reload. Reopen `ramo pr {number}`."
+                        ),
+                        RemoteReturnState::Review,
+                    );
+                } else {
+                    self.reload_requested = true;
+                }
+            }
             ReviewEffect::Quit => self.request_quit(viewport),
             ReviewEffect::None | ReviewEffect::Redraw => {}
         }
@@ -1201,6 +1398,18 @@ impl App {
     }
 
     fn request_quit(&mut self, _viewport: Viewport) {
+        if self
+            .remote_review
+            .as_ref()
+            .is_some_and(|session| session.outcome.is_none())
+        {
+            self.input_mode = InputMode::PublishPrompt;
+            return;
+        }
+        self.request_local_quit();
+    }
+
+    fn request_local_quit(&mut self) {
         let changes = ViewPreferenceChanges::between(
             &self.initial_view_preferences,
             &self.current_view_preferences(),
@@ -1214,6 +1423,114 @@ impl App {
         } else {
             self.input_mode = InputMode::SavePrompt;
         }
+    }
+
+    fn confirm_remote_publish(&mut self) {
+        let count = self.review_controller.human_notes().len();
+        if let Some(session) = &mut self.remote_review {
+            if !session.overall_body_edited {
+                session.overall_body = default_overall_body(count);
+            }
+            self.input_mode = InputMode::VerdictPrompt;
+        }
+    }
+
+    fn submit_remote_review(&mut self, verdict: ReviewVerdict, _viewport: Viewport) {
+        let Some(session) = self.remote_review.as_ref() else {
+            return;
+        };
+        if session.context.is_self_authored() && verdict != ReviewVerdict::Comment {
+            self.show_remote_message(
+                "Comment only",
+                "GitHub does not allow approving or requesting changes on your own pull request.",
+                RemoteReturnState::Verdict,
+            );
+            return;
+        }
+        let mut comments = Vec::with_capacity(self.review_controller.human_notes().len());
+        for note in self.review_controller.human_notes() {
+            let Some(target) = note.remote_target.clone() else {
+                self.show_remote_message(
+                    "Cannot publish review",
+                    "A local note has no GitHub line target. Remove it or reopen the pull request.",
+                    RemoteReturnState::Verdict,
+                );
+                return;
+            };
+            comments.push(RemoteReviewComment {
+                target,
+                body: note.body.clone(),
+            });
+        }
+        let context = session.context.clone();
+        let request = RemoteReviewRequest {
+            commit_id: context.captured_revision.clone(),
+            body: session.overall_body.clone(),
+            verdict,
+            comments,
+        };
+        let current_revision = {
+            let session = self.remote_review.as_mut().expect("checked above");
+            session.service.current_revision(&context)
+        };
+        let current_revision = match current_revision {
+            Ok(revision) => revision,
+            Err(error) => {
+                self.show_remote_message(
+                    "GitHub review failed",
+                    &error.to_string(),
+                    RemoteReturnState::Verdict,
+                );
+                return;
+            }
+        };
+        if current_revision != context.captured_revision {
+            self.show_remote_message(
+                "Pull request changed",
+                &format!(
+                    "PR #{} changed while you were reviewing it. Reopen `ramo pr {}` before publishing.",
+                    context.number, context.number
+                ),
+                RemoteReturnState::Verdict,
+            );
+            return;
+        }
+        let submit = {
+            let session = self.remote_review.as_mut().expect("checked above");
+            session.service.submit_review(&context, &request)
+        };
+        if let Err(error) = submit {
+            self.show_remote_message(
+                "GitHub review failed",
+                &error.to_string(),
+                RemoteReturnState::Verdict,
+            );
+            return;
+        }
+        if let Some(session) = &mut self.remote_review {
+            session.outcome = Some(RemoteReviewOutcome::Published);
+        }
+        self.input_mode = InputMode::Normal;
+        self.request_local_quit();
+    }
+
+    fn show_remote_message(&mut self, title: &str, body: &str, return_to: RemoteReturnState) {
+        if let Some(session) = &mut self.remote_review {
+            session.message_title = title.to_owned();
+            session.message_body = body.to_owned();
+            session.message_return = return_to;
+            self.input_mode = InputMode::Message;
+        }
+    }
+
+    fn dismiss_remote_message(&mut self) {
+        self.input_mode = self
+            .remote_review
+            .as_ref()
+            .map_or(InputMode::Normal, |session| match session.message_return {
+                RemoteReturnState::Review => InputMode::Normal,
+                RemoteReturnState::Verdict => InputMode::VerdictPrompt,
+            });
     }
 
     fn save_and_quit(&mut self, current: ViewPreferences) {
@@ -1264,6 +1581,19 @@ impl App {
             InputMode::Help | InputMode::AgentSkill | InputMode::Filter | InputMode::SavePrompt => {
                 self.input_mode = InputMode::Normal;
             }
+            InputMode::PublishPrompt | InputMode::VerdictPrompt => {
+                self.input_mode = InputMode::Normal;
+            }
+            InputMode::OverallComment => {
+                if let Some(session) = &mut self.remote_review
+                    && let Some(original) = session.overall_edit_original.take()
+                {
+                    session.overall_body = original;
+                }
+                self.comment_buf.clear();
+                self.input_mode = InputMode::VerdictPrompt;
+            }
+            InputMode::Message => self.dismiss_remote_message(),
             InputMode::Normal => {
                 self.review_keyboard_anchor = None;
                 self.review_selection = None;

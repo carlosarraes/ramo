@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::core::input::LayoutMode;
+use crate::remote_review::ReviewVerdict;
 use crate::review::{ReviewAction, ReviewSide, ScrollUnit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +13,10 @@ pub enum InputMode {
     Help,
     AgentSkill,
     SavePrompt,
+    PublishPrompt,
+    VerdictPrompt,
+    OverallComment,
+    Message,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +38,13 @@ pub enum AppAction {
     CopyAgentSkill,
     DisableSavePrompt,
     Discard,
+    ConfirmPublish,
+    KeepReviewing,
+    DiscardRemoteReview,
+    ChooseVerdict(ReviewVerdict),
+    EditOverallComment,
+    SaveOverallComment,
+    DismissMessage,
 }
 
 pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Option<AppAction> {
@@ -56,11 +68,51 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
             KeyCode::Esc => Some(AppAction::Cancel),
             _ => None,
         },
+        InputMode::PublishPrompt => match event.code {
+            KeyCode::Char('y') => Some(AppAction::ConfirmPublish),
+            KeyCode::Char('n') | KeyCode::Esc => Some(AppAction::KeepReviewing),
+            KeyCode::Char('d') => Some(AppAction::DiscardRemoteReview),
+            _ => None,
+        },
+        InputMode::VerdictPrompt => match event.code {
+            KeyCode::Char('c') => Some(AppAction::ChooseVerdict(ReviewVerdict::Comment)),
+            KeyCode::Char('a') => Some(AppAction::ChooseVerdict(ReviewVerdict::Approve)),
+            KeyCode::Char('r') => Some(AppAction::ChooseVerdict(ReviewVerdict::RequestChanges)),
+            KeyCode::Char('o') => Some(AppAction::EditOverallComment),
+            KeyCode::Esc => Some(AppAction::KeepReviewing),
+            _ => None,
+        },
+        InputMode::OverallComment => map_overall_comment(event),
+        InputMode::Message => match event.code {
+            KeyCode::Enter | KeyCode::Esc => Some(AppAction::DismissMessage),
+            _ => None,
+        },
     };
     if pager_mode && !action.as_ref().is_some_and(pager_action) {
         None
     } else {
         action
+    }
+}
+
+fn map_overall_comment(event: KeyEvent) -> Option<AppAction> {
+    if event.code == KeyCode::Char('s') && event.modifiers.contains(KeyModifiers::CONTROL) {
+        return Some(AppAction::SaveOverallComment);
+    }
+    if event.code == KeyCode::Enter {
+        return Some(if event.modifiers.contains(KeyModifiers::SHIFT) {
+            AppAction::Insert('\n')
+        } else {
+            AppAction::SaveOverallComment
+        });
+    }
+    match event.code {
+        KeyCode::Esc => Some(AppAction::Cancel),
+        KeyCode::Backspace => Some(AppAction::Backspace),
+        KeyCode::Char(character) if !event.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(AppAction::Insert(character))
+        }
+        _ => None,
     }
 }
 

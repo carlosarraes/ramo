@@ -496,3 +496,23 @@ fn app_keys_mutate_the_rendering_controller_and_dialog_modes_own_closing_keys() 
     assert_eq!(app.review_controller.snapshot(view).filter, "");
     assert_eq!(app.input_mode(), InputMode::Normal);
 }
+
+#[test]
+fn pull_request_dialog_modes_own_their_documented_keys() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('y')), InputMode::PublishPrompt, false),
+        Some(AppAction::ConfirmPublish)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('d')), InputMode::PublishPrompt, false),
+        Some(AppAction::DiscardRemoteReview)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('o')), InputMode::VerdictPrompt, false),
+        Some(AppAction::EditOverallComment)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::Message, false),
+        Some(AppAction::DismissMessage)
+    );
+}

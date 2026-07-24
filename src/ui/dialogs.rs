@@ -131,6 +131,25 @@ pub enum DialogOverlay<'a> {
         panes: &'a [crate::tmux::TmuxPane],
         selected: usize,
     },
+    Publish {
+        theme: &'a AppTheme,
+        number: u64,
+        count: usize,
+    },
+    Verdict {
+        theme: &'a AppTheme,
+        self_authored: bool,
+        body: &'a str,
+    },
+    OverallComment {
+        theme: &'a AppTheme,
+        text: &'a str,
+    },
+    Message {
+        theme: &'a AppTheme,
+        title: &'a str,
+        body: &'a str,
+    },
 }
 
 impl<'a> DialogOverlay<'a> {
@@ -159,6 +178,26 @@ impl<'a> DialogOverlay<'a> {
             panes,
             selected,
         }
+    }
+    pub fn publish(theme: &'a AppTheme, number: u64, count: usize) -> Self {
+        Self::Publish {
+            theme,
+            number,
+            count,
+        }
+    }
+    pub fn verdict(theme: &'a AppTheme, self_authored: bool, body: &'a str) -> Self {
+        Self::Verdict {
+            theme,
+            self_authored,
+            body,
+        }
+    }
+    pub fn overall_comment(theme: &'a AppTheme, text: &'a str) -> Self {
+        Self::OverallComment { theme, text }
+    }
+    pub fn message(theme: &'a AppTheme, title: &'a str, body: &'a str) -> Self {
+        Self::Message { theme, title, body }
     }
 }
 
@@ -240,6 +279,58 @@ impl Widget for DialogOverlay<'_> {
                 }));
                 render_lines(dialog, buffer, theme, "Send to tmux", lines);
             }
+            Self::Publish {
+                theme,
+                number,
+                count,
+            } => {
+                let question = if count == 0 {
+                    format!("Submit a review to GitHub PR #{number} with no inline comments?")
+                } else {
+                    format!("Publish {count} comments to GitHub PR #{number}?")
+                };
+                render_dialog(
+                    centered_rect(72, 8, area),
+                    buffer,
+                    theme,
+                    "Publish review?",
+                    format!("{question}\n\ny publish   n/Esc keep reviewing   d discard and quit"),
+                );
+            }
+            Self::Verdict {
+                theme,
+                self_authored,
+                body,
+            } => {
+                let choices = if self_authored {
+                    "c Comment only"
+                } else {
+                    "c Comment only   a Approve   r Request changes"
+                };
+                render_dialog(
+                    centered_rect(78, 12, area),
+                    buffer,
+                    theme,
+                    "Submit GitHub review",
+                    format!(
+                        "{choices}\no Edit overall comment   Esc keep reviewing\n\nOverall comment:\n{body}"
+                    ),
+                );
+            }
+            Self::OverallComment { theme, text } => render_dialog(
+                centered_rect(72, 14, area),
+                buffer,
+                theme,
+                "Overall comment",
+                format!("{text}\n\nEnter/Ctrl-S save   Shift+Enter newline   Esc cancel"),
+            ),
+            Self::Message { theme, title, body } => render_dialog(
+                centered_rect(72, 10, area),
+                buffer,
+                theme,
+                title,
+                format!("{body}\n\nEnter/Esc close"),
+            ),
         }
     }
 }
