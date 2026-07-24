@@ -1,22 +1,27 @@
+use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::io;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::diff::model::SourceSpec;
 use crate::input::sanitize_terminal_text;
 use crate::process::command::{CaptureLimits, CommandExecutor, CommandRequest, CommandResult};
 use crate::remote_review::{
     PullRequestReviewContext, RemoteLineSide, RemoteReviewError, RemoteReviewPublisher,
     RemoteReviewRequest,
 };
+use crate::review::{ContextSourceLoader, SourceFailure};
 
 const METADATA_STDOUT_LIMIT: usize = 64 * 1024;
 const DIFF_STDOUT_LIMIT: usize = 32 * 1024 * 1024;
+const SOURCE_STDOUT_LIMIT: usize = 8 * 1024 * 1024;
 const STDERR_LIMIT: usize = 8 * 1024;
 const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
 const DIFF_TIMEOUT: Duration = Duration::from_secs(30);
+const SOURCE_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub trait GithubPullRequestSource {
     fn resolve_pr(&mut self, number: u64) -> Result<PullRequestReviewContext, GithubError>;
@@ -29,6 +34,7 @@ pub enum GithubOperation {
     ResolveRepository,
     ResolvePullRequest,
     LoadDiff,
+    LoadContext,
     RefreshPullRequest,
     SubmitReview,
 }
@@ -40,6 +46,7 @@ impl GithubOperation {
             Self::ResolveRepository => "resolve the GitHub repository",
             Self::ResolvePullRequest => "resolve the GitHub pull request",
             Self::LoadDiff => "load the GitHub pull request diff",
+            Self::LoadContext => "load pull request context",
             Self::RefreshPullRequest => "refresh the GitHub pull request",
             Self::SubmitReview => "submit the GitHub pull request review",
         }
@@ -148,6 +155,24 @@ pub struct GithubCli<E> {
     executor: E,
 }
 
+pub struct GithubContextSourceLoader<E> {
+    github: GithubCli<E>,
+    cache: HashMap<SourceSpec, Result<Option<String>, SourceFailure>>,
+}
+
+impl<E> GithubContextSourceLoader<E> {
+    pub fn new(executor: E) -> Self {
+        Self {
+            github: GithubCli::new(executor),
+            cache: HashMap::new(),
+        }
+    }
+
+    pub fn into_executor(self) -> E {
+        self.github.into_executor()
+    }
+}
+
 impl<E> GithubCli<E> {
     pub fn new(executor: E) -> Self {
         Self { executor }
@@ -213,6 +238,61 @@ impl<E: CommandExecutor> GithubCli<E> {
             ],
         )?;
         parse_json(GithubOperation::ResolvePullRequest, &text)
+    }
+
+    fn load_context_text(
+        &mut self,
+        repository: &str,
+        revision: &str,
+        path: &str,
+    ) -> Result<String, GithubError> {
+        let endpoint = format!(
+            "repos/{repository}/contents/{}",
+            encode_repository_path(path)
+        );
+        let reference = format!("ref={revision}");
+        self.execute_text(
+            GithubOperation::LoadContext,
+            &[
+                "api",
+                "--method",
+                "GET",
+                &endpoint,
+                "-f",
+                &reference,
+                "-H",
+                "Accept:application/vnd.github.raw+json",
+            ],
+            CaptureLimits::new(SOURCE_STDOUT_LIMIT, STDERR_LIMIT, SOURCE_TIMEOUT),
+            None,
+        )
+    }
+}
+
+impl<E: CommandExecutor + Send> ContextSourceLoader for GithubContextSourceLoader<E> {
+    fn load(&mut self, spec: &SourceSpec) -> Result<Option<String>, SourceFailure> {
+        let SourceSpec::RemoteBlob {
+            repository,
+            revision,
+            path,
+        } = spec
+        else {
+            return Err(SourceFailure::Unavailable);
+        };
+        if let Some(cached) = self.cache.get(spec) {
+            return cached.clone();
+        }
+        let result = self
+            .github
+            .load_context_text(repository, revision, path)
+            .map(Some)
+            .map_err(map_context_error);
+        self.cache.insert(spec.clone(), result.clone());
+        result
+    }
+
+    fn invalidate(&mut self) {
+        self.cache.clear();
     }
 }
 
@@ -391,6 +471,37 @@ fn remote_error(error: GithubError) -> RemoteReviewError {
     RemoteReviewError {
         message: error.to_string(),
     }
+}
+
+fn map_context_error(error: GithubError) -> SourceFailure {
+    match error {
+        GithubError::Truncated {
+            operation: GithubOperation::LoadContext,
+        } => SourceFailure::TooLarge {
+            limit: SOURCE_STDOUT_LIMIT,
+        },
+        GithubError::InvalidUtf8 {
+            operation: GithubOperation::LoadContext,
+        } => SourceFailure::NonUtf8,
+        GithubError::Failed {
+            operation: GithubOperation::LoadContext,
+            ref stderr,
+            ..
+        } if stderr.contains("HTTP 404") => SourceFailure::Missing,
+        error => SourceFailure::Command(error.to_string()),
+    }
+}
+
+fn encode_repository_path(path: &str) -> String {
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/') {
+            encoded.push(char::from(byte));
+        } else {
+            write!(&mut encoded, "%{byte:02X}").expect("writing to String cannot fail");
+        }
+    }
+    encoded
 }
 
 #[derive(Deserialize)]
