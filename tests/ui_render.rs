@@ -9,7 +9,7 @@ use ramo::review::{
     SourceFailure, Viewport,
 };
 use ramo::ui::highlight::{HighlightCache, HighlightCacheStats};
-use ramo::ui::review::ReviewWidget;
+use ramo::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
 use ramo::ui::themes::ThemeRegistry;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -110,6 +110,26 @@ fn render_controller_with_selection(
                 ReviewWidget::new(controller, &theme, &mut highlights).selection(selection),
                 frame.area(),
             );
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+fn render_chrome(
+    width: u16,
+    height: u16,
+    heading: &ReviewHeading,
+    snapshot: &ramo::review::ReviewSnapshot,
+    status: Option<&str>,
+    theme: &ramo::ui::themes::AppTheme,
+) -> Buffer {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let areas = review_areas(frame.area());
+            frame.render_widget(ReviewHeader::new(heading, snapshot, theme), areas.header);
+            frame.render_widget(ReviewFooter::new(status, snapshot, theme), areas.footer);
         })
         .unwrap();
     terminal.backend().buffer().clone()
@@ -530,4 +550,107 @@ fn compact_test_file_is_one_summary_row_while_source_stays_expanded() {
     assert!(!frame.contains("test-only-old"));
     assert!(frame.contains("src/lib.rs"));
     assert!(frame.contains("let item00"));
+}
+
+#[test]
+fn review_chrome_keeps_colored_totals_and_progress_visible() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let mut snapshot = controller
+        .snapshot(Viewport {
+            width: 80,
+            height: 8,
+        })
+        .clone();
+    snapshot.total_files = 14;
+    snapshot.total_additions = 200;
+    snapshot.total_deletions = 50;
+    snapshot.reviewed_lines = 125;
+    snapshot.total_changed_lines = 250;
+    snapshot.reviewed_percent = 50;
+    let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
+    let buffer = render_chrome(
+        80,
+        4,
+        &ReviewHeading::PullRequest {
+            number: 123,
+            title: "Improve review flow".into(),
+        },
+        &snapshot,
+        Some(" Filter: src"),
+        &theme,
+    );
+    let frame = text(&buffer);
+    let header = frame.lines().next().unwrap();
+    let footer = frame.lines().last().unwrap();
+
+    assert!(header.contains("GitHub PR #123"));
+    assert!(header.contains("14 files · +200 -50"));
+    assert!(footer.contains("Filter: src"));
+    assert!(footer.contains("Reviewed 50%"));
+    let cell_x = |needle: &str| {
+        let byte = header.find(needle).unwrap();
+        header[..byte].chars().count() as u16
+    };
+    assert_eq!(buffer[(cell_x("+200"), 0)].fg, theme.added_sign);
+    assert_eq!(buffer[(cell_x("-50"), 0)].fg, theme.removed_sign);
+}
+
+#[test]
+fn narrow_review_chrome_keeps_totals_and_progress() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let mut snapshot = controller
+        .snapshot(Viewport {
+            width: 32,
+            height: 8,
+        })
+        .clone();
+    snapshot.total_additions = 200;
+    snapshot.total_deletions = 50;
+    snapshot.reviewed_percent = 50;
+    let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
+    let buffer = render_chrome(
+        32,
+        4,
+        &ReviewHeading::Local("A title that must be truncated".into()),
+        &snapshot,
+        Some("A long transient message"),
+        &theme,
+    );
+    let frame = text(&buffer);
+
+    assert!(frame.lines().next().unwrap().contains("+200 -50"));
+    assert!(frame.lines().last().unwrap().contains("Reviewed 50%"));
+}
+
+#[test]
+fn tiny_review_chrome_clips_without_writing_outside_the_buffer() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let snapshot = controller
+        .snapshot(Viewport {
+            width: 8,
+            height: 2,
+        })
+        .clone();
+    let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
+
+    let buffer = render_chrome(
+        8,
+        2,
+        &ReviewHeading::Local("Working tree".into()),
+        &snapshot,
+        None,
+        &theme,
+    );
+
+    assert_eq!(buffer.area.width, 8);
+    assert_eq!(buffer.area.height, 2);
 }

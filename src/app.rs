@@ -8,9 +8,6 @@ use crossterm::event::{
     MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
-use ratatui::layout::Rect;
-use ratatui::style::Style;
-use ratatui::widgets::Paragraph;
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::annotations::model::Annotation;
@@ -37,6 +34,7 @@ use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, map_key_event, map_mouse_event};
+use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 use crate::watch::{WatchRuntime, WatchUpdate};
@@ -278,6 +276,7 @@ pub struct App {
     session_descriptor: Option<SessionDescriptor>,
     last_session_state: Option<SessionSnapshotState>,
     remote_review: Option<RemoteReviewSession>,
+    review_heading: ReviewHeading,
 }
 
 impl App {
@@ -413,6 +412,7 @@ impl App {
             session_descriptor: None,
             last_session_state: None,
             remote_review: None,
+            review_heading: ReviewHeading::Local("Working tree".into()),
         }
     }
 
@@ -421,6 +421,10 @@ impl App {
         context: PullRequestReviewContext,
         service: Box<dyn RemoteReviewPublisher>,
     ) {
+        self.review_heading = ReviewHeading::PullRequest {
+            number: context.number,
+            title: context.title.clone(),
+        };
         self.remote_review = Some(RemoteReviewSession {
             context,
             service,
@@ -432,6 +436,14 @@ impl App {
             message_return: RemoteReturnState::Review,
             outcome: None,
         });
+    }
+
+    pub fn set_review_heading(&mut self, heading: ReviewHeading) {
+        self.review_heading = heading;
+    }
+
+    pub fn review_heading(&self) -> &ReviewHeading {
+        &self.review_heading
     }
 
     pub fn remote_outcome(&self) -> Option<RemoteReviewOutcome> {
@@ -577,17 +589,18 @@ impl App {
                     needs_redraw = false;
                 }
                 let size = terminal.terminal().size()?;
-                let viewport = Viewport {
-                    width: size.width,
-                    height: size.height,
-                };
+                let viewport = terminal_review_viewport(size.width, size.height);
                 self.publish_session_snapshot(viewport);
                 needs_redraw |= self.apply_session_requests(viewport, watch.as_deref_mut());
                 needs_redraw |= self.poll_startup_notices(Instant::now());
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
-                        Event::Mouse(mouse) => self.handle_mouse(mouse, viewport),
+                        Event::Mouse(mouse) => {
+                            if let Some(mouse) = translate_review_mouse(mouse, size.height) {
+                                self.handle_mouse(mouse, viewport);
+                            }
+                        }
                         Event::FocusGained
                         | Event::FocusLost
                         | Event::Paste(_)
@@ -873,56 +886,38 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        let areas = review_areas(area);
+        let viewport = Viewport {
+            width: areas.content.width,
+            height: areas.content.height,
+        };
+        let snapshot = self.review_controller.snapshot(viewport).clone();
+        let status = if self.input_mode == InputMode::Filter || !self.filter_buffer.is_empty() {
+            Some(format!(" Filter: {}", self.filter_buffer))
+        } else if let Some(toast) = &self.toast {
+            Some(format!(" {toast}"))
+        } else {
+            self.startup_notice
+                .as_ref()
+                .map(|notice| format!(" {notice}"))
+        };
         frame.render_widget(
-            crate::ui::review::ReviewWidget::new(
+            ReviewHeader::new(&self.review_heading, &snapshot, &self.review_theme),
+            areas.header,
+        );
+        frame.render_widget(
+            ReviewWidget::new(
                 &mut self.review_controller,
                 &self.review_theme,
                 &mut self.review_highlights,
             )
             .selection(self.review_selection),
-            area,
+            areas.content,
         );
-        if self.input_mode == InputMode::Filter || !self.filter_buffer.is_empty() {
-            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
-            frame.render_widget(
-                Paragraph::new(format!(" Filter: {}", self.filter_buffer)).style(
-                    Style::default()
-                        .fg(self.review_theme.text)
-                        .bg(self.review_theme.panel_alt),
-                ),
-                status,
-            );
-        } else if let Some(toast) = &self.toast {
-            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
-            frame.render_widget(
-                Paragraph::new(format!(" {toast}")).style(
-                    Style::default()
-                        .fg(self.review_theme.text)
-                        .bg(self.review_theme.panel_alt),
-                ),
-                status,
-            );
-        } else if let Some(notice) = &self.startup_notice {
-            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
-            frame.render_widget(
-                Paragraph::new(format!(" {notice}")).style(
-                    Style::default()
-                        .fg(self.review_theme.text)
-                        .bg(self.review_theme.panel_alt),
-                ),
-                status,
-            );
-        } else if let Some(session) = &self.remote_review {
-            let status = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
-            frame.render_widget(
-                Paragraph::new(format!(" {}", session.context.status_label())).style(
-                    Style::default()
-                        .fg(self.review_theme.text)
-                        .bg(self.review_theme.panel_alt),
-                ),
-                status,
-            );
-        }
+        frame.render_widget(
+            ReviewFooter::new(status.as_deref(), &snapshot, &self.review_theme),
+            areas.footer,
+        );
         match self.input_mode {
             InputMode::Help => {
                 frame.render_widget(DialogOverlay::help(&self.review_theme, true), area);
@@ -2330,6 +2325,22 @@ fn build_display_range(old_lines: &[u32], new_lines: &[u32]) -> String {
     }
 }
 
+fn terminal_review_viewport(width: u16, height: u16) -> Viewport {
+    Viewport {
+        width,
+        height: height.saturating_sub(2),
+    }
+}
+
+fn translate_review_mouse(mut event: MouseEvent, terminal_height: u16) -> Option<MouseEvent> {
+    let footer_row = terminal_height.saturating_sub(1);
+    if event.row == 0 || event.row >= footer_row {
+        return None;
+    }
+    event.row = event.row.saturating_sub(1);
+    Some(event)
+}
+
 fn format_line_range(lines: &[u32]) -> Option<String> {
     let first = lines.first()?;
     let last = lines.last()?;
@@ -2366,4 +2377,44 @@ fn build_file_starts(flat_lines: &[FlatLine]) -> Vec<usize> {
         }
     }
     starts
+}
+
+#[cfg(test)]
+mod review_chrome_tests {
+    use super::*;
+
+    fn mouse(row: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn terminal_viewport_reserves_header_and_footer_rows() {
+        assert_eq!(
+            terminal_review_viewport(100, 24),
+            Viewport {
+                width: 100,
+                height: 22,
+            }
+        );
+        assert_eq!(
+            terminal_review_viewport(10, 1),
+            Viewport {
+                width: 10,
+                height: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn screen_mouse_rows_translate_only_inside_review_content() {
+        assert!(translate_review_mouse(mouse(0), 24).is_none());
+        assert_eq!(translate_review_mouse(mouse(1), 24).unwrap().row, 0);
+        assert_eq!(translate_review_mouse(mouse(22), 24).unwrap().row, 21);
+        assert!(translate_review_mouse(mouse(23), 24).is_none());
+    }
 }

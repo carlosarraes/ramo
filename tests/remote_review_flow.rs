@@ -11,6 +11,7 @@ use ramo::remote_review::{
 };
 use ramo::review::{ReviewOptions, Viewport};
 use ramo::ui::input::InputMode;
+use ramo::ui::review::ReviewHeading;
 
 const VIEWPORT: Viewport = Viewport {
     width: 100,
@@ -152,4 +153,31 @@ fn stale_head_error_is_dismissible_and_preserves_the_review() {
     app.handle_ui_key(key(KeyCode::Enter), VIEWPORT);
     assert_eq!(app.input_mode(), InputMode::VerdictPrompt);
     assert!(!app.should_quit);
+}
+
+#[test]
+fn attaching_pull_request_sets_the_review_heading() {
+    let (app, _) = app("abc123");
+    assert_eq!(
+        app.review_heading(),
+        &ReviewHeading::PullRequest {
+            number: 123,
+            title: "Improve review flow".into(),
+        }
+    );
+}
+
+#[test]
+fn local_app_defaults_to_working_tree_heading() {
+    let app = App::new(parse_unified_diff(concat!(
+        "diff --git a/src/lib.rs b/src/lib.rs\n",
+        "--- a/src/lib.rs\n",
+        "+++ b/src/lib.rs\n",
+        "@@ -0,0 +1 @@\n",
+        "+new\n",
+    )));
+    assert_eq!(
+        app.review_heading(),
+        &ReviewHeading::Local("Working tree".into())
+    );
 }

@@ -1,9 +1,9 @@
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Widget;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::diff::model::{DiffFile, LineType, MovedLineKind};
 use crate::review::geometry::{RowBounds, split_columns, stack_columns};
@@ -14,6 +14,169 @@ use crate::review::{
 
 use super::highlight::HighlightCache;
 use super::themes::{AppTheme, ReviewLineStyle};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewHeading {
+    Local(String),
+    PullRequest { number: u64, title: String },
+}
+
+impl ReviewHeading {
+    fn label(&self) -> String {
+        match self {
+            Self::Local(label) => label.clone(),
+            Self::PullRequest { number, title } => {
+                format!("GitHub PR #{number} · {title}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReviewAreas {
+    pub header: Rect,
+    pub content: Rect,
+    pub footer: Rect,
+}
+
+pub fn review_areas(area: Rect) -> ReviewAreas {
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(area);
+    ReviewAreas {
+        header: rows[0],
+        content: rows[1],
+        footer: rows[2],
+    }
+}
+
+pub struct ReviewHeader<'a> {
+    heading: &'a ReviewHeading,
+    snapshot: &'a crate::review::ReviewSnapshot,
+    theme: &'a AppTheme,
+}
+
+impl<'a> ReviewHeader<'a> {
+    pub fn new(
+        heading: &'a ReviewHeading,
+        snapshot: &'a crate::review::ReviewSnapshot,
+        theme: &'a AppTheme,
+    ) -> Self {
+        Self {
+            heading,
+            snapshot,
+            theme,
+        }
+    }
+}
+
+impl Widget for ReviewHeader<'_> {
+    fn render(self, area: Rect, buffer: &mut Buffer) {
+        if area.is_empty() {
+            return;
+        }
+        let base = Style::default()
+            .fg(self.theme.text)
+            .bg(self.theme.panel_alt)
+            .add_modifier(Modifier::BOLD);
+        buffer.set_style(area, base);
+
+        let file_word = if self.snapshot.total_files == 1 {
+            "file"
+        } else {
+            "files"
+        };
+        let neutral = format!("{} {file_word} · ", self.snapshot.total_files);
+        let additions = format!("+{}", self.snapshot.total_additions);
+        let deletions = format!("-{}", self.snapshot.total_deletions);
+        let stats_width = UnicodeWidthStr::width(neutral.as_str())
+            .saturating_add(UnicodeWidthStr::width(additions.as_str()))
+            .saturating_add(1)
+            .saturating_add(UnicodeWidthStr::width(deletions.as_str()));
+        let available = usize::from(area.width);
+        let prefix_width = available.saturating_sub(stats_width);
+        let prefix = if prefix_width >= 3 {
+            format!(
+                "{} · ",
+                truncate_cells(&self.heading.label(), prefix_width.saturating_sub(3))
+            )
+        } else {
+            String::new()
+        };
+
+        let mut x = area.x;
+        buffer.set_stringn(x, area.y, &prefix, prefix_width, base);
+        x = x.saturating_add(UnicodeWidthStr::width(prefix.as_str()) as u16);
+        buffer.set_stringn(x, area.y, &neutral, available, base);
+        x = x.saturating_add(UnicodeWidthStr::width(neutral.as_str()) as u16);
+        buffer.set_stringn(
+            x,
+            area.y,
+            &additions,
+            available,
+            base.fg(self.theme.added_sign),
+        );
+        x = x.saturating_add(UnicodeWidthStr::width(additions.as_str()) as u16);
+        buffer.set_stringn(x, area.y, " ", 1, base);
+        x = x.saturating_add(1);
+        buffer.set_stringn(
+            x,
+            area.y,
+            &deletions,
+            available,
+            base.fg(self.theme.removed_sign),
+        );
+    }
+}
+
+pub struct ReviewFooter<'a> {
+    status: Option<&'a str>,
+    snapshot: &'a crate::review::ReviewSnapshot,
+    theme: &'a AppTheme,
+}
+
+impl<'a> ReviewFooter<'a> {
+    pub fn new(
+        status: Option<&'a str>,
+        snapshot: &'a crate::review::ReviewSnapshot,
+        theme: &'a AppTheme,
+    ) -> Self {
+        Self {
+            status,
+            snapshot,
+            theme,
+        }
+    }
+}
+
+impl Widget for ReviewFooter<'_> {
+    fn render(self, area: Rect, buffer: &mut Buffer) {
+        if area.is_empty() {
+            return;
+        }
+        let style = Style::default()
+            .fg(self.theme.text)
+            .bg(self.theme.panel_alt);
+        buffer.set_style(area, style);
+        let progress = format!("Reviewed {}%", self.snapshot.reviewed_percent);
+        let progress_width = UnicodeWidthStr::width(progress.as_str()).min(usize::from(area.width));
+        let progress_x = area.right().saturating_sub(progress_width as u16);
+        if let Some(status) = self.status {
+            let status_width = usize::from(progress_x.saturating_sub(area.x).saturating_sub(1));
+            buffer.set_stringn(
+                area.x,
+                area.y,
+                truncate_cells(status, status_width),
+                status_width,
+                style,
+            );
+        }
+        buffer.set_stringn(progress_x, area.y, progress, progress_width, style);
+    }
+}
 
 pub struct ReviewWidget<'a> {
     controller: &'a mut ReviewController,

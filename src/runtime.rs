@@ -17,6 +17,7 @@ use crate::process::command::SystemCommandExecutor;
 use crate::remote_review::RemoteReviewPublisher;
 use crate::review::{ContextSourceLoader, NativeContextSourceLoader};
 use crate::terminal::TerminalSession;
+use crate::ui::review::ReviewHeading;
 use crate::vcs::SystemCommandRunner;
 use crate::watch::WatchRuntime;
 
@@ -181,6 +182,24 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     };
 
     let session_descriptor = crate::session::create_session_descriptor(&input, &loaded, &cwd);
+    let review_heading = if let Some((context, _)) = pull_request.as_ref() {
+        ReviewHeading::PullRequest {
+            number: context.number,
+            title: context.title.clone(),
+        }
+    } else {
+        match &input {
+            ReviewInput::VcsDiff {
+                range: None,
+                staged: false,
+                ..
+            } => ReviewHeading::Local("Working tree".into()),
+            ReviewInput::VcsDiff { staged: true, .. } => {
+                ReviewHeading::Local("Staged changes".into())
+            }
+            _ => ReviewHeading::Local(loaded.changeset.title.clone()),
+        }
+    };
 
     replace_stdin_with_tty()?;
     let mut app = App::new_with_services(
@@ -190,6 +209,7 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         context_loader,
         config_paths.user,
     );
+    app.set_review_heading(review_heading);
     if let Some((context, publisher)) = pull_request {
         app.attach_pull_request(context, publisher);
     }

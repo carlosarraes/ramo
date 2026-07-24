@@ -132,6 +132,27 @@ impl PtyProcess {
         }
     }
 
+    fn read_screen_until(&mut self, needle: &str) -> String {
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+            parser.process(&self.raw);
+            let contents = parser.screen().contents();
+            if contents.contains(needle) {
+                return contents;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.chunks.recv_timeout(remaining) {
+                Ok(chunk) => self.raw.extend(chunk),
+                Err(error) => {
+                    panic!(
+                        "PTY screen deadline waiting for {needle}; output: {contents:?}: {error}"
+                    )
+                }
+            }
+        }
+    }
+
     fn read_raw_until(&mut self, needle: &[u8]) {
         let deadline = Instant::now() + DEADLINE;
         while !self
@@ -501,7 +522,7 @@ fn cjk_mouse_selection_copies_whole_terminal_cells_through_osc52() {
         &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
     );
     process.read_until("界 old");
-    process.send("\x1b[<0;9;3M\x1b[<32;14;3M\x1b[<0;14;3m");
+    process.send("\x1b[<0;9;4M\x1b[<32;14;4M\x1b[<0;14;4m");
     process.read_raw_until(b"\x1b]52;c;55WMIG9sZA==\x07");
     process.send("q");
     assert_eq!(process.wait(), 0);
@@ -608,7 +629,7 @@ fn remote_update_notice_uses_an_optional_nonblocking_git_query() {
         ],
     );
 
-    process.read_until("Update available: 0.0.13");
+    process.read_screen_until("Update available: 0.0.13");
     process.send("q");
     assert_eq!(process.wait(), 0);
 }
