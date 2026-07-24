@@ -18,7 +18,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Reusable Rust library surface | verified | `src/lib.rs` | `tests/library_surface.rs::parser_is_available_from_the_library_crate` |
 | Bare terminal invocation prints complete help | verified | `src/cli/normalize.rs::normalize`, top-level common-option help | `tests/cli_parse.rs::help_and_version_are_successful_print_actions`, `tests/cli_contract.rs::help_lists_every_foundation_review_command` |
 | Bare piped invocation means patch stdin | verified | `src/cli/normalize.rs::normalize` | `tests/cli_parse.rs::bare_pipe_is_patch_stdin` |
-| `ramo pr <number>` frozen GitHub review | verified | `src/github`, `src/input/pull_request.rs`, `src/remote_review.rs`, PR state in `src/app.rs` | `tests/github_cli.rs`, `tests/pull_request_loading.rs`, `tests/remote_review_targets.rs`, `tests/remote_review_flow.rs`, `tests/pty_pr.rs::public_pr_command_creates_and_publishes_one_github_review` |
+| `ramo pr <number>` frozen GitHub review | verified | `src/github`, `src/input/pull_request.rs`, `src/remote_review.rs`, PR state in `src/app.rs` | `tests/github_cli.rs`, `tests/pull_request_loading.rs`, `tests/remote_review_targets.rs`, `tests/remote_review_flow.rs`, `tests/pty_pr.rs` |
 | `ramo diff [target] [-- pathspecs]` | verified | `src/cli/normalize.rs::normalize_diff`, `src/vcs/git.rs` | `tests/cli_parse.rs::diff_supports_range_flags_and_pathspecs`, `tests/git_loading.rs::range_and_pathspec_review_only_the_requested_history` |
 | `ramo diff --staged` | verified | `src/vcs/git.rs::GitAdapter` | `tests/git_loading.rs::staged_diff_excludes_untracked_and_unstaged_changes` |
 | `ramo diff --cached` | verified | normalized to staged Git operation | `tests/cli_parse.rs::cached_alias_and_boolean_overrides_are_normalized`, `tests/git_loading.rs::staged_diff_excludes_untracked_and_unstaged_changes` |
@@ -121,7 +121,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Moved-line colors | verified | moved classes and semantic palettes | input, theme, and render tests |
 | Optional hunk headers | verified | zero-row header plan | `tests/ui_render.rs::hunk_headers_can_occupy_zero_rows_and_file_states_render` |
 | Wrapping and horizontal scroll | verified | shared cell-width geometry and typed actions | geometry, state, input, and mouse tests |
-| Collapsed context and per-hunk expansion | verified | `src/review/context.rs` and owned native loader | `tests/context_expansion.rs`, `tests/pty_ui.rs::direct_controls_and_context_expansion_remain_native_across_layout_changes` |
+| Collapsed context and per-hunk expansion | verified | `src/review/context.rs` with owned native and immutable GitHub snapshot loaders | `tests/context_expansion.rs`, `tests/github_context.rs`, `tests/pty_ui.rs::direct_controls_and_context_expansion_remain_native_across_layout_changes`, `tests/pty_pr.rs::public_pr_context_is_fetched_lazily_on_expansion` |
 | Binary/large/untracked/rename file UI | verified | typed placeholders and sidebar statuses | state and render tests |
 | Inline AI/agent/user note cards | verified | controller-owned `HumanNote`, normalized external notes, canonical `ReviewRow::Note` geometry | `tests/notes_state.rs`, `tests/ui_render.rs::inline_agent_notes_render_inside_the_measured_review_stream`, `tests/pty_notes.rs` |
 | Wide-character selection/copy correctness | verified | `review::selection` terminal-cell projection | `tests/review_selection.rs`, `tests/ui_render.rs::stable_selection_projection_is_painted_on_the_selected_terminal_cells` |
@@ -150,7 +150,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | `t` theme selector | verified | input/dialog and PTY tests |
 | `a` agent notes | verified | canonical external-note visibility toggle | `tests/notes_state.rs`, `tests/pty_notes.rs::agent_notes_toggle_in_the_live_review` |
 | `A` agent-skill setup | verified | direct dialog action with native prompt copy | input, dialog, and `tests/pty_ui.rs::direct_agent_skill_dialog_copies_native_guidance_and_closes` |
-| `z` unchanged context | verified | context controller/app and PTY tests |
+| `z` unchanged context | verified | cached local sources or lazily fetched GitHub base/head blobs through the shared context controller | `tests/context_expansion.rs`, `tests/github_context.rs`, local and PR PTY tests |
 | `n` line numbers | verified | input/state/render tests |
 | `w` wrapping | verified | input/state/geometry tests |
 | `m` hunk metadata | verified | input/state/render tests |

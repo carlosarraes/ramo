@@ -99,10 +99,16 @@ remain open. GitHub receives one review containing the overall body and every
 new Ramo inline comment. Reviews of your own PR offer Comment only because
 GitHub rejects self-approval and self-requested changes.
 
+Press `z` to lazily fetch unchanged context from the captured base or head commit
+through the authenticated GitHub CLI. Ramo does not fetch source blobs when the
+review opens, and it caches each result for later expand/collapse actions. If a
+snapshot file is missing, inaccessible, too large, or otherwise unavailable,
+Ramo shows a dismissible message and keeps the review intact.
+
 PR review v1 does not import existing GitHub threads, reply to or resolve
-comments, watch/reload the PR, expand unchanged local source, or open snapshot
-files in the local editor. GitLab and Bitbucket are not supported yet. The
-view-only generic patch workflow remains available:
+comments, watch/reload the PR, or open snapshot files in the local editor.
+GitLab and Bitbucket are not supported yet. The view-only generic patch workflow
+remains available:
 
 ```bash
 gh pr diff 123 --color=never | ramo

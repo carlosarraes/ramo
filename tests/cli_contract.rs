@@ -39,6 +39,15 @@ fn pr_help_has_a_number_contract_and_no_watch_mode() {
 }
 
 #[test]
+fn readme_documents_lazy_pull_request_snapshot_context() {
+    let readme = include_str!("../README.md");
+
+    assert!(readme.contains("Press `z` to lazily fetch unchanged context"));
+    assert!(readme.contains("captured base or head commit"));
+    assert!(!readme.contains("expand unchanged local source"));
+}
+
+#[test]
 fn version_is_plain_and_successful() {
     Command::cargo_bin("ramo")
         .unwrap()

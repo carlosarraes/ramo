@@ -21,7 +21,7 @@ struct PtyProcess {
 }
 
 impl PtyProcess {
-    fn spawn(cwd: &Path, path: &str, payload: &Path) -> Self {
+    fn spawn(cwd: &Path, path: &str, payload: &Path, source_log: &Path) -> Self {
         let daemon = support::TestSessionDaemon::spawn();
         let pair = native_pty_system()
             .openpty(PtySize {
@@ -38,6 +38,7 @@ impl PtyProcess {
         command.env("TERM", "xterm-256color");
         command.env("PATH", path);
         command.env("FAKE_GH_PAYLOAD", payload);
+        command.env("FAKE_GH_SOURCE_LOG", source_log);
         command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         command.env(
             "RAMO_SESSION_HOST",
@@ -78,11 +79,21 @@ impl PtyProcess {
         self.writer.as_mut().unwrap().flush().unwrap();
     }
 
+    fn mark(&self) -> usize {
+        self.raw.len()
+    }
+
     fn read_until(&mut self, needle: &str) -> String {
+        self.read_since_until(0, needle)
+    }
+
+    fn read_since_until(&mut self, start: usize, needle: &str) -> String {
         let deadline = Instant::now() + DEADLINE;
         loop {
-            let clean =
-                ramo::input::sanitize_terminal_text(&String::from_utf8_lossy(&self.raw), false);
+            let clean = ramo::input::sanitize_terminal_text(
+                &String::from_utf8_lossy(&self.raw[start.min(self.raw.len())..]),
+                false,
+            );
             if clean.contains(needle) {
                 return clean;
             }
@@ -92,9 +103,17 @@ impl PtyProcess {
             {
                 Ok(chunk) => self.raw.extend(chunk),
                 Err(RecvTimeoutError::Timeout) => {
+                    let clean = ramo::input::sanitize_terminal_text(
+                        &String::from_utf8_lossy(&self.raw),
+                        false,
+                    );
                     panic!("PTY deadline waiting for {needle:?}; output: {clean:?}")
                 }
                 Err(RecvTimeoutError::Disconnected) => {
+                    let clean = ramo::input::sanitize_terminal_text(
+                        &String::from_utf8_lossy(&self.raw),
+                        false,
+                    );
                     panic!("PTY exited before {needle:?}; output: {clean:?}")
                 }
             }
@@ -120,7 +139,7 @@ impl Drop for PtyProcess {
     }
 }
 
-fn fake_gh(temp: &Path) -> (String, PathBuf) {
+fn fake_gh(temp: &Path) -> (String, PathBuf, PathBuf) {
     let bin = temp.join("bin");
     let gh = bin.join("gh");
     std::fs::create_dir(&bin).unwrap();
@@ -134,14 +153,18 @@ case "$*" in
   "repo view --json nameWithOwner,url")
     printf '%s\n' '{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo"}'
     ;;
-  "pr view 123 --json number,title,url,author,baseRefName,headRefName,headRefOid")
-    printf '%s\n' '{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","headRefName":"feature","headRefOid":"abc123"}'
+  "pr view 123 --json number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid")
+    printf '%s\n' '{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"base123","headRefName":"feature","headRefOid":"head123"}'
     ;;
   "pr diff 123 --color=never")
     printf '%s\n' 'diff --git a/src/lib.rs b/src/lib.rs' '--- a/src/lib.rs' '+++ b/src/lib.rs' '@@ -0,0 +1,2 @@' '+FIRST_PR_LINE' '+SECOND_PR_LINE'
     ;;
+  "api --method GET repos/owner/repo/contents/src/lib.rs -f ref=head123 -H Accept:application/vnd.github.raw+json")
+    printf 'fetch\n' >> "$FAKE_GH_SOURCE_LOG"
+    printf '%s\n' 'FIRST_PR_LINE' 'SECOND_PR_LINE' 'CONTEXT_THREE' 'CONTEXT_FOUR'
+    ;;
   "pr view 123 --json headRefOid --jq .headRefOid")
-    printf 'abc123\n'
+    printf 'head123\n'
     ;;
   "api --method POST repos/owner/repo/pulls/123/reviews --input -")
     cat > "$FAKE_GH_PAYLOAD"
@@ -156,7 +179,11 @@ esac
     .unwrap();
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    (path, temp.join("review.json"))
+    (
+        path,
+        temp.join("review.json"),
+        temp.join("source-requests.log"),
+    )
 }
 
 #[test]
@@ -165,8 +192,8 @@ fn public_pr_command_creates_and_publishes_one_github_review() {
     let config = temp.path().join(".ramo/config.toml");
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(&config, "prompt_save_view_preferences = false\n").unwrap();
-    let (path, payload) = fake_gh(temp.path());
-    let mut process = PtyProcess::spawn(temp.path(), &path, &payload);
+    let (path, payload, source_log) = fake_gh(temp.path());
+    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log);
 
     let screen = process.read_until("GitHub PR #123");
     assert!(screen.contains("FIRST_PR_LINE"), "{screen}");
@@ -179,9 +206,41 @@ fn public_pr_command_creates_and_publishes_one_github_review() {
 
     let payload: serde_json::Value =
         serde_json::from_slice(&std::fs::read(payload).unwrap()).unwrap();
-    assert_eq!(payload["commit_id"], "abc123");
+    assert_eq!(payload["commit_id"], "head123");
     assert_eq!(payload["event"], "COMMENT");
     assert_eq!(payload["comments"][0]["path"], "src/lib.rs");
     assert_eq!(payload["comments"][0]["side"], "RIGHT");
     assert_eq!(payload["comments"][0]["body"], "Inline feedback");
+}
+
+#[test]
+fn public_pr_context_is_fetched_lazily_on_expansion() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join(".ramo/config.toml");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "prompt_save_view_preferences = false\n").unwrap();
+    let (path, payload, source_log) = fake_gh(temp.path());
+    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log);
+
+    process.read_until("GitHub PR #123");
+    assert!(
+        !source_log.exists(),
+        "opening a pull request must not fetch unchanged source"
+    );
+
+    let expanded = process.mark();
+    process.send("z");
+    let expanded_screen = process.read_since_until(expanded, "CONTEXT_THREE");
+    assert!(
+        expanded_screen.contains("CONTEXT_THREE"),
+        "{expanded_screen}"
+    );
+
+    let requests = std::fs::read_to_string(&source_log).unwrap();
+    assert_eq!(requests.lines().count(), 1, "{requests}");
+
+    process.send("q");
+    process.read_until("no inline comments");
+    process.send("d");
+    assert_eq!(process.wait(), 0);
 }
