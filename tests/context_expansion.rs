@@ -2,12 +2,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ramo::app::App;
 use ramo::config::ResolvedConfig;
 use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
+};
+use ramo::remote_review::{
+    PullRequestReviewContext, RemoteReviewError, RemoteReviewPublisher, RemoteReviewRequest,
 };
 use ramo::review::NativeContextSourceLoader;
 use ramo::review::{
@@ -15,6 +18,7 @@ use ramo::review::{
     SourceFailure, SourceSide, Viewport, derive_collapsed_gaps, expand_gap_lines,
     select_gap_for_toggle, source_for_context,
 };
+use ramo::ui::input::InputMode;
 use ramo::vcs::{CommandOutput, CommandRunner, CommandSpec, VcsError};
 
 fn line(kind: LineType, old: Option<u32>, new: Option<u32>, text: &str) -> DiffLine {
@@ -348,4 +352,148 @@ fn z_routes_through_app_and_reuses_its_owned_native_loader_boundary() {
         viewport,
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+struct NoopPublisher;
+
+impl RemoteReviewPublisher for NoopPublisher {
+    fn current_revision(
+        &mut self,
+        _context: &PullRequestReviewContext,
+    ) -> Result<String, RemoteReviewError> {
+        Ok("head123".into())
+    }
+
+    fn submit_review(
+        &mut self,
+        _context: &PullRequestReviewContext,
+        _request: &RemoteReviewRequest,
+    ) -> Result<(), RemoteReviewError> {
+        Ok(())
+    }
+}
+
+fn pull_request_app(loader: Box<dyn ContextSourceLoader>) -> App {
+    let mut remote = file(FileChangeKind::Modified);
+    remote.new_source = SourceSpec::RemoteBlob {
+        repository: "owner/repo".into(),
+        revision: "head123".into(),
+        path: "src/lib.rs".into(),
+    };
+    let mut app =
+        App::new_with_context_loader(vec![remote], &ResolvedConfig::default(), false, loader);
+    app.attach_pull_request(
+        PullRequestReviewContext {
+            repository: "owner/repo".into(),
+            repository_url: "https://github.com/owner/repo".into(),
+            number: 123,
+            title: "Improve review flow".into(),
+            url: "https://github.com/owner/repo/pull/123".into(),
+            base_ref: "main".into(),
+            base_revision: "base123".into(),
+            head_ref: "feature".into(),
+            captured_revision: "head123".into(),
+            author_login: "author".into(),
+            viewer_login: "reviewer".into(),
+        },
+        Box::new(NoopPublisher),
+    );
+    app
+}
+
+#[test]
+fn z_expands_pull_request_context_through_the_injected_loader() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let source = (1..=12)
+        .map(|line| format!("source {line}\n"))
+        .collect::<String>();
+    let mut app = pull_request_app(Box::new(SharedLoader {
+        calls: Arc::clone(&calls),
+        source,
+    }));
+    let viewport = Viewport {
+        width: 80,
+        height: 8,
+    };
+    let before = app.review_controller.snapshot(viewport).total_height;
+
+    app.handle_ui_key(
+        KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE),
+        viewport,
+    );
+
+    assert!(app.review_controller.snapshot(viewport).total_height > before);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+}
+
+struct FailingLoader {
+    calls: Arc<AtomicUsize>,
+    failure: SourceFailure,
+}
+
+impl ContextSourceLoader for FailingLoader {
+    fn load(&mut self, _spec: &SourceSpec) -> Result<Option<String>, SourceFailure> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(self.failure.clone())
+    }
+}
+
+#[test]
+fn pull_request_context_failure_is_dismissible_and_preserves_state() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut app = pull_request_app(Box::new(FailingLoader {
+        calls: Arc::clone(&calls),
+        failure: SourceFailure::Missing,
+    }));
+    let viewport = Viewport {
+        width: 80,
+        height: 8,
+    };
+    let before = app.review_controller.snapshot(viewport).total_height;
+
+    app.handle_ui_key(
+        KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE),
+        viewport,
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(app.input_mode(), InputMode::Message);
+    assert_eq!(
+        app.review_controller.snapshot(viewport).total_height,
+        before
+    );
+
+    app.handle_ui_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), viewport);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+    assert!(!app.should_quit);
+}
+
+#[test]
+fn collapsed_pull_request_rows_use_the_same_lazy_loader() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let source = (1..=12)
+        .map(|line| format!("source {line}\n"))
+        .collect::<String>();
+    let mut app = pull_request_app(Box::new(SharedLoader {
+        calls: Arc::clone(&calls),
+        source,
+    }));
+    let viewport = Viewport {
+        width: 80,
+        height: 8,
+    };
+    let before = app.review_controller.snapshot(viewport).total_height;
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 1,
+            modifiers: KeyModifiers::NONE,
+        },
+        viewport,
+    );
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(app.review_controller.snapshot(viewport).total_height > before);
 }

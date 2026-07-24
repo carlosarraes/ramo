@@ -15,7 +15,7 @@ use crate::pager::{page_plain_text, resolve_text_pager};
 use crate::pi_extension;
 use crate::process::command::SystemCommandExecutor;
 use crate::remote_review::RemoteReviewPublisher;
-use crate::review::NativeContextSourceLoader;
+use crate::review::{ContextSourceLoader, NativeContextSourceLoader};
 use crate::terminal::TerminalSession;
 use crate::vcs::SystemCommandRunner;
 use crate::watch::WatchRuntime;
@@ -106,10 +106,15 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         crate::remote_review::PullRequestReviewContext,
         Box<dyn RemoteReviewPublisher>,
     )> = None;
+    let mut context_loader: Box<dyn ContextSourceLoader> =
+        Box::new(NativeContextSourceLoader::default());
     let loaded = if matches!(input, ReviewInput::PullRequest { .. }) {
         let mut github = crate::github::GithubCli::new(SystemCommandExecutor);
         let loaded =
             ReviewLoader.load_pull_request(&input, &mut stdin_lock, &load_context, &mut github)?;
+        context_loader = Box::new(crate::github::GithubContextSourceLoader::new(
+            SystemCommandExecutor,
+        ));
         pull_request = Some((loaded.context, Box::new(github)));
         loaded.review
     } else {
@@ -182,7 +187,7 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         loaded.changeset.files,
         &resolved_config,
         pager_mode,
-        Box::new(NativeContextSourceLoader::default()),
+        context_loader,
         config_paths.user,
     );
     if let Some((context, publisher)) = pull_request {

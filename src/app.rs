@@ -26,7 +26,7 @@ use crate::remote_review::{
 };
 use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
-    ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, Viewport,
+    ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, SourceFailure, Viewport,
 };
 use crate::session::{
     SessionDescriptor, SessionRegistrationClient, SessionSnapshotState, build_registration,
@@ -1056,11 +1056,12 @@ impl App {
                             .scroll_to_mouse_row(event.row, viewport);
                     }
                     Some(ReviewHit::Collapsed(gap)) => {
-                        self.toast = self
-                            .review_controller
-                            .toggle_context_gap(&gap, self.context_loader.as_mut(), viewport)
-                            .err()
-                            .map(|failure| failure.to_string());
+                        let result = self.review_controller.toggle_context_gap(
+                            &gap,
+                            self.context_loader.as_mut(),
+                            viewport,
+                        );
+                        self.finish_context_toggle(result);
                     }
                     Some(ReviewHit::Note(id)) => {
                         if self.review_controller.edit_human_note(&id, viewport) {
@@ -1205,19 +1206,10 @@ impl App {
                 };
             }
             AppAction::ToggleContext => {
-                if self.remote_review.is_some() {
-                    self.show_remote_message(
-                        "Unavailable for pull request",
-                        "Unchanged local source is unavailable for pull request snapshots.",
-                        RemoteReturnState::Review,
-                    );
-                    return;
-                }
-                self.toast = self
+                let result = self
                     .review_controller
-                    .toggle_context(self.context_loader.as_mut(), viewport)
-                    .err()
-                    .map(|failure| failure.to_string());
+                    .toggle_context(self.context_loader.as_mut(), viewport);
+                self.finish_context_toggle(result);
             }
             AppAction::BeginSelection => {
                 if let Some((anchor, focus)) = self.review_controller.selected_line_range(viewport)
@@ -1529,6 +1521,18 @@ impl App {
             session.message_body = body.to_owned();
             session.message_return = return_to;
             self.input_mode = InputMode::Message;
+        }
+    }
+
+    fn finish_context_toggle(&mut self, result: Result<bool, SourceFailure>) {
+        match result {
+            Ok(_) => self.toast = None,
+            Err(failure) if self.remote_review.is_some() => self.show_remote_message(
+                "Could not expand pull request context",
+                &failure.to_string(),
+                RemoteReturnState::Review,
+            ),
+            Err(failure) => self.toast = Some(failure.to_string()),
         }
     }
 
