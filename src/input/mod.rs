@@ -1,6 +1,7 @@
 mod file_pair;
 mod pager;
 mod patch;
+mod pull_request;
 mod vcs;
 
 use std::error::Error;
@@ -43,6 +44,12 @@ pub struct LoadedReview {
 }
 
 #[derive(Debug, Clone)]
+pub struct LoadedPullRequest {
+    pub review: LoadedReview,
+    pub context: crate::remote_review::PullRequestReviewContext,
+}
+
+#[derive(Debug, Clone)]
 pub enum LoadOutcome {
     Review(Box<LoadedReview>),
     PlainText(String),
@@ -58,6 +65,16 @@ pub struct LoadContext<'a> {
 }
 
 impl ReviewLoader {
+    pub fn load_pull_request(
+        &self,
+        input: &ReviewInput,
+        stdin: &mut dyn Read,
+        context: &LoadContext<'_>,
+        service: &mut dyn crate::github::GithubPullRequestSource,
+    ) -> Result<LoadedPullRequest, LoadError> {
+        pull_request::load(input, stdin, context, service)
+    }
+
     pub fn load(
         &self,
         input: &ReviewInput,
@@ -201,6 +218,13 @@ pub enum LoadError {
     AgentContext(crate::notes::AgentContextError),
     UnsupportedInput(InputKind),
     Vcs(VcsError),
+    Github(crate::github::GithubError),
+    EmptyPullRequestDiff {
+        number: u64,
+    },
+    InvalidPullRequestDiff {
+        number: u64,
+    },
 }
 
 impl fmt::Display for LoadError {
@@ -224,6 +248,16 @@ impl fmt::Display for LoadError {
                 write!(formatter, "input loader for {kind:?} is not available")
             }
             Self::Vcs(error) => write!(formatter, "{error}"),
+            Self::Github(error) => write!(formatter, "{error}"),
+            Self::EmptyPullRequestDiff { number } => {
+                write!(formatter, "pull request #{number} has no diff")
+            }
+            Self::InvalidPullRequestDiff { number } => {
+                write!(
+                    formatter,
+                    "pull request #{number} did not return a parseable diff"
+                )
+            }
         }
     }
 }
@@ -234,6 +268,7 @@ impl Error for LoadError {
             Self::Stdin(source) | Self::Io { source, .. } => Some(source),
             Self::AgentContext(source) => Some(source),
             Self::Vcs(source) => Some(source),
+            Self::Github(source) => Some(source),
             _ => None,
         }
     }
@@ -248,5 +283,11 @@ impl From<VcsError> for LoadError {
 impl From<crate::notes::AgentContextError> for LoadError {
     fn from(error: crate::notes::AgentContextError) -> Self {
         Self::AgentContext(error)
+    }
+}
+
+impl From<crate::github::GithubError> for LoadError {
+    fn from(error: crate::github::GithubError) -> Self {
+        Self::Github(error)
     }
 }
