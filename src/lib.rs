@@ -6,6 +6,7 @@ pub mod config;
 pub mod core;
 pub mod diff;
 pub mod error;
+pub mod github;
 pub mod input;
 pub mod markup;
 pub mod notes;
