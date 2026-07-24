@@ -221,3 +221,39 @@ fn help_and_version_are_successful_print_actions() {
         Action::Print(text) if text.starts_with("ramo ")
     ));
 }
+
+#[test]
+fn pr_accepts_a_positive_number_and_review_flags() {
+    let invocation = parse_from(
+        [
+            "ramo",
+            "pr",
+            "123",
+            "--mode",
+            "split",
+            "--theme",
+            "tokyo-night",
+        ],
+        true,
+    )
+    .unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::PullRequest { number: 123, options })
+            if options.mode == Some(LayoutMode::Split)
+                && options.theme.as_deref() == Some("tokyo-night")
+                && options.watch == Some(false)
+    ));
+}
+
+#[test]
+fn pr_rejects_zero_and_non_numeric_identifiers() {
+    for value in [
+        "0",
+        "abc",
+        "owner/repo#12",
+        "https://github.com/o/r/pull/12",
+    ] {
+        assert!(parse_from(["ramo", "pr", value], true).is_err(), "{value}");
+    }
+}

@@ -254,6 +254,7 @@ fn input_kind_name(kind: InputKind) -> &'static str {
         InputKind::Patch => "patch",
         InputKind::Pager => "pager",
         InputKind::Difftool => "difftool",
+        InputKind::PullRequest => "pr",
     }
 }
 

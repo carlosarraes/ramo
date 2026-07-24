@@ -336,6 +336,9 @@ fn normalize_reload_input(
         | ReviewInput::Pager { .. } => {
             return Err("session reload does not support stdin-backed patch or pager input".into());
         }
+        ReviewInput::PullRequest { .. } => {
+            return Err("session reload does not support pull request input".into());
+        }
         ReviewInput::VcsDiff { .. } | ReviewInput::Show { .. } | ReviewInput::StashShow { .. } => {}
     }
     Ok(input)
@@ -348,7 +351,8 @@ fn set_agent_context(input: &mut ReviewInput, path: Option<PathBuf>) {
         | ReviewInput::StashShow { options, .. }
         | ReviewInput::FilePair { options, .. }
         | ReviewInput::Patch { options, .. }
-        | ReviewInput::Pager { options } => options.agent_context = path,
+        | ReviewInput::Pager { options }
+        | ReviewInput::PullRequest { options, .. } => options.agent_context = path,
     }
 }
 

@@ -17,6 +17,7 @@ pub enum InputKind {
     Patch,
     Pager,
     Difftool,
+    PullRequest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -94,6 +95,10 @@ pub enum ReviewInput {
     Pager {
         options: CommonOptions,
     },
+    PullRequest {
+        number: u64,
+        options: CommonOptions,
+    },
 }
 
 impl ReviewInput {
@@ -109,6 +114,7 @@ impl ReviewInput {
             Self::FilePair { .. } => InputKind::Diff,
             Self::Patch { .. } => InputKind::Patch,
             Self::Pager { .. } => InputKind::Pager,
+            Self::PullRequest { .. } => InputKind::PullRequest,
         }
     }
 
@@ -119,7 +125,8 @@ impl ReviewInput {
             | Self::StashShow { options, .. }
             | Self::FilePair { options, .. }
             | Self::Patch { options, .. }
-            | Self::Pager { options } => options,
+            | Self::Pager { options }
+            | Self::PullRequest { options, .. } => options,
         }
     }
 }

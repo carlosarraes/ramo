@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use super::args::{
     Cli, Command, DaemonCommand, DiffArgs, DifftoolArgs, LayoutArg, MarkupColorArg, MarkupCommand,
-    ReviewFlags, SessionCommand as CliSessionCommand, SessionCommentCommand, SessionCommentTypeArg,
-    SessionNavigateArgs, SessionReloadArgs, SessionSelectorArgs, ShowArgs, SkillCommand,
-    StashCommand, StashShowArgs,
+    PrArgs, ReviewFlags, SessionCommand as CliSessionCommand, SessionCommentCommand,
+    SessionCommentTypeArg, SessionNavigateArgs, SessionReloadArgs, SessionSelectorArgs, ShowArgs,
+    SkillCommand, StashCommand, StashShowArgs,
 };
 use super::{Action, CliError, Invocation};
 use crate::core::input::{CommonOptions, LayoutMode, PatchSource, ReviewInput, ReviewOutput};
@@ -35,6 +35,7 @@ pub fn normalize(cli: Cli, stdin_is_terminal: bool) -> Result<Invocation, CliErr
             options: CommonOptions::default(),
         }),
         (Some(Command::Diff(args)), None) => Action::Review(normalize_diff(args)?),
+        (Some(Command::Pr(args)), None) => Action::Review(normalize_pr(args)),
         (Some(Command::Show(args)), None) => Action::Review(normalize_show(args)),
         (Some(Command::Patch(args)), None) => Action::Review(ReviewInput::Patch {
             source: match args.file {
@@ -77,6 +78,15 @@ pub fn normalize(cli: Cli, stdin_is_terminal: bool) -> Result<Invocation, CliErr
     };
 
     Ok(Invocation { action, output })
+}
+
+fn normalize_pr(args: PrArgs) -> ReviewInput {
+    let mut options = common_options(args.review, false, None);
+    options.watch = Some(false);
+    ReviewInput::PullRequest {
+        number: args.number,
+        options,
+    }
 }
 
 fn normalize_session(command: CliSessionCommand) -> Result<SessionCommand, CliError> {

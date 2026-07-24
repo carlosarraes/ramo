@@ -375,6 +375,7 @@ fn command_layer(config: &ConfigFile, kind: InputKind) -> &ConfigLayer {
         InputKind::Patch => &config.patch,
         InputKind::Pager => &config.pager,
         InputKind::Difftool => &config.difftool,
+        InputKind::PullRequest => &config.diff,
     }
 }
 

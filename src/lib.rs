@@ -12,6 +12,7 @@ pub mod notes;
 pub mod pager;
 pub mod pi_extension;
 pub mod process;
+pub mod remote_review;
 pub mod review;
 pub mod runtime;
 pub mod session;

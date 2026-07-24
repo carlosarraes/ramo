@@ -376,7 +376,8 @@ fn review_input_json(input: &ReviewInput) -> Value {
             source: PatchSource::Stdin,
             ..
         }
-        | ReviewInput::Pager { .. } => Value::Null,
+        | ReviewInput::Pager { .. }
+        | ReviewInput::PullRequest { .. } => Value::Null,
     }
 }
 

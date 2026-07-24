@@ -31,6 +31,8 @@ pub struct Cli {
 pub enum Command {
     /// Review working-tree changes, a revision range, or two files.
     Diff(DiffArgs),
+    /// Review and publish feedback on a GitHub pull request.
+    Pr(PrArgs),
     /// Review the latest commit or a given revision.
     Show(ShowArgs),
     /// Review a patch file or patch text from stdin.
@@ -73,6 +75,14 @@ pub enum Command {
         #[command(subcommand)]
         command: SkillCommand,
     },
+}
+
+#[derive(Debug, Args)]
+pub struct PrArgs {
+    #[command(flatten)]
+    pub review: ReviewFlags,
+    #[arg(value_name = "NUMBER", value_parser = clap::value_parser!(u64).range(1..))]
+    pub number: u64,
 }
 
 #[derive(Debug, Subcommand)]
