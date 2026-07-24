@@ -61,6 +61,14 @@ fn help_lists_real_direct_bindings_and_contains_no_menu_instructions() {
 }
 
 #[test]
+fn help_documents_test_file_compaction() {
+    let help = help_text(true);
+
+    assert!(help.contains("T           compact test files"));
+    assert!(help.contains("Enter       expand compact file"));
+}
+
+#[test]
 fn theme_selection_previews_but_cancel_restores_the_original() {
     let ids = ThemeRegistry::default().selector_items();
     let mut selection = ThemeSelection::new(ids, "github-dark-default");

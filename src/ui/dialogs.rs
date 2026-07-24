@@ -43,6 +43,8 @@ pub fn help_text(can_refresh: bool) -> String {
          1 / 2 / 0   split / stack / auto\n\
          s / t       sidebar / theme selector\n\
          a / z       AI notes / unchanged context\n\
+         T           compact test files\n\
+         Enter       expand compact file\n\
          A           agent skill setup\n\
          n / w / m   numbers / wrap / hunk headers\n\
          e           open file in editor\n\
@@ -205,7 +207,7 @@ impl Widget for DialogOverlay<'_> {
     fn render(self, area: Rect, buffer: &mut Buffer) {
         match self {
             Self::Help { theme, can_refresh } => {
-                let dialog = centered_rect(74, 30, area);
+                let dialog = centered_rect(74, 32, area);
                 render_dialog(
                     dialog,
                     buffer,
