@@ -11,8 +11,8 @@ ramo diff main...HEAD
 # Review staged changes
 ramo diff --staged
 
-# Review any patch-producing command
-gh pr diff 123 --color=never | ramo
+# Review GitHub PR #123 and publish new comments as one GitHub review
+ramo pr 123
 ```
 
 Ramo means “branch” in Portuguese—a small nod to where most reviews begin.
@@ -74,6 +74,38 @@ ramo diff --staged
 ramo diff main...HEAD -- src
 ramo show HEAD~1
 ramo stash show 'stash@{0}'
+```
+
+## GitHub pull request reviews
+
+With the authenticated [GitHub CLI](https://cli.github.com/) installed, run
+Ramo inside the target repository:
+
+```bash
+gh auth login
+ramo pr 123
+```
+
+Ramo loads a frozen PR snapshot without checking out the branch or changing
+the working tree. New inline notes are kept local while you review. Press `q`
+to open the publication confirmation, then choose Comment only, Approve, or
+Request changes. Press `o` before choosing a verdict to edit the generated
+overall comment. At the first prompt, `n` or Escape returns to the review with
+all notes intact; `d` explicitly discards them and quits.
+
+Immediately before publishing, Ramo checks that the PR head commit still
+matches the loaded snapshot. If it changed, nothing is submitted and the notes
+remain open. GitHub receives one review containing the overall body and every
+new Ramo inline comment. Reviews of your own PR offer Comment only because
+GitHub rejects self-approval and self-requested changes.
+
+PR review v1 does not import existing GitHub threads, reply to or resolve
+comments, watch/reload the PR, expand unchanged local source, or open snapshot
+files in the local editor. GitLab and Bitbucket are not supported yet. The
+view-only generic patch workflow remains available:
+
+```bash
+gh pr diff 123 --color=never | ramo
 ```
 
 `ramo` selects the nearest Git, Jujutsu, or Sapling checkout. Set `vcs = "git"`, `vcs = "jj"`, or `vcs = "sl"` in user or `.ramo/config.toml` configuration when a checkout contains more than one marker. Jujutsu and Sapling support working-copy and show reviews, and reject staged and stash operations with an explicit diagnostic instead of silently changing semantics.
@@ -244,7 +276,7 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `c` | Create an inline human review note; Enter saves, Shift-Enter adds a line, `Ctrl-s` also saves |
 | `e`, `r` | Open in `$EDITOR` / reload now |
 | `Ctrl-z` | Suspend and return terminal ownership on Unix |
-| `q` | Quit |
+| `q` | Quit; in `ramo pr`, confirm publication and choose a verdict |
 
 Ordinary line movement follows semantic diff rows rather than treating the viewport as the selection. Page and wheel scrolling move the viewport and place the cursor on the selectable row nearest its center. Hunk and file jumps land on their first diff row; `g` and `G` clamp to the first and last diff rows.
 

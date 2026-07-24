@@ -11,6 +11,7 @@ fn help_lists_every_foundation_review_command() {
         .stdout(
             predicate::str::contains("diff")
                 .and(predicate::str::contains("show"))
+                .and(predicate::str::contains("pr"))
                 .and(predicate::str::contains("stash"))
                 .and(predicate::str::contains("patch"))
                 .and(predicate::str::contains("pager"))
@@ -23,6 +24,18 @@ fn help_lists_every_foundation_review_command() {
                 .and(predicate::str::contains("--agent-context <PATH>"))
                 .and(predicate::str::contains("--exclude-untracked")),
         );
+}
+
+#[test]
+fn pr_help_has_a_number_contract_and_no_watch_mode() {
+    Command::cargo_bin("ramo")
+        .unwrap()
+        .args(["pr", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ramo pr"))
+        .stdout(predicate::str::contains("<NUMBER>"))
+        .stdout(predicate::str::contains("--watch").not());
 }
 
 #[test]

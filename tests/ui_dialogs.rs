@@ -126,4 +126,25 @@ fn overlays_render_centered_and_remain_usable_at_small_sizes() {
     assert!(frame.contains("[claude]"), "{frame}");
     assert!(frame.contains("[zsh]"), "{frame}");
     assert!(frame.contains("Enter send"), "{frame}");
+
+    terminal
+        .draw(|frame| {
+            frame.render_widget(DialogOverlay::publish(&theme, 123, 4), frame.area());
+        })
+        .unwrap();
+    let frame = buffer_text(&terminal);
+    assert!(frame.contains("Publish review?"), "{frame}");
+    assert!(frame.contains("discard"), "{frame}");
+
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                DialogOverlay::verdict(&theme, true, "Review submitted from Ramo."),
+                frame.area(),
+            );
+        })
+        .unwrap();
+    let frame = buffer_text(&terminal);
+    assert!(frame.contains("Comment only"), "{frame}");
+    assert!(!frame.contains("Approve"), "{frame}");
 }
