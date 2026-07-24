@@ -477,3 +477,27 @@ fn copied_decorations_config_includes_the_rendered_gutter_for_line_selection() {
         "1   - let item00 = 0;"
     );
 }
+
+#[test]
+fn compact_test_file_is_one_summary_row_while_source_stays_expanded() {
+    let mut test = file("tests/widget.rs", FileChangeKind::Modified, 2);
+    test.hunks[0].lines[0].content = "test-only-old".into();
+    test.hunks[0].lines[1].content = "test-only-new".into();
+    let mut controller = ReviewController::new(
+        vec![test, file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let viewport = Viewport {
+        width: 80,
+        height: 12,
+    };
+    controller.apply(ReviewAction::ToggleTestFiles, viewport);
+    let buffer = render_controller(viewport.width, viewport.height, &mut controller);
+    let frame = text(&buffer);
+
+    assert!(frame.contains("▸ tests/widget.rs"));
+    assert!(frame.contains("+1 -1"));
+    assert!(!frame.contains("test-only-old"));
+    assert!(frame.contains("src/lib.rs"));
+    assert!(frame.contains("let item00"));
+}

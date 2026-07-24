@@ -454,3 +454,37 @@ fn pager_mode_rejects_application_only_actions_but_keeps_navigation() {
     );
     assert!(controller.snapshot(view).scroll_top > 0);
 }
+
+#[test]
+fn test_compaction_is_reversible_and_enter_expands_only_the_selected_file() {
+    let view = viewport(80, 12);
+    let mut controller = ReviewController::new(
+        vec![
+            file("tests/alpha.rs", None, 2),
+            file("src/beta_test.rs", None, 2),
+            file("src/lib.rs", None, 2),
+        ],
+        ReviewOptions::default(),
+    );
+
+    controller.apply(ReviewAction::ToggleTestFiles, view);
+    let compacted = controller.snapshot(view).clone();
+    assert!(compacted.visible_files[0].compacted);
+    assert!(compacted.visible_files[1].compacted);
+    assert!(!compacted.visible_files[2].compacted);
+
+    controller.apply(ReviewAction::JumpTop, view);
+    controller.apply(ReviewAction::ExpandSelectedFile, view);
+    let expanded = controller.snapshot(view).clone();
+    assert!(!expanded.visible_files[0].compacted);
+    assert!(expanded.visible_files[1].compacted);
+
+    controller.apply(ReviewAction::ToggleTestFiles, view);
+    assert!(
+        controller
+            .snapshot(view)
+            .visible_files
+            .iter()
+            .all(|file| !file.compacted)
+    );
+}

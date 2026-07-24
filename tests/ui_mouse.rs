@@ -289,3 +289,35 @@ fn non_left_buttons_release_without_drag_and_outside_coordinates_do_nothing() {
     assert_eq!(after.selected_file_id, before.selected_file_id);
     assert_eq!(app.toast, None);
 }
+
+#[test]
+fn clicking_compacted_file_expands_only_that_file() {
+    let viewport = Viewport {
+        width: 80,
+        height: 10,
+    };
+    let mut app = App::new(vec![
+        file("tests/alpha.rs", 1, 2),
+        file("tests/beta.rs", 1, 2),
+    ]);
+    app.review_controller
+        .apply(ReviewAction::ToggleTestFiles, viewport);
+    assert!(matches!(
+        app.review_controller
+            .hit_test(ramo::review::ReviewPoint::new(2, 0), viewport),
+        Some(ramo::review::ReviewHit::CompactedFile(_))
+    ));
+
+    app.handle_mouse(
+        mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            2,
+            0,
+            KeyModifiers::NONE,
+        ),
+        viewport,
+    );
+    let snapshot = app.review_controller.snapshot(viewport);
+    assert!(!snapshot.visible_files[0].compacted);
+    assert!(snapshot.visible_files[1].compacted);
+}

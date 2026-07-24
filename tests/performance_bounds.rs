@@ -17,6 +17,25 @@ fn patch(files: usize, changed_pairs: usize) -> String {
     patch
 }
 
+fn mixed_source_and_test_patch(files: usize, changed_pairs: usize) -> String {
+    let mut patch = String::new();
+    for file in 0..files {
+        let path = if file % 2 == 0 {
+            format!("tests/test_file_{file}.rs")
+        } else {
+            format!("src/file_{file}.rs")
+        };
+        patch.push_str(&format!(
+            "diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1,{changed_pairs} +1,{changed_pairs} @@\n"
+        ));
+        for line in 0..changed_pairs {
+            patch.push_str(&format!("-let old_{line} = {line};\n"));
+            patch.push_str(&format!("+let new_{line} = {line};\n"));
+        }
+    }
+    patch
+}
+
 #[test]
 fn repeated_navigation_and_resize_cycles_do_not_accumulate_review_geometry() {
     let files = parse_unified_diff(&patch(64, 8));
@@ -83,5 +102,30 @@ fn repeated_replacements_clear_prior_geometry_and_context_state() {
             (snapshot.visible_files.len(), snapshot.total_height),
             expected
         );
+    }
+}
+
+#[test]
+fn repeated_test_compaction_keeps_geometry_and_progress_bounded() {
+    let files = parse_unified_diff(&mixed_source_and_test_patch(64, 8));
+    let mut controller = ReviewController::new(files, ReviewOptions::default());
+    let viewport = Viewport {
+        width: 160,
+        height: 30,
+    };
+    let expanded_height = controller.snapshot(viewport).total_height;
+    let mut reviewed_lines = 0;
+
+    for _ in 0..200 {
+        controller.apply(ReviewAction::ToggleTestFiles, viewport);
+        let snapshot = controller.snapshot(viewport);
+        assert!(snapshot.total_height <= expanded_height);
+        assert_eq!(
+            snapshot.total_changed_lines,
+            snapshot.total_additions + snapshot.total_deletions
+        );
+        assert!(snapshot.reviewed_lines <= snapshot.total_changed_lines);
+        assert!(snapshot.reviewed_lines >= reviewed_lines);
+        reviewed_lines = snapshot.reviewed_lines;
     }
 }

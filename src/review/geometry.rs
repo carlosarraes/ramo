@@ -53,11 +53,24 @@ pub(crate) fn resolve_responsive_layout(
 pub(crate) struct PlannedFile {
     pub file_id: String,
     pub plan: RowPlan,
+    pub compacted: bool,
 }
 
 impl PlannedFile {
     pub(crate) fn new(file_id: String, plan: RowPlan) -> Self {
-        Self { file_id, plan }
+        Self {
+            file_id,
+            plan,
+            compacted: false,
+        }
+    }
+
+    pub(crate) fn compacted(file_id: String, plan: RowPlan) -> Self {
+        Self {
+            file_id,
+            plan,
+            compacted: true,
+        }
     }
 }
 
@@ -281,7 +294,7 @@ pub(crate) fn build_review_geometry(
 
     for (file_index, file) in files.iter().enumerate() {
         let separator_height = usize::from(file_index > 0);
-        let header_height = 1;
+        let header_height = usize::from(!file.compacted);
         let section_top = cursor;
         let header_top = section_top.saturating_add(separator_height);
         let body_top = header_top.saturating_add(header_height);
@@ -345,6 +358,7 @@ fn measure_row_height(row: &ReviewRow, line_digits: usize, options: GeometryOpti
     }
     match row {
         ReviewRow::HunkHeader { .. }
+        | ReviewRow::CompactedFile { .. }
         | ReviewRow::Collapsed { .. }
         | ReviewRow::Placeholder { .. } => 1,
         ReviewRow::Note { card, .. } => card.height(),

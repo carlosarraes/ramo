@@ -255,6 +255,25 @@ fn render_row(
     focused_side: ReviewSide,
 ) {
     match row {
+        ReviewRow::CompactedFile { .. } => {
+            let background = if cursor {
+                theme.selected_hunk
+            } else {
+                theme.panel_alt
+            };
+            fill_line(area, y, buffer, background);
+            let label = format!(
+                "▸ {}",
+                file_header(file, snapshot.visible_files[bound.file_index].status)
+            );
+            buffer.set_stringn(
+                area.x + 1,
+                y,
+                label,
+                area.width.saturating_sub(2) as usize,
+                Style::default().fg(theme.text).bg(background),
+            );
+        }
         ReviewRow::HunkHeader { text, .. } => {
             fill_line(area, y, buffer, theme.panel_alt);
             buffer.set_stringn(

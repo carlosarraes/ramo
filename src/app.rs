@@ -344,6 +344,7 @@ impl App {
                 copy_decorations: config.copy_decorations,
                 pager_mode,
                 annotated_hunks: Vec::new(),
+                test_file_patterns: config.test_file_patterns.clone(),
             },
         );
         let theme_registry = ThemeRegistry::new(config.custom_theme.clone());
@@ -1071,6 +1072,10 @@ impl App {
                                 .map_or_else(String::new, |draft| draft.body.clone());
                             self.input_mode = InputMode::Note;
                         }
+                    }
+                    Some(ReviewHit::CompactedFile(file_id)) => {
+                        self.review_controller
+                            .apply(ReviewAction::ExpandCompactedFile(file_id), viewport);
                     }
                     Some(ReviewHit::Diff(anchor)) => {
                         self.review_keyboard_anchor = None;

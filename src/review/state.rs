@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use unicode_width::UnicodeWidthStr;
 
@@ -24,9 +24,11 @@ use super::geometry::{
 };
 use super::navigation::{signed_offset, wrapping_index};
 use super::row::{
-    EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, build_row_plan_with_notes,
+    EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, ReviewRowKind,
+    build_row_plan_with_notes, compacted_file_plan,
 };
 use super::selection::{SelectionPoint, SelectionRow, project_selection};
+use super::test_files::TestFileMatcher;
 
 const DEFAULT_SIDEBAR_WIDTH: u16 = 34;
 const MIN_SIDEBAR_WIDTH: u16 = 20;
@@ -80,6 +82,7 @@ pub struct ReviewOptions {
     pub copy_decorations: bool,
     pub pager_mode: bool,
     pub annotated_hunks: Vec<HunkTarget>,
+    pub test_file_patterns: Vec<String>,
 }
 
 impl Default for ReviewOptions {
@@ -94,6 +97,7 @@ impl Default for ReviewOptions {
             copy_decorations: false,
             pager_mode: false,
             annotated_hunks: Vec::new(),
+            test_file_patterns: Vec::new(),
         }
     }
 }
@@ -165,6 +169,9 @@ pub enum ReviewAction {
     ToggleWrap,
     ToggleHunkHeaders,
     ToggleAgentNotes,
+    ToggleTestFiles,
+    ExpandSelectedFile,
+    ExpandCompactedFile(String),
     FocusFilter,
     OpenHelp,
     OpenThemeSelector,
@@ -208,6 +215,7 @@ pub struct ReviewFileSnapshot {
     pub deletions: usize,
     pub stats_truncated: bool,
     pub status: ReviewFileStatus,
+    pub compacted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +271,7 @@ pub enum ReviewHit {
     Scrollbar,
     Collapsed(GapKey),
     Note(String),
+    CompactedFile(String),
     Diff(SelectionPoint),
 }
 
@@ -315,6 +324,9 @@ pub struct ReviewController {
     live_notes: Vec<LiveNote>,
     human_note_draft: Option<HumanNoteDraft>,
     next_human_note_id: u64,
+    test_file_matcher: TestFileMatcher,
+    test_files_compacted: bool,
+    expanded_test_files: HashSet<String>,
 }
 
 pub(crate) struct ReviewRenderView<'a> {
@@ -330,6 +342,8 @@ pub(crate) struct ReviewRenderView<'a> {
 impl ReviewController {
     pub fn new(files: Vec<DiffFile>, options: ReviewOptions) -> Self {
         let selected_file_id = files.first().map(|file| file.id.clone());
+        let test_file_matcher = TestFileMatcher::new(&options.test_file_patterns)
+            .expect("test file patterns must be validated before review construction");
         Self {
             files,
             options,
@@ -355,6 +369,9 @@ impl ReviewController {
             live_notes: Vec::new(),
             human_note_draft: None,
             next_human_note_id: 1,
+            test_file_matcher,
+            test_files_compacted: false,
+            expanded_test_files: HashSet::new(),
         }
     }
 
@@ -1081,6 +1098,7 @@ impl ReviewController {
         match row {
             ReviewRow::Collapsed { gap, .. } => Some(ReviewHit::Collapsed(gap.key.clone())),
             ReviewRow::Note { card, .. } => Some(ReviewHit::Note(card.id.clone())),
+            ReviewRow::CompactedFile { key } => Some(ReviewHit::CompactedFile(key.file_id.clone())),
             ReviewRow::Stack { .. } => {
                 let columns = stack_columns(
                     self.content_width(viewport),
@@ -1231,6 +1249,7 @@ impl ReviewController {
                         ))
                     }
                     ReviewRow::HunkHeader { .. }
+                    | ReviewRow::CompactedFile { .. }
                     | ReviewRow::Collapsed { .. }
                     | ReviewRow::Placeholder { .. }
                     | ReviewRow::Note { .. } => None,
@@ -1395,6 +1414,8 @@ impl ReviewController {
             self.human_note_draft = None;
         }
         self.contexts.clear();
+        self.expanded_test_files
+            .retain(|id| self.files.iter().any(|file| file.id == *id));
         self.geometry = None;
         self.planned_files.clear();
         self.selected_file_id =
@@ -1534,6 +1555,23 @@ impl ReviewController {
                 self.rebuild(viewport, true);
                 ReviewEffect::Redraw
             }
+            ReviewAction::ToggleTestFiles => {
+                self.test_files_compacted = !self.test_files_compacted;
+                self.expanded_test_files.clear();
+                self.dirty = true;
+                self.rebuild(viewport, true);
+                ReviewEffect::Redraw
+            }
+            ReviewAction::ExpandSelectedFile => {
+                if let Some(file_id) = self.selected_compacted_file_id() {
+                    self.expand_compacted_file(file_id, viewport);
+                }
+                ReviewEffect::Redraw
+            }
+            ReviewAction::ExpandCompactedFile(file_id) => {
+                self.expand_compacted_file(file_id, viewport);
+                ReviewEffect::Redraw
+            }
             ReviewAction::FocusFilter => ReviewEffect::FocusFilter,
             ReviewAction::OpenHelp => ReviewEffect::OpenHelp,
             ReviewAction::OpenThemeSelector => ReviewEffect::OpenThemeSelector,
@@ -1541,6 +1579,32 @@ impl ReviewController {
             ReviewAction::EditSelectedFile => self.edit_effect(),
             ReviewAction::Reload => ReviewEffect::Reload,
             ReviewAction::Quit => ReviewEffect::Quit,
+        }
+    }
+
+    fn selected_compacted_file_id(&self) -> Option<String> {
+        self.selected_row_key
+            .as_ref()
+            .filter(|key| key.kind == ReviewRowKind::CompactedFile)
+            .map(|key| key.file_id.clone())
+    }
+
+    fn is_file_compacted(&self, file: &DiffFile) -> bool {
+        self.test_files_compacted
+            && self.test_file_matcher.is_match(&file.path)
+            && !self.expanded_test_files.contains(&file.id)
+    }
+
+    fn expand_compacted_file(&mut self, file_id: String, viewport: Viewport) {
+        let compacted = self
+            .files
+            .iter()
+            .find(|file| file.id == file_id)
+            .is_some_and(|file| self.is_file_compacted(file));
+        if compacted {
+            self.expanded_test_files.insert(file_id);
+            self.dirty = true;
+            self.rebuild(viewport, true);
         }
     }
 
@@ -1600,8 +1664,10 @@ impl ReviewController {
             .iter()
             .map(|index| {
                 let file = &self.files[*index];
-                PlannedFile::new(
-                    file.id.clone(),
+                let compacted = self.is_file_compacted(file);
+                let plan = if compacted {
+                    compacted_file_plan(file)
+                } else {
                     build_row_plan_with_notes(
                         file,
                         self.effective_layout,
@@ -1614,8 +1680,13 @@ impl ReviewController {
                             show_agent_notes: self.options.agent_notes,
                             content_width,
                         },
-                    ),
-                )
+                    )
+                };
+                if compacted {
+                    PlannedFile::compacted(file.id.clone(), plan)
+                } else {
+                    PlannedFile::new(file.id.clone(), plan)
+                }
             })
             .collect();
         let geometry = build_review_geometry(
@@ -1962,6 +2033,7 @@ impl ReviewController {
             .map(|bound| {
                 let plan = &self.planned_files[bound.file_index].plan;
                 match &plan.rows[bound.row_index] {
+                    ReviewRow::CompactedFile { .. } => SelectionRow::stack(""),
                     ReviewRow::Stack { cell, .. } => {
                         let columns = stack_columns(
                             content_width,
@@ -2064,6 +2136,7 @@ impl ReviewController {
                             )
                     }
                     ReviewRow::HunkHeader { .. }
+                    | ReviewRow::CompactedFile { .. }
                     | ReviewRow::Collapsed { .. }
                     | ReviewRow::Placeholder { .. }
                     | ReviewRow::Note { .. } => 0,
@@ -2110,6 +2183,7 @@ impl ReviewController {
                     deletions: file.stats.deletions,
                     stats_truncated: file.stats_truncated,
                     status: file_status(file),
+                    compacted: self.is_file_compacted(file),
                 }
             })
             .collect();

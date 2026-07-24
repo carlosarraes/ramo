@@ -226,6 +226,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('0') => review(ReviewAction::SetLayout(LayoutMode::Auto)),
         KeyCode::Char('s') => review(ReviewAction::ToggleSidebar),
         KeyCode::Char('t') => review(ReviewAction::OpenThemeSelector),
+        KeyCode::Char('T') => review(ReviewAction::ToggleTestFiles),
         KeyCode::Char('a') => review(ReviewAction::ToggleAgentNotes),
         KeyCode::Char('A') => Some(AppAction::OpenAgentSkill),
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
@@ -238,6 +239,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('r') => review(ReviewAction::Reload),
         KeyCode::Char('/') => review(ReviewAction::FocusFilter),
         KeyCode::Char('c') => review(ReviewAction::StartNote),
+        KeyCode::Enter => review(ReviewAction::ExpandSelectedFile),
         KeyCode::Tab => Some(AppAction::ToggleFocus),
         KeyCode::Char('?') => review(ReviewAction::OpenHelp),
         KeyCode::Char('q') => review(ReviewAction::Quit),
@@ -301,6 +303,9 @@ fn pager_action(action: &AppAction) -> bool {
                 | ReviewAction::MoveFile(_)
                 | ReviewAction::ToggleWrap
                 | ReviewAction::ToggleSidebar
+                | ReviewAction::ToggleTestFiles
+                | ReviewAction::ExpandSelectedFile
+                | ReviewAction::ExpandCompactedFile(_)
                 | ReviewAction::StartNote
                 | ReviewAction::Quit
         ) | AppAction::Insert(_)

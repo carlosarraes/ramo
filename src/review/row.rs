@@ -20,6 +20,7 @@ pub(crate) enum EffectiveLayout {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ReviewRowKind {
+    CompactedFile,
     HunkHeader,
     DiffLine,
     Collapsed,
@@ -71,6 +72,9 @@ pub(crate) enum PlaceholderKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReviewRow {
+    CompactedFile {
+        key: ReviewRowKey,
+    },
     HunkHeader {
         key: ReviewRowKey,
         text: String,
@@ -130,7 +134,8 @@ impl NoteCard {
 impl ReviewRow {
     pub(super) fn key(&self) -> &ReviewRowKey {
         match self {
-            Self::HunkHeader { key, .. }
+            Self::CompactedFile { key }
+            | Self::HunkHeader { key, .. }
             | Self::Split { key, .. }
             | Self::Stack { key, .. }
             | Self::Collapsed { key, .. }
@@ -140,7 +145,10 @@ impl ReviewRow {
     }
 
     pub(super) fn is_selectable(&self) -> bool {
-        matches!(self, Self::Split { .. } | Self::Stack { .. })
+        matches!(
+            self,
+            Self::CompactedFile { .. } | Self::Split { .. } | Self::Stack { .. }
+        )
     }
 
     pub(super) fn available_sides(&self) -> (bool, bool) {
@@ -174,6 +182,23 @@ impl ReviewRow {
                 (key.old_line, key.new_line)
             }
         }
+    }
+}
+
+pub(crate) fn compacted_file_plan(file: &DiffFile) -> RowPlan {
+    RowPlan {
+        rows: vec![ReviewRow::CompactedFile {
+            key: ReviewRowKey {
+                file_id: file.id.clone(),
+                hunk_index: None,
+                kind: ReviewRowKind::CompactedFile,
+                old_line: None,
+                new_line: None,
+                note_id: None,
+            },
+        }],
+        hunk_anchor_keys: Vec::new(),
+        line_number_digits: 1,
     }
 }
 

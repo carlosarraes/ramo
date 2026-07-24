@@ -498,6 +498,28 @@ fn app_keys_mutate_the_rendering_controller_and_dialog_modes_own_closing_keys() 
 }
 
 #[test]
+fn test_compaction_keys_do_not_shadow_theme_or_tmux_bindings() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('T')), InputMode::Normal, false),
+        Some(AppAction::Review(ReviewAction::ToggleTestFiles))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::Normal, false),
+        Some(AppAction::Review(ReviewAction::ExpandSelectedFile))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('t')), InputMode::Normal, false),
+        Some(AppAction::Review(ReviewAction::OpenThemeSelector))
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('t')), InputMode::Normal, false),
+        Some(AppAction::SendSelection {
+            reset_target: false,
+        })
+    );
+}
+
+#[test]
 fn pull_request_dialog_modes_own_their_documented_keys() {
     assert_eq!(
         map_key_event(key(KeyCode::Char('y')), InputMode::PublishPrompt, false),
