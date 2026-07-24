@@ -177,6 +177,11 @@ pub enum RemoteReviewOutcome {
     Discarded,
 }
 
+pub struct AppRunResult {
+    pub annotations: Vec<Annotation>,
+    pub remote_outcome: Option<RemoteReviewOutcome>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RemoteReturnState {
     Review,
@@ -544,6 +549,7 @@ impl App {
         watch: Option<&mut WatchRuntime>,
     ) -> io::Result<Vec<Annotation>> {
         self.run_loop(&mut BorrowedTerminal(terminal), watch, None)
+            .map(|result| result.annotations)
     }
 
     pub fn run_with_services(
@@ -551,7 +557,7 @@ impl App {
         terminal: &mut TerminalSession,
         watch: Option<&mut WatchRuntime>,
         editor_base: &Path,
-    ) -> io::Result<Vec<Annotation>> {
+    ) -> io::Result<AppRunResult> {
         self.run_loop(terminal, watch, Some(editor_base))
     }
 
@@ -560,7 +566,7 @@ impl App {
         terminal: &mut impl TerminalHost,
         mut watch: Option<&mut WatchRuntime>,
         editor_base: Option<&Path>,
-    ) -> io::Result<Vec<Annotation>> {
+    ) -> io::Result<AppRunResult> {
         terminal.enable_mouse_capture()?;
         let run_result = (|| -> io::Result<()> {
             let mut needs_redraw = true;
@@ -626,7 +632,10 @@ impl App {
         let disable_result = terminal.disable_mouse_capture();
         run_result?;
         disable_result?;
-        Ok(self.review_controller.export_annotations())
+        Ok(AppRunResult {
+            annotations: self.review_controller.export_annotations(),
+            remote_outcome: self.remote_outcome(),
+        })
     }
 
     fn open_editor(

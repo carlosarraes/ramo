@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use crate::annotations::{model::Annotation, output};
-use crate::app::App;
+use crate::app::{App, RemoteReviewOutcome};
 use crate::cli::{Action, Invocation};
 use crate::config::{ConfigPaths, ConfigResolver};
 use crate::core::input::{ReviewInput, ReviewOutput};
@@ -13,6 +13,8 @@ use crate::error::AppError;
 use crate::input::{LoadContext, LoadOutcome, ReviewLoader};
 use crate::pager::{page_plain_text, resolve_text_pager};
 use crate::pi_extension;
+use crate::process::command::SystemCommandExecutor;
+use crate::remote_review::RemoteReviewPublisher;
 use crate::review::NativeContextSourceLoader;
 use crate::terminal::TerminalSession;
 use crate::vcs::SystemCommandRunner;
@@ -100,14 +102,27 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     };
     let stdin = io::stdin();
     let mut stdin_lock = stdin.lock();
-    let outcome = ReviewLoader.load_outcome_with_context(&input, &mut stdin_lock, &load_context)?;
-    let loaded = match outcome {
-        LoadOutcome::Review(loaded) => *loaded,
-        LoadOutcome::PlainText(text) => {
-            let env = std::env::vars().collect();
-            let pager = resolve_text_pager(&env)?;
-            let code = page_plain_text(&text, &pager, io::stdout().is_terminal())?;
-            return Ok(ExitCode::from(code));
+    let mut pull_request: Option<(
+        crate::remote_review::PullRequestReviewContext,
+        Box<dyn RemoteReviewPublisher>,
+    )> = None;
+    let loaded = if matches!(input, ReviewInput::PullRequest { .. }) {
+        let mut github = crate::github::GithubCli::new(SystemCommandExecutor);
+        let loaded =
+            ReviewLoader.load_pull_request(&input, &mut stdin_lock, &load_context, &mut github)?;
+        pull_request = Some((loaded.context, Box::new(github)));
+        loaded.review
+    } else {
+        let outcome =
+            ReviewLoader.load_outcome_with_context(&input, &mut stdin_lock, &load_context)?;
+        match outcome {
+            LoadOutcome::Review(loaded) => *loaded,
+            LoadOutcome::PlainText(text) => {
+                let env = std::env::vars().collect();
+                let pager = resolve_text_pager(&env)?;
+                let code = page_plain_text(&text, &pager, io::stdout().is_terminal())?;
+                return Ok(ExitCode::from(code));
+            }
         }
     };
 
@@ -170,6 +185,9 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         Box::new(NativeContextSourceLoader::default()),
         config_paths.user,
     );
+    if let Some((context, publisher)) = pull_request {
+        app.attach_pull_request(context, publisher);
+    }
     if let Some(remote_update) = remote_update {
         app.attach_remote_update(remote_update);
     }
@@ -209,9 +227,18 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     };
     let restore_result = terminal.restore();
     restore_result?;
-    let annotations = app_result?;
-    finish_annotations(annotations, review_output)?;
+    let result = app_result?;
+    if should_finish_local_annotations(&input, result.remote_outcome) {
+        finish_annotations(result.annotations, review_output)?;
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+pub fn should_finish_local_annotations(
+    input: &ReviewInput,
+    remote_outcome: Option<RemoteReviewOutcome>,
+) -> bool {
+    !matches!(input, ReviewInput::PullRequest { .. }) && remote_outcome.is_none()
 }
 
 fn finish_annotations(annotations: Vec<Annotation>, review_output: ReviewOutput) -> io::Result<()> {
