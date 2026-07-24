@@ -369,10 +369,40 @@ fn moved_rows_keep_moved_paint_while_changed_characters_use_stronger_backgrounds
         .unwrap();
     let start = row.find("let item00").unwrap();
     assert_eq!(buffer[(start as u16, y as u16)].bg, theme.moved_removed_bg);
+    assert_ne!(
+        buffer[(start as u16, y as u16)].fg,
+        theme.text,
+        "the `let` token should retain its syntax foreground"
+    );
     assert_eq!(
         buffer[((start + "let item0".len()) as u16, y as u16)].bg,
         theme.removed_content_bg
     );
+}
+
+#[test]
+fn syntax_foregrounds_render_over_diff_backgrounds_and_emphasis_stays_stronger() {
+    let mut source = file("src/lib.rs", FileChangeKind::Modified, 2);
+    source.hunks[0].lines[1].content = "fn highlighted(value: usize) -> usize { value + 1 }".into();
+    let mut controller = ReviewController::new(
+        vec![source],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            ..ReviewOptions::default()
+        },
+    );
+    let buffer = render_controller(100, 8, &mut controller);
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let frame = text(&buffer);
+    let (y, row) = frame
+        .lines()
+        .enumerate()
+        .find(|(_, row)| row.contains("fn highlighted"))
+        .unwrap();
+    let keyword_x = row.find("fn").unwrap() as u16;
+
+    assert_ne!(buffer[(keyword_x, y as u16)].fg, theme.text);
+    assert_eq!(buffer[(keyword_x, y as u16)].bg, theme.added_content_bg);
 }
 
 struct FailingLoader(Result<Option<String>, SourceFailure>);

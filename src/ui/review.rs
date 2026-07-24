@@ -1,6 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
 use ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthChar;
 
@@ -623,11 +624,12 @@ fn render_cell(
         };
         buffer.set_stringn(x, y, numbers, gutter, theme.gutter_style(kind));
     }
-    if let Some(hunk) = hunk_index
-        && let Some(line_index) = source_line_index(file, hunk, cell)
-    {
-        let _ = highlights.spans(file, hunk, line_index, theme);
-    }
+    let syntax = hunk_index
+        .and_then(|hunk| {
+            source_line_index(file, hunk, cell)
+                .map(|line_index| highlights.spans(file, hunk, line_index, theme))
+        })
+        .unwrap_or_default();
     let offset = if snapshot.wrap_lines {
         wrap_line.saturating_mul(code_width)
     } else {
@@ -637,6 +639,7 @@ fn render_cell(
         (x + gutter as u16, y),
         (code_width, offset),
         cell,
+        &syntax,
         buffer,
         theme,
         kind,
@@ -707,6 +710,7 @@ fn render_emphasis(
     origin: (u16, u16),
     viewport: (usize, usize),
     cell: &ReviewCell,
+    syntax: &[Span<'static>],
     buffer: &mut Buffer,
     theme: &AppTheme,
     kind: ReviewLineStyle,
@@ -716,14 +720,22 @@ fn render_emphasis(
     let mut skipped = 0usize;
     let mut written = 0usize;
     let mut cursor_x = x;
+    let syntax_styles = syntax_styles(cell.text().as_str(), syntax);
+    let mut character_index = 0usize;
     for span in &cell.spans {
-        let style = if span.emphasized {
+        let base = if span.emphasized {
             theme.changed_style(kind)
         } else {
             theme.row_style(kind)
         };
         for character in span.text.chars() {
             let cells = character.width().unwrap_or(0);
+            let style = syntax_styles
+                .as_ref()
+                .and_then(|styles| styles.get(character_index))
+                .copied()
+                .map_or(base, |syntax_style| base.patch(syntax_style));
+            character_index = character_index.saturating_add(1);
             if skipped.saturating_add(cells) <= offset {
                 skipped = skipped.saturating_add(cells);
                 continue;
@@ -736,6 +748,22 @@ fn render_emphasis(
             written = written.saturating_add(cells);
         }
     }
+}
+
+fn syntax_styles(text: &str, spans: &[Span<'static>]) -> Option<Vec<Style>> {
+    let highlighted = spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    if highlighted != text {
+        return None;
+    }
+    Some(
+        spans
+            .iter()
+            .flat_map(|span| span.content.chars().map(|_| span.style))
+            .collect(),
+    )
 }
 
 fn semantic_kind(cell: &ReviewCell) -> ReviewLineStyle {
