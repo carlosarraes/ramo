@@ -790,31 +790,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "ramo"
-version = "0.0.10"
-dependencies = [
- "assert_cmd",
- "clap",
- "crossterm",
- "dirs",
- "libc",
- "notify",
- "portable-pty",
- "predicates",
- "ratatui",
- "serde",
- "serde_json",
- "shell-words",
- "similar",
- "syntect",
- "tempfile",
- "toml",
- "toml_edit",
- "unicode-width 0.2.0",
- "vt100",
-]
-
-[[package]]
 name = "plist"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,6 +891,31 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "ramo"
+version = "0.0.11"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "crossterm",
+ "dirs",
+ "libc",
+ "notify",
+ "portable-pty",
+ "predicates",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "similar",
+ "syntect",
+ "tempfile",
+ "toml",
+ "toml_edit",
+ "unicode-width 0.2.0",
+ "vt100",
+]
 
 [[package]]
 name = "ratatui"
