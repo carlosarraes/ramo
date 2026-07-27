@@ -90,11 +90,10 @@ impl ReviewProgress {
     pub(crate) fn snapshot(&self) -> ReviewProgressSnapshot {
         let total = self.ordered.len();
         let reviewed = self.reviewed.len().min(total);
-        let percent = if total == 0 {
-            100
-        } else {
-            (reviewed.saturating_mul(100) / total) as u8
-        };
+        let percent = reviewed
+            .saturating_mul(100)
+            .checked_div(total)
+            .unwrap_or(100) as u8;
         ReviewProgressSnapshot {
             reviewed,
             total,
