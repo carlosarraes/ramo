@@ -109,15 +109,24 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     )> = None;
     let mut context_loader: Box<dyn ContextSourceLoader> =
         Box::new(NativeContextSourceLoader::default());
+    let with_comments_requested = matches!(
+        input,
+        ReviewInput::PullRequest {
+            with_comments: true,
+            ..
+        }
+    );
+    let mut imported_threads = Vec::new();
     let loaded = if matches!(input, ReviewInput::PullRequest { .. }) {
         let mut github = crate::github::GithubCli::new(SystemCommandExecutor);
-        let loaded =
+        let loaded_pr =
             ReviewLoader.load_pull_request(&input, &mut stdin_lock, &load_context, &mut github)?;
+        imported_threads = loaded_pr.imported_threads;
         context_loader = Box::new(crate::github::GithubContextSourceLoader::new(
             SystemCommandExecutor,
         ));
-        pull_request = Some((loaded.context, Box::new(github)));
-        loaded.review
+        pull_request = Some((loaded_pr.context, Box::new(github)));
+        loaded_pr.review
     } else {
         let outcome =
             ReviewLoader.load_outcome_with_context(&input, &mut stdin_lock, &load_context)?;
@@ -135,6 +144,12 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     if loaded.changeset.files.is_empty() {
         eprintln!("No changes to review.");
         return Ok(ExitCode::SUCCESS);
+    }
+
+    if with_comments_requested && imported_threads.is_empty() {
+        resolved_config
+            .startup_notices
+            .push("No unresolved GitHub threads".into());
     }
 
     let pager_mode =
@@ -218,6 +233,8 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     }
     let session_client = crate::session::ensure_session_daemon()?;
     let (width, height) = crossterm::terminal::size().unwrap_or((100, 24));
+    app.review_controller
+        .attach_github_threads(imported_threads, crate::review::Viewport { width, height });
     let initial_snapshot = crate::session::build_snapshot(
         &mut app.review_controller,
         crate::review::Viewport { width, height },

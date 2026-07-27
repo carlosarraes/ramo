@@ -21,7 +21,14 @@ struct PtyProcess {
 }
 
 impl PtyProcess {
-    fn spawn(cwd: &Path, path: &str, payload: &Path, source_log: &Path) -> Self {
+    fn spawn(
+        cwd: &Path,
+        path: &str,
+        payload: &Path,
+        source_log: &Path,
+        call_log: &Path,
+        extra_args: &[&str],
+    ) -> Self {
         let daemon = support::TestSessionDaemon::spawn();
         let pair = native_pty_system()
             .openpty(PtySize {
@@ -35,10 +42,14 @@ impl PtyProcess {
         command.cwd(cwd);
         command.arg("pr");
         command.arg("123");
+        for argument in extra_args {
+            command.arg(argument);
+        }
         command.env("TERM", "xterm-256color");
         command.env("PATH", path);
         command.env("FAKE_GH_PAYLOAD", payload);
         command.env("FAKE_GH_SOURCE_LOG", source_log);
+        command.env("FAKE_GH_CALL_LOG", call_log);
         command.env("RAMO_DISABLE_UPDATE_NOTICE", "1");
         command.env(
             "RAMO_SESSION_HOST",
@@ -139,13 +150,14 @@ impl Drop for PtyProcess {
     }
 }
 
-fn fake_gh(temp: &Path) -> (String, PathBuf, PathBuf) {
+fn fake_gh(temp: &Path) -> (String, PathBuf, PathBuf, PathBuf) {
     let bin = temp.join("bin");
     let gh = bin.join("gh");
     std::fs::create_dir(&bin).unwrap();
     std::fs::write(
         &gh,
         r#"#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_GH_CALL_LOG"
 case "$*" in
   "api user --jq .login")
     printf 'reviewer\n'
@@ -158,6 +170,9 @@ case "$*" in
     ;;
   "pr diff 123 --color=never")
     printf '%s\n' 'diff --git a/src/lib.rs b/src/lib.rs' '--- a/src/lib.rs' '+++ b/src/lib.rs' '@@ -0,0 +1,2 @@' '+FIRST_PR_LINE' '+SECOND_PR_LINE'
+    ;;
+  "api graphql"*)
+    printf '%s\n' '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"T1","isResolved":false,"isOutdated":false,"subjectType":"LINE","path":"src/lib.rs","diffSide":"RIGHT","startDiffSide":"RIGHT","startLine":1,"line":1,"comments":{"nodes":[{"id":"C1","bodyText":"existing github feedback","createdAt":"2026-07-27T12:00:00Z","url":"https://github.com/owner/repo/pull/123#discussion_r1","author":{"login":"alice"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}'
     ;;
   "api --method GET repos/owner/repo/contents/src/lib.rs -f ref=head123 -H Accept:application/vnd.github.raw+json")
     printf 'fetch\n' >> "$FAKE_GH_SOURCE_LOG"
@@ -183,6 +198,7 @@ esac
         path,
         temp.join("review.json"),
         temp.join("source-requests.log"),
+        temp.join("gh-calls.log"),
     )
 }
 
@@ -192,8 +208,8 @@ fn public_pr_command_creates_and_publishes_one_github_review() {
     let config = temp.path().join(".ramo/config.toml");
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(&config, "prompt_save_view_preferences = false\n").unwrap();
-    let (path, payload, source_log) = fake_gh(temp.path());
-    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log);
+    let (path, payload, source_log, call_log) = fake_gh(temp.path());
+    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log, &call_log, &[]);
 
     let screen = process.read_until("GitHub PR #123");
     assert!(screen.contains("FIRST_PR_LINE"), "{screen}");
@@ -211,6 +227,11 @@ fn public_pr_command_creates_and_publishes_one_github_review() {
     assert_eq!(payload["comments"][0]["path"], "src/lib.rs");
     assert_eq!(payload["comments"][0]["side"], "RIGHT");
     assert_eq!(payload["comments"][0]["body"], "Inline feedback");
+    assert!(
+        !std::fs::read_to_string(call_log)
+            .unwrap()
+            .contains("api graphql")
+    );
 }
 
 #[test]
@@ -219,8 +240,8 @@ fn public_pr_context_is_fetched_lazily_on_expansion() {
     let config = temp.path().join(".ramo/config.toml");
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(&config, "prompt_save_view_preferences = false\n").unwrap();
-    let (path, payload, source_log) = fake_gh(temp.path());
-    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log);
+    let (path, payload, source_log, call_log) = fake_gh(temp.path());
+    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log, &call_log, &[]);
 
     process.read_until("GitHub PR #123");
     assert!(
@@ -243,4 +264,42 @@ fn public_pr_context_is_fetched_lazily_on_expansion() {
     process.read_until("no inline comments");
     process.send("d");
     assert_eq!(process.wait(), 0);
+}
+
+#[test]
+fn with_comments_shows_existing_feedback_but_publishes_only_new_comments() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join(".ramo/config.toml");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "prompt_save_view_preferences = false\n").unwrap();
+    let (path, payload, source_log, call_log) = fake_gh(temp.path());
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &path,
+        &payload,
+        &source_log,
+        &call_log,
+        &["--with-comments"],
+    );
+
+    process.read_until("existing github feedback");
+    process.send("j");
+    process.send("c");
+    process.read_until("Draft note");
+    process.send("new local feedback\r");
+    process.read_until("Your note");
+    process.send("qy");
+    process.read_until("Submit GitHub review");
+    process.send("c");
+    assert_eq!(process.wait(), 0);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(payload).unwrap()).unwrap();
+    assert_eq!(payload["comments"].as_array().unwrap().len(), 1);
+    assert_eq!(payload["comments"][0]["body"], "new local feedback");
+    assert!(
+        std::fs::read_to_string(call_log)
+            .unwrap()
+            .contains("api graphql")
+    );
 }

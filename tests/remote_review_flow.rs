@@ -7,7 +7,8 @@ use ramo::config::ResolvedConfig;
 use ramo::core::input::LayoutMode;
 use ramo::diff::parser::parse_unified_diff;
 use ramo::remote_review::{
-    PullRequestReviewContext, RemoteReviewError, RemoteReviewPublisher, RemoteReviewRequest,
+    GithubReviewThread, GithubThreadComment, GithubThreadSubject, PullRequestReviewContext,
+    RemoteLineSide, RemoteReviewError, RemoteReviewPublisher, RemoteReviewRequest,
 };
 use ramo::review::{ReviewOptions, Viewport};
 use ramo::ui::input::InputMode;
@@ -123,6 +124,47 @@ fn quit_confirms_then_submits_one_review_after_a_fresh_head_check() {
     );
     assert_eq!(app.remote_outcome(), Some(RemoteReviewOutcome::Published));
     assert!(app.should_quit);
+}
+
+#[test]
+fn publication_uses_only_new_local_comments() {
+    let (mut app, calls) = app("abc123");
+    app.review_controller.attach_github_threads(
+        vec![GithubReviewThread {
+            id: "T1".into(),
+            path: "src/lib.rs".into(),
+            subject: GithubThreadSubject::Line {
+                side: Some(RemoteLineSide::Right),
+                start_side: Some(RemoteLineSide::Right),
+                start_line: Some(1),
+                end_line: Some(1),
+            },
+            comments: vec![GithubThreadComment {
+                id: "C1".into(),
+                author: "alice".into(),
+                body: "existing github feedback".into(),
+                created_at: "now".into(),
+                url: "https://example.test/T1".into(),
+            }],
+            url: "https://example.test/T1".into(),
+        }],
+        VIEWPORT,
+    );
+
+    app.handle_ui_key(key(KeyCode::Char('q')), VIEWPORT);
+    app.handle_ui_key(key(KeyCode::Char('y')), VIEWPORT);
+    app.handle_ui_key(key(KeyCode::Char('c')), VIEWPORT);
+
+    let calls = calls.borrow();
+    assert_eq!(calls.submissions.len(), 1);
+    assert_eq!(calls.submissions[0].comments.len(), 1);
+    assert_eq!(calls.submissions[0].comments[0].body, "Inline feedback");
+    assert!(
+        calls.submissions[0]
+            .comments
+            .iter()
+            .all(|comment| comment.body != "existing github feedback")
+    );
 }
 
 #[test]
