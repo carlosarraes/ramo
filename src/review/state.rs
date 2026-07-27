@@ -19,13 +19,13 @@ use super::context::{
     derive_collapsed_gaps, select_gap_for_toggle, source_for_context,
 };
 use super::geometry::{
-    GeometryOptions, PlannedFile, ReviewGeometry, RowBounds, build_review_geometry,
+    GeometryOptions, PlannedFile, ReviewGeometry, RowBounds, RowOwner, build_review_geometry,
     resolve_responsive_layout, split_columns, stack_columns,
 };
 use super::navigation::{signed_offset, wrapping_index};
 use super::progress::ReviewProgress;
 use super::row::{
-    EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, ReviewRowKind,
+    EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, ReviewRowKind, RowPlan,
     build_row_plan_with_notes, compacted_file_plan,
 };
 use super::selection::{SelectionPoint, SelectionRow, project_selection};
@@ -321,6 +321,7 @@ pub struct ReviewController {
     sidebar_width: u16,
     geometry: Option<ReviewGeometry>,
     planned_files: Vec<PlannedFile>,
+    trailer_plan: Option<RowPlan>,
     effective_layout: EffectiveLayout,
     actual_sidebar: bool,
     last_viewport: Option<Viewport>,
@@ -341,6 +342,7 @@ pub(crate) struct ReviewRenderView<'a> {
     pub files: &'a [DiffFile],
     pub visible_indices: &'a [usize],
     pub planned_files: &'a [PlannedFile],
+    pub trailer_plan: Option<&'a RowPlan>,
     pub geometry: &'a ReviewGeometry,
     pub snapshot: &'a ReviewSnapshot,
     pub cursor_key: Option<&'a ReviewRowKey>,
@@ -368,6 +370,7 @@ impl ReviewController {
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             geometry: None,
             planned_files: Vec::new(),
+            trailer_plan: None,
             effective_layout: EffectiveLayout::Stack,
             actual_sidebar: false,
             last_viewport: None,
@@ -786,9 +789,12 @@ impl ReviewController {
         let mut selected_side = None;
         let mut lines = Vec::with_capacity(rows.len());
         for bound in rows {
+            let RowOwner::File { file_index } = bound.owner else {
+                return Err(InlineTargetError::NoDiffLine);
+            };
             let row = self
                 .planned_files
-                .get(bound.file_index)
+                .get(file_index)
                 .and_then(|file| file.plan.rows.get(bound.row_index))
                 .ok_or(InlineTargetError::NoDiffLine)?;
             let (side, line) = match (self.effective_layout, row) {
@@ -1051,6 +1057,7 @@ impl ReviewController {
             files: &self.files,
             visible_indices: &self.visible_indices,
             planned_files: &self.planned_files,
+            trailer_plan: self.trailer_plan.as_ref(),
             geometry: self
                 .geometry
                 .as_ref()
@@ -1101,12 +1108,11 @@ impl ReviewController {
         if absolute_y < bound.top || absolute_y >= bound.top.saturating_add(bound.height) {
             return None;
         }
-        let row = self
-            .planned_files
-            .get(bound.file_index)?
-            .plan
-            .rows
-            .get(bound.row_index)?;
+        let plan = match bound.owner {
+            RowOwner::File { file_index } => &self.planned_files.get(file_index)?.plan,
+            RowOwner::Trailer => self.trailer_plan.as_ref()?,
+        };
+        let row = plan.rows.get(bound.row_index)?;
         match row {
             ReviewRow::Collapsed { gap, .. } => Some(ReviewHit::Collapsed(gap.key.clone())),
             ReviewRow::Note { card, .. } => Some(ReviewHit::Note(card.id.clone())),
@@ -1114,7 +1120,7 @@ impl ReviewController {
             ReviewRow::Stack { .. } => {
                 let columns = stack_columns(
                     self.content_width(viewport),
-                    self.planned_files[bound.file_index].plan.line_number_digits,
+                    plan.line_number_digits,
                     self.options.line_numbers,
                 );
                 let local = relative_x.checked_sub(columns.text_cell)?;
@@ -1138,7 +1144,7 @@ impl ReviewController {
             ReviewRow::Split { .. } => {
                 let columns = split_columns(
                     self.content_width(viewport),
-                    self.planned_files[bound.file_index].plan.line_number_digits,
+                    plan.line_number_digits,
                     self.options.line_numbers,
                 );
                 let (text_cell, code_width) = if relative_x < columns.divider_cell {
@@ -1196,7 +1202,10 @@ impl ReviewController {
                 {
                     return None;
                 }
-                let plan = &self.planned_files[bound.file_index].plan;
+                let RowOwner::File { file_index } = bound.owner else {
+                    return None;
+                };
+                let plan = &self.planned_files[file_index].plan;
                 let row_index = selected_index.saturating_add(offset);
                 match &plan.rows[bound.row_index] {
                     ReviewRow::Stack { cell, .. } => {
@@ -1641,8 +1650,12 @@ impl ReviewController {
             .flat_map(|geometry| geometry.rows.iter())
             .take_while(|bound| bound.top < bottom)
             .flat_map(|bound| {
-                let planned = &self.planned_files[bound.file_index];
+                let RowOwner::File { file_index } = bound.owner else {
+                    return Vec::new().into_iter();
+                };
+                let planned = &self.planned_files[file_index];
                 ReviewProgress::row_keys(&planned.file_id, &planned.plan.rows[bound.row_index])
+                    .into_iter()
             })
             .collect::<Vec<_>>();
         if self.progress.observe_through(keys) {
@@ -1733,6 +1746,7 @@ impl ReviewController {
             .collect();
         let geometry = build_review_geometry(
             &self.planned_files,
+            self.trailer_plan.as_ref(),
             GeometryOptions {
                 content_width,
                 viewport_height: viewport.height,
@@ -2072,10 +2086,13 @@ impl ReviewController {
             .as_ref()
             .into_iter()
             .flat_map(|geometry| &geometry.rows)
-            .map(|bound| {
-                let plan = &self.planned_files[bound.file_index].plan;
+            .filter_map(|bound| {
+                let plan = match bound.owner {
+                    RowOwner::File { file_index } => &self.planned_files.get(file_index)?.plan,
+                    RowOwner::Trailer => self.trailer_plan.as_ref()?,
+                };
                 match &plan.rows[bound.row_index] {
-                    ReviewRow::CompactedFile { .. } => SelectionRow::stack(""),
+                    ReviewRow::CompactedFile { .. } => Some(SelectionRow::stack("")),
                     ReviewRow::Stack { cell, .. } => {
                         let columns = stack_columns(
                             content_width,
@@ -2083,7 +2100,7 @@ impl ReviewController {
                             self.options.line_numbers,
                         );
                         if self.options.copy_decorations {
-                            SelectionRow::stack_at(
+                            Some(SelectionRow::stack_at(
                                 format!(
                                     "{}{}",
                                     copy_gutter(
@@ -2095,9 +2112,9 @@ impl ReviewController {
                                     cell.text()
                                 ),
                                 1,
-                            )
+                            ))
                         } else {
-                            SelectionRow::stack_at(cell.text(), columns.text_cell)
+                            Some(SelectionRow::stack_at(cell.text(), columns.text_cell))
                         }
                     }
                     ReviewRow::Split { left, right, .. } => {
@@ -2107,7 +2124,7 @@ impl ReviewController {
                             self.options.line_numbers,
                         );
                         if self.options.copy_decorations {
-                            SelectionRow::split_at(
+                            Some(SelectionRow::split_at(
                                 format!(
                                     "{}{}",
                                     copy_gutter(
@@ -2131,21 +2148,23 @@ impl ReviewController {
                                 columns.divider_cell,
                                 1,
                                 columns.divider_cell.saturating_add(1),
-                            )
+                            ))
                         } else {
-                            SelectionRow::split_at(
+                            Some(SelectionRow::split_at(
                                 left.text(),
                                 right.text(),
                                 columns.divider_cell,
                                 columns.left_text_cell,
                                 columns.right_text_cell,
-                            )
+                            ))
                         }
                     }
                     ReviewRow::HunkHeader { text, .. }
                     | ReviewRow::Placeholder { text, .. }
-                    | ReviewRow::Collapsed { text, .. } => SelectionRow::stack(text),
-                    ReviewRow::Note { card, .. } => SelectionRow::stack(card.lines.join("\n")),
+                    | ReviewRow::Collapsed { text, .. } => Some(SelectionRow::stack(text)),
+                    ReviewRow::Note { card, .. } => {
+                        Some(SelectionRow::stack(card.lines.join("\n")))
+                    }
                 }
             })
             .collect()
@@ -2467,8 +2486,11 @@ fn file_status(file: &DiffFile) -> ReviewFileStatus {
 }
 
 fn row_for_bound<'a>(planned_files: &'a [PlannedFile], bound: &RowBounds) -> Option<&'a ReviewRow> {
+    let RowOwner::File { file_index } = bound.owner else {
+        return None;
+    };
     planned_files
-        .get(bound.file_index)?
+        .get(file_index)?
         .plan
         .rows
         .get(bound.row_index)

@@ -1,4 +1,4 @@
-use super::geometry::ReviewGeometry;
+use super::geometry::{ReviewGeometry, RowOwner};
 use super::row::ReviewRowKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +21,10 @@ pub(crate) fn capture_viewport_anchor(
         row_key: row.map(|row| row.key.clone()),
         intra_row: row.map_or(0, |row| scroll_top.saturating_sub(row.top)),
         file_id: row
-            .and_then(|row| geometry.sections.get(row.file_index))
+            .and_then(|row| match row.owner {
+                RowOwner::File { file_index } => geometry.sections.get(file_index),
+                RowOwner::Trailer => None,
+            })
             .map(|section| section.file_id.clone())
             .or_else(|| selected_file_id.map(str::to_owned)),
         hunk_index: row.and_then(|row| row.hunk_index).or(selected_hunk_index),
@@ -79,6 +82,7 @@ mod tests {
             .collect::<Vec<_>>();
         build_review_geometry(
             &files,
+            None,
             GeometryOptions {
                 content_width,
                 viewport_height: 12,

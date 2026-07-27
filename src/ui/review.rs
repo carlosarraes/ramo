@@ -6,7 +6,7 @@ use ratatui::widgets::Widget;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::diff::model::{DiffFile, LineType, MovedLineKind};
-use crate::review::geometry::{RowBounds, split_columns, stack_columns};
+use crate::review::geometry::{RowBounds, RowOwner, split_columns, stack_columns};
 use crate::review::row::{CellKind, ReviewCell, ReviewRow};
 use crate::review::{
     ReviewController, ReviewFileStatus, ReviewSide, SelectionPoint, SidebarEntrySnapshot, Viewport,
@@ -362,6 +362,28 @@ fn render_stream(
             );
         }
     }
+    if let Some(trailer) = &view.geometry.trailer {
+        render_absolute_line(
+            area,
+            buffer,
+            trailer.section_top,
+            scroll,
+            "─",
+            theme.border,
+            theme.background,
+        );
+        render_absolute_text(
+            area,
+            buffer,
+            trailer.header_top,
+            scroll,
+            "Unplaced GitHub comments",
+            Style::default()
+                .fg(theme.text)
+                .bg(theme.panel_alt)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
 
     let window = view
         .geometry
@@ -376,15 +398,28 @@ fn render_stream(
         let y = area
             .y
             .saturating_add(bound.top.saturating_sub(scroll) as u16);
-        let file = &view.files[view.visible_indices[bound.file_index]];
-        let planned = &view.planned_files[bound.file_index].plan;
-        let row = &planned.rows[bound.row_index];
+        let (row, digits, file) = match bound.owner {
+            RowOwner::File { file_index } => {
+                let planned = &view.planned_files[file_index].plan;
+                (
+                    &planned.rows[bound.row_index],
+                    planned.line_number_digits,
+                    Some(&view.files[view.visible_indices[file_index]]),
+                )
+            }
+            RowOwner::Trailer => {
+                let planned = view
+                    .trailer_plan
+                    .expect("trailer geometry has a trailer plan");
+                (&planned.rows[bound.row_index], 1, None)
+            }
+        };
         render_row(
             area,
             y,
             bound,
             row,
-            planned.line_number_digits,
+            digits,
             file,
             buffer,
             view.snapshot,
@@ -407,7 +442,7 @@ fn render_row(
     bound: &RowBounds,
     row: &ReviewRow,
     digits: usize,
-    file: &DiffFile,
+    file: Option<&DiffFile>,
     buffer: &mut Buffer,
     snapshot: &crate::review::ReviewSnapshot,
     theme: &AppTheme,
@@ -420,6 +455,10 @@ fn render_row(
 ) {
     match row {
         ReviewRow::CompactedFile { .. } => {
+            let file = file.expect("compacted rows belong to files");
+            let RowOwner::File { file_index } = bound.owner else {
+                unreachable!("compacted rows cannot belong to the trailer");
+            };
             let background = if cursor {
                 theme.selected_hunk
             } else {
@@ -428,7 +467,7 @@ fn render_row(
             fill_line(area, y, buffer, background);
             let label = format!(
                 "▸ {}",
-                file_header(file, snapshot.visible_files[bound.file_index].status)
+                file_header(file, snapshot.visible_files[file_index].status)
             );
             buffer.set_stringn(
                 area.x + 1,
@@ -471,6 +510,7 @@ fn render_row(
             );
         }
         ReviewRow::Stack { cell, .. } => {
+            let file = file.expect("diff rows belong to files");
             let columns = stack_columns(area.width, digits, snapshot.line_numbers);
             for line in first_line..bound.height {
                 let draw_y = y.saturating_add(line.saturating_sub(first_line) as u16);
@@ -503,6 +543,7 @@ fn render_row(
             }
         }
         ReviewRow::Split { left, right, .. } => {
+            let file = file.expect("diff rows belong to files");
             let columns = split_columns(area.width, digits, snapshot.line_numbers);
             for line in first_line..bound.height {
                 let draw_y = y.saturating_add(line.saturating_sub(first_line) as u16);

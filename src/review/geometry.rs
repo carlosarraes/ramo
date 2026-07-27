@@ -171,12 +171,29 @@ pub(crate) struct FileSection {
     pub section_bottom: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowOwner {
+    File { file_index: usize },
+    Trailer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrailerSection {
+    pub section_top: usize,
+    pub separator_height: usize,
+    pub header_top: usize,
+    pub header_height: usize,
+    pub body_top: usize,
+    pub body_height: usize,
+    pub section_bottom: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RowBounds {
     pub key: ReviewRowKey,
     pub top: usize,
     pub height: usize,
-    pub file_index: usize,
+    pub owner: RowOwner,
     pub hunk_index: Option<usize>,
     pub row_index: usize,
 }
@@ -191,6 +208,7 @@ pub(crate) struct VisibleWindow {
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewGeometry {
     pub sections: Vec<FileSection>,
+    pub trailer: Option<TrailerSection>,
     pub rows: Vec<RowBounds>,
     pub total_height: usize,
     viewport_height: usize,
@@ -283,6 +301,7 @@ impl ReviewGeometry {
 
 pub(crate) fn build_review_geometry(
     files: &[PlannedFile],
+    trailer: Option<&RowPlan>,
     options: GeometryOptions,
 ) -> ReviewGeometry {
     let mut sections = Vec::with_capacity(files.len());
@@ -306,7 +325,7 @@ pub(crate) fn build_review_geometry(
                 key: row.key().clone(),
                 top: body_top.saturating_add(body_height),
                 height,
-                file_index,
+                owner: RowOwner::File { file_index },
                 hunk_index: row.key().hunk_index,
                 row_index,
             };
@@ -338,8 +357,43 @@ pub(crate) fn build_review_geometry(
         cursor = section_bottom;
     }
 
+    let trailer = trailer.filter(|plan| !plan.rows.is_empty()).map(|plan| {
+        let section_top = cursor;
+        let separator_height = 1;
+        let header_top = section_top.saturating_add(separator_height);
+        let header_height = 1;
+        let body_top = header_top.saturating_add(header_height);
+        let mut body_height = 0usize;
+        for (row_index, row) in plan.rows.iter().enumerate() {
+            let height = measure_row_height(row, plan.line_number_digits, options);
+            let bound = RowBounds {
+                key: row.key().clone(),
+                top: body_top.saturating_add(body_height),
+                height,
+                owner: RowOwner::Trailer,
+                hunk_index: row.key().hunk_index,
+                row_index,
+            };
+            row_by_key.insert(bound.key.clone(), rows.len());
+            body_height = body_height.saturating_add(height);
+            rows.push(bound);
+        }
+        let section_bottom = body_top.saturating_add(body_height);
+        cursor = section_bottom;
+        TrailerSection {
+            section_top,
+            separator_height,
+            header_top,
+            header_height,
+            body_top,
+            body_height,
+            section_bottom,
+        }
+    });
+
     ReviewGeometry {
         sections,
+        trailer,
         rows,
         total_height: cursor,
         viewport_height: usize::from(options.viewport_height),
@@ -402,10 +456,12 @@ fn wrapped_height(cell: &ReviewCell, content_width: usize) -> usize {
 mod tests {
     use crate::core::input::LayoutMode;
     use crate::diff::model::{DiffFile, FileChangeKind};
-    use crate::review::row::{EffectiveLayout, build_row_plan};
+    use crate::review::row::{
+        EffectiveLayout, ReviewRow, ReviewRowKey, ReviewRowKind, RowPlan, build_row_plan,
+    };
 
     use super::{
-        GeometryOptions, PlannedFile, ResponsiveViewport, build_review_geometry,
+        GeometryOptions, PlannedFile, ResponsiveViewport, RowOwner, build_review_geometry,
         resolve_responsive_layout,
     };
 
@@ -413,6 +469,42 @@ mod tests {
         let file = DiffFile::for_test(path, FileChangeKind::Modified, additions, 0);
         let plan = build_row_plan(&file, EffectiveLayout::Stack, true);
         PlannedFile::new(file.id, plan)
+    }
+
+    #[test]
+    fn trailer_has_typed_geometry_without_becoming_a_file() {
+        let files = vec![planned("src/a.rs", 2), planned("src/b.rs", 3)];
+        let trailer = RowPlan {
+            rows: ["T1", "T2"]
+                .into_iter()
+                .map(|id| ReviewRow::HunkHeader {
+                    key: ReviewRowKey {
+                        file_id: format!("github:unplaced:{id}"),
+                        hunk_index: None,
+                        kind: ReviewRowKind::Note,
+                        old_line: None,
+                        new_line: None,
+                        note_id: Some(id.into()),
+                    },
+                    text: id.into(),
+                })
+                .collect(),
+            hunk_anchor_keys: Vec::new(),
+            line_number_digits: 1,
+        };
+        let base = build_review_geometry(&files, None, GeometryOptions::fixed(80, 20));
+        let geometry =
+            build_review_geometry(&files, Some(&trailer), GeometryOptions::fixed(80, 20));
+
+        assert_eq!(geometry.sections.len(), 2);
+        let trailer = geometry.trailer.as_ref().unwrap();
+        assert_eq!(trailer.header_height, 1);
+        assert_eq!(trailer.body_height, 2);
+        assert!(matches!(
+            geometry.rows.last().unwrap().owner,
+            RowOwner::Trailer
+        ));
+        assert_eq!(geometry.total_height, base.total_height + 1 + 1 + 2);
     }
 
     #[test]
@@ -445,7 +537,7 @@ mod tests {
     #[test]
     fn file_sections_include_separator_and_header_after_the_first_file() {
         let files = vec![planned("src/a.rs", 2), planned("src/b.rs", 3)];
-        let geometry = build_review_geometry(&files, GeometryOptions::fixed(80, 20));
+        let geometry = build_review_geometry(&files, None, GeometryOptions::fixed(80, 20));
         assert_eq!(geometry.sections.len(), 2);
         assert_eq!(geometry.sections[0].section_top, 0);
         assert_eq!(geometry.sections[0].header_height, 1);
@@ -467,6 +559,7 @@ mod tests {
 
         let nowrap = build_review_geometry(
             &files,
+            None,
             GeometryOptions {
                 content_width: 8,
                 viewport_height: 5,
@@ -478,6 +571,7 @@ mod tests {
 
         let wrapped = build_review_geometry(
             &files,
+            None,
             GeometryOptions {
                 wrap_lines: true,
                 ..GeometryOptions::fixed(8, 5)
@@ -487,6 +581,7 @@ mod tests {
 
         let tiny = build_review_geometry(
             &files,
+            None,
             GeometryOptions {
                 content_width: 0,
                 viewport_height: 5,
@@ -502,13 +597,13 @@ mod tests {
         let files = (0..1_000)
             .map(|index| planned(&format!("src/{index}.rs"), 100))
             .collect::<Vec<_>>();
-        let geometry = build_review_geometry(&files, GeometryOptions::fixed(120, 20));
+        let geometry = build_review_geometry(&files, None, GeometryOptions::fixed(120, 20));
         let first = geometry.row_at_offset(0).unwrap();
         let last = geometry
             .row_at_offset(geometry.total_height.saturating_sub(1))
             .unwrap();
-        assert_eq!(first.file_index, 0);
-        assert_eq!(last.file_index, 999);
+        assert_eq!(first.owner, RowOwner::File { file_index: 0 });
+        assert_eq!(last.owner, RowOwner::File { file_index: 999 });
 
         let middle = geometry.sections[500].body_top + 50;
         let window = geometry.visible_window(middle, 20, 4);
@@ -529,7 +624,7 @@ mod tests {
     #[test]
     fn file_lookup_uses_exact_section_boundaries() {
         let files = vec![planned("a.rs", 2), planned("b.rs", 2)];
-        let geometry = build_review_geometry(&files, GeometryOptions::fixed(80, 20));
+        let geometry = build_review_geometry(&files, None, GeometryOptions::fixed(80, 20));
         let boundary = geometry.sections[1].section_top;
         assert_eq!(geometry.file_at_offset(boundary.saturating_sub(1)), Some(0));
         assert_eq!(geometry.file_at_offset(boundary), Some(1));
