@@ -2,9 +2,10 @@ use std::io::{self, stdout};
 use std::sync::Once;
 
 use crossterm::cursor::Show;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+#[cfg(unix)]
 use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -128,11 +129,15 @@ impl Drop for TerminalSession {
 
 fn enter_terminal() -> io::Result<DefaultTerminal> {
     enable_raw_mode()?;
-    if let Err(error) = execute!(
+    #[cfg(unix)]
+    let screen_result = execute!(
         stdout(),
         EnterAlternateScreen,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-    ) {
+    );
+    #[cfg(windows)]
+    let screen_result = execute!(stdout(), EnterAlternateScreen);
+    if let Err(error) = screen_result {
         let _ = disable_raw_mode();
         return Err(error);
     }
@@ -153,12 +158,15 @@ fn restore_terminal(mouse_capture: bool) -> io::Result<()> {
         Ok(())
     };
     let raw_result = disable_raw_mode();
+    #[cfg(unix)]
     let screen_result = execute!(
         stdout(),
         PopKeyboardEnhancementFlags,
         LeaveAlternateScreen,
         Show
     );
+    #[cfg(windows)]
+    let screen_result = execute!(stdout(), LeaveAlternateScreen, Show);
     mouse_result.and(raw_result).and(screen_result)
 }
 
