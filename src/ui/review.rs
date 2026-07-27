@@ -465,8 +465,14 @@ fn render_row(
                 theme.panel_alt
             };
             fill_line(area, y, buffer, background);
+            let comments = snapshot.visible_files[file_index].github_thread_count;
+            let suffix = match comments {
+                0 => String::new(),
+                1 => " · 1 unresolved thread".into(),
+                count => format!(" · {count} unresolved threads"),
+            };
             let label = format!(
-                "▸ {}",
+                "▸ {}{suffix}",
                 file_header(file, snapshot.visible_files[file_index].status)
             );
             buffer.set_stringn(
@@ -609,7 +615,7 @@ fn render_row(
             }
         }
         ReviewRow::Note { card, .. } => {
-            render_note_card(area, y, first_line, card, buffer, theme);
+            render_note_card(area, y, first_line, card, buffer, theme, cursor);
         }
     }
 }
@@ -621,6 +627,7 @@ fn render_note_card(
     card: &crate::review::row::NoteCard,
     buffer: &mut Buffer,
     theme: &AppTheme,
+    cursor: bool,
 ) {
     let x = area.x.saturating_add(card.placement.box_left);
     let width = card.placement.box_width.min(area.right().saturating_sub(x));
@@ -640,7 +647,13 @@ fn render_note_card(
                 format!("┌{title}{}┐", "─".repeat(fill)),
                 Style::default()
                     .fg(theme.note_title_text)
-                    .bg(theme.note_title_background)
+                    .bg(
+                        if cursor && card.kind == crate::review::row::NoteCardKind::Github {
+                            theme.selected_hunk
+                        } else {
+                            theme.note_title_background
+                        },
+                    )
                     .add_modifier(Modifier::BOLD),
             )
         } else if line + 1 == height {

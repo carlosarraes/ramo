@@ -164,6 +164,7 @@ pub enum ReviewAction {
     MoveFile(i32),
     MoveAnnotatedHunk(i32),
     SelectFile(String),
+    SelectNote(String),
     SetFilter(String),
     SetLayout(LayoutMode),
     ToggleSidebar,
@@ -1543,6 +1544,27 @@ impl ReviewController {
             ReviewAction::SelectFile(file_id) => {
                 if self.visible_file_ids().any(|visible| visible == file_id) {
                     self.select_target(file_id, 0, viewport);
+                }
+                ReviewEffect::Redraw
+            }
+            ReviewAction::SelectNote(note_id) => {
+                let target = self.geometry.as_ref().and_then(|geometry| {
+                    geometry.rows.iter().enumerate().find_map(|(index, bound)| {
+                        matches!(
+                            row_for_bound(
+                                &self.planned_files,
+                                self.trailer_plan.as_ref(),
+                                bound,
+                            ),
+                            Some(ReviewRow::Note { card, .. }) if card.id == note_id
+                        )
+                        .then_some(index)
+                    })
+                });
+                if let Some(index) = target {
+                    self.set_cursor_index(index);
+                    self.ensure_cursor_visible(viewport);
+                    self.refresh_snapshot();
                 }
                 ReviewEffect::Redraw
             }

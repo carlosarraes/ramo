@@ -4,6 +4,9 @@ use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, MovedLineKind, SourceSpec,
 };
+use ramo::remote_review::{
+    GithubReviewThread, GithubThreadComment, GithubThreadSubject, RemoteLineSide,
+};
 use ramo::review::{
     ContextSourceLoader, ReviewAction, ReviewController, ReviewOptions, ReviewSide, SelectionPoint,
     SourceFailure, Viewport,
@@ -92,6 +95,82 @@ fn text(buffer: &Buffer) -> String {
 
 fn render_controller(width: u16, height: u16, controller: &mut ReviewController) -> Buffer {
     render_controller_with_selection(width, height, controller, None)
+}
+
+fn github_thread(id: &str, path: &str, subject: GithubThreadSubject) -> GithubReviewThread {
+    GithubReviewThread {
+        id: id.into(),
+        path: path.into(),
+        subject,
+        comments: vec![
+            GithubThreadComment {
+                id: format!("{id}:root"),
+                author: "alice".into(),
+                body: "root feedback".into(),
+                created_at: "2026-07-26T14:32:00Z".into(),
+                url: "https://github.com/owner/repo/pull/123#discussion_r1".into(),
+            },
+            GithubThreadComment {
+                id: format!("{id}:reply"),
+                author: "bob".into(),
+                body: "reply feedback".into(),
+                created_at: "2026-07-26T15:10:00Z".into(),
+                url: "https://github.com/owner/repo/pull/123#discussion_r2".into(),
+            },
+        ],
+        url: "https://github.com/owner/repo/pull/123#discussion_r1".into(),
+    }
+}
+
+#[test]
+fn github_threads_render_inline_and_in_the_unplaced_trailer() {
+    let viewport = Viewport {
+        width: 120,
+        height: 40,
+    };
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 4)],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            ..ReviewOptions::default()
+        },
+    );
+    controller.attach_github_threads(
+        vec![
+            github_thread(
+                "placed",
+                "src/lib.rs",
+                GithubThreadSubject::Line {
+                    side: Some(RemoteLineSide::Right),
+                    start_side: Some(RemoteLineSide::Right),
+                    start_line: Some(2),
+                    end_line: Some(2),
+                },
+            ),
+            github_thread("unplaced", "src/absent.rs", GithubThreadSubject::File),
+        ],
+        viewport,
+    );
+
+    let frame = text(&render_controller(120, 40, &mut controller));
+    for expected in [
+        "GitHub · @alice · 2026-07-26T14:32:00Z",
+        "src/lib.rs RIGHT:2",
+        "root feedback",
+        "↳ @bob · 2026-07-26T15:10:00Z",
+        "reply feedback",
+        "https://github.com/owner/repo/pull/123#discussion_r1",
+        "Unplaced GitHub comments",
+        "file is not present in the frozen diff",
+        "src/absent.rs",
+    ] {
+        assert!(
+            frame.contains(expected),
+            "missing {expected:?} in {frame:?}"
+        );
+    }
+
+    let _ = render_controller(24, 12, &mut controller);
 }
 
 fn render_controller_with_selection(

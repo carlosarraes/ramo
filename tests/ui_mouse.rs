@@ -6,7 +6,12 @@ use ramo::config::ResolvedConfig;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
-use ramo::review::{ContextSourceLoader, ReviewAction, ScrollUnit, SourceFailure, Viewport};
+use ramo::remote_review::{
+    GithubReviewThread, GithubThreadComment, GithubThreadSubject, RemoteLineSide,
+};
+use ramo::review::{
+    ContextSourceLoader, ReviewAction, ReviewHit, ReviewPoint, ScrollUnit, SourceFailure, Viewport,
+};
 use ramo::ui::input::{AppAction, map_mouse_event};
 
 fn mouse(kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) -> MouseEvent {
@@ -53,6 +58,78 @@ fn file(path: &str, start: u32, lines: usize) -> DiffFile {
         old_source: SourceSpec::File(PathBuf::from("old")),
         new_source: SourceSpec::File(PathBuf::from("new")),
     }
+}
+
+#[test]
+fn clicking_a_github_thread_selects_it_without_opening_an_editor() {
+    let viewport = Viewport {
+        width: 100,
+        height: 12,
+    };
+    let mut app = App::new(vec![file("src/lib.rs", 1, 2)]);
+    app.review_controller.attach_github_threads(
+        vec![GithubReviewThread {
+            id: "T1".into(),
+            path: "src/lib.rs".into(),
+            subject: GithubThreadSubject::Line {
+                side: Some(RemoteLineSide::Right),
+                start_side: Some(RemoteLineSide::Right),
+                start_line: Some(1),
+                end_line: Some(1),
+            },
+            comments: vec![GithubThreadComment {
+                id: "C1".into(),
+                author: "alice".into(),
+                body: "existing feedback".into(),
+                created_at: "now".into(),
+                url: "https://example.test/T1".into(),
+            }],
+            url: "https://example.test/T1".into(),
+        }],
+        viewport,
+    );
+    app.review_controller.snapshot(viewport);
+    app.review_controller
+        .apply(ReviewAction::MoveCursor(1), viewport);
+    assert_eq!(
+        app.review_controller
+            .snapshot(viewport)
+            .selected_position
+            .as_ref()
+            .unwrap()
+            .new_line,
+        Some(2)
+    );
+
+    let note_row = (0..viewport.height)
+        .find(|row| {
+            matches!(
+                app.review_controller
+                    .hit_test(ReviewPoint::new(5, *row), viewport),
+                Some(ReviewHit::Note(_))
+            )
+        })
+        .expect("GitHub card is visible");
+    app.handle_mouse(
+        mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            5,
+            note_row,
+            KeyModifiers::NONE,
+        ),
+        viewport,
+    );
+
+    assert_eq!(
+        app.review_controller
+            .snapshot(viewport)
+            .selected_position
+            .as_ref()
+            .unwrap()
+            .new_line,
+        Some(1)
+    );
+    assert!(app.review_controller.human_note_draft().is_none());
 }
 
 #[test]

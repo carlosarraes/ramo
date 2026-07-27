@@ -1060,6 +1060,8 @@ impl App {
                         self.finish_context_toggle(result);
                     }
                     Some(ReviewHit::Note(id)) => {
+                        self.review_controller
+                            .apply(ReviewAction::SelectNote(id.clone()), viewport);
                         if self.review_controller.edit_human_note(&id, viewport) {
                             self.comment_buf = self
                                 .review_controller
