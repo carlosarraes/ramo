@@ -4,8 +4,8 @@ use std::io;
 use ramo::github::{GithubCli, GithubPullRequestSource};
 use ramo::process::command::{CommandExecutor, CommandRequest, CommandResult};
 use ramo::remote_review::{
-    InlineCommentTarget, PullRequestReviewContext, RemoteLineSide, RemoteReviewComment,
-    RemoteReviewPublisher, RemoteReviewRequest, ReviewVerdict,
+    GithubThreadSubject, InlineCommentTarget, PullRequestReviewContext, RemoteLineSide,
+    RemoteReviewComment, RemoteReviewPublisher, RemoteReviewRequest, ReviewVerdict,
 };
 
 #[derive(Default)]
@@ -272,4 +272,180 @@ fn timeout_and_truncation_are_distinct() {
     .resolve_pr(123)
     .unwrap_err();
     assert!(error.to_string().contains("too much output"));
+}
+
+#[test]
+fn review_threads_use_graphql_and_keep_only_active_conversations() {
+    let page = r#"{
+      "data":{"repository":{"pullRequest":{"reviewThreads":{
+        "nodes":[
+          {"id":"T1","isResolved":false,"isOutdated":false,
+           "subjectType":"LINE","path":"src/lib.rs","diffSide":"RIGHT",
+           "startDiffSide":"RIGHT","startLine":41,"line":42,
+           "comments":{"nodes":[
+             {"id":"C1","bodyText":"root\u001b[31m","createdAt":"2026-07-26T14:32:00Z",
+              "url":"https://github.com/o/r/pull/123#discussion_r1","author":{"login":"alice"}},
+             {"id":"C2","bodyText":"reply","createdAt":"2026-07-26T15:10:00Z",
+              "url":"https://github.com/o/r/pull/123#discussion_r2","author":{"login":"bob"}}
+           ],"pageInfo":{"hasNextPage":false,"endCursor":null}}},
+          {"id":"T2","isResolved":true,"isOutdated":false,"subjectType":"FILE",
+           "path":"src/lib.rs","diffSide":"RIGHT","startDiffSide":null,
+           "startLine":null,"line":null,"comments":{"nodes":[],
+           "pageInfo":{"hasNextPage":false,"endCursor":null}}},
+          {"id":"T3","isResolved":false,"isOutdated":true,"subjectType":"FILE",
+           "path":"src/lib.rs","diffSide":"RIGHT","startDiffSide":null,
+           "startLine":null,"line":null,"comments":{"nodes":[],
+           "pageInfo":{"hasNextPage":false,"endCursor":null}}}
+        ],"pageInfo":{"hasNextPage":false,"endCursor":null}
+      }}}}
+    }"#;
+    let mut github = GithubCli::new(FakeExecutor {
+        results: VecDeque::from([result(0, page, "")]),
+        ..FakeExecutor::default()
+    });
+
+    let threads = github.load_review_threads(&context()).unwrap();
+
+    assert_eq!(threads.len(), 1);
+    assert_eq!(threads[0].comments.len(), 2);
+    assert_eq!(threads[0].comments[0].body, "root");
+    assert_eq!(
+        threads[0].subject,
+        GithubThreadSubject::Line {
+            side: Some(RemoteLineSide::Right),
+            start_side: Some(RemoteLineSide::Right),
+            start_line: Some(41),
+            end_line: Some(42),
+        }
+    );
+    let executor = github.into_executor();
+    let arguments = argv(&executor.requests[0]);
+    assert_eq!(&arguments[..3], ["gh", "api", "graphql"]);
+    assert!(
+        arguments
+            .iter()
+            .any(|argument| argument.contains("reviewThreads"))
+    );
+    assert!(
+        !arguments
+            .iter()
+            .any(|argument| argument.contains("position"))
+    );
+    assert!(arguments.iter().any(|argument| argument == "number=123"));
+    assert!(arguments.iter().any(|argument| argument == "first=100"));
+    assert!(arguments.iter().any(|argument| argument == "after=null"));
+}
+
+#[test]
+fn review_threads_paginate_and_preserve_deleted_authors() {
+    let first = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{
+      "nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}
+    }}}}}"#;
+    let second = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{
+      "nodes":[{"id":"T1","isResolved":false,"isOutdated":false,
+        "subjectType":"FILE","path":"README.md","diffSide":null,
+        "startDiffSide":null,"startLine":null,"line":null,
+        "comments":{"nodes":[{"id":"C1","bodyText":"note","createdAt":"now",
+          "url":"https://example.test/thread","author":null}],
+          "pageInfo":{"hasNextPage":false,"endCursor":null}}}],
+      "pageInfo":{"hasNextPage":false,"endCursor":null}
+    }}}}}"#;
+    let mut github = GithubCli::new(FakeExecutor {
+        results: VecDeque::from([result(0, first, ""), result(0, second, "")]),
+        ..FakeExecutor::default()
+    });
+
+    let threads = github.load_review_threads(&context()).unwrap();
+
+    assert_eq!(threads[0].subject, GithubThreadSubject::File);
+    assert_eq!(threads[0].comments[0].author, "[deleted]");
+    let executor = github.into_executor();
+    assert_eq!(executor.requests.len(), 2);
+    assert!(
+        argv(&executor.requests[1])
+            .iter()
+            .any(|argument| argument == "after=cursor-1")
+    );
+}
+
+#[test]
+fn review_thread_limits_and_malformed_pages_are_actionable() {
+    let too_large_body = "x".repeat(64 * 1024 + 1);
+    let oversized = serde_json::json!({
+        "data": {"repository": {"pullRequest": {"reviewThreads": {
+            "nodes": [{
+                "id": "T1", "isResolved": false, "isOutdated": false,
+                "subjectType": "LINE", "path": "src/lib.rs", "diffSide": "RIGHT",
+                "startDiffSide": null, "startLine": null, "line": 1,
+                "comments": {"nodes": [{
+                    "id": "C1", "bodyText": too_large_body, "createdAt": "now",
+                    "url": "https://example.test/thread", "author": {"login": "alice"}
+                }], "pageInfo": {"hasNextPage": false, "endCursor": null}}
+            }], "pageInfo": {"hasNextPage": false, "endCursor": null}
+        }}}}
+    })
+    .to_string();
+    let error = GithubCli::new(FakeExecutor {
+        results: VecDeque::from([result(0, &oversized, "")]),
+        ..FakeExecutor::default()
+    })
+    .load_review_threads(&context())
+    .unwrap_err();
+    assert!(error.to_string().contains("64 KiB"));
+
+    let nested_page = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{
+      "nodes":[{"id":"T1","isResolved":false,"isOutdated":false,
+        "subjectType":"LINE","path":"src/lib.rs","diffSide":"RIGHT",
+        "startDiffSide":null,"startLine":null,"line":1,
+        "comments":{"nodes":[{"id":"C1","bodyText":"note","createdAt":"now",
+          "url":"https://example.test/thread","author":{"login":"alice"}}],
+          "pageInfo":{"hasNextPage":true,"endCursor":"more"}}}],
+      "pageInfo":{"hasNextPage":false,"endCursor":null}
+    }}}}}"#;
+    let error = GithubCli::new(FakeExecutor {
+        results: VecDeque::from([result(0, nested_page, "")]),
+        ..FakeExecutor::default()
+    })
+    .load_review_threads(&context())
+    .unwrap_err();
+    assert!(error.to_string().contains("more than 100 comments"));
+
+    let error = GithubCli::new(FakeExecutor {
+        results: VecDeque::from([result(0, "not json", "")]),
+        ..FakeExecutor::default()
+    })
+    .load_review_threads(&context())
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("load GitHub pull request review threads returned invalid JSON")
+    );
+
+    let nodes = (0..501)
+        .map(|index| {
+            serde_json::json!({
+                "id": format!("T{index}"), "isResolved": false, "isOutdated": false,
+                "subjectType": "LINE", "path": "src/lib.rs", "diffSide": "RIGHT",
+                "startDiffSide": null, "startLine": null, "line": 1,
+                "comments": {"nodes": [{
+                    "id": format!("C{index}"), "bodyText": "note", "createdAt": "now",
+                    "url": "https://example.test/thread", "author": {"login": "alice"}
+                }], "pageInfo": {"hasNextPage": false, "endCursor": null}}
+            })
+        })
+        .collect::<Vec<_>>();
+    let too_many = serde_json::json!({
+        "data": {"repository": {"pullRequest": {"reviewThreads": {
+            "nodes": nodes, "pageInfo": {"hasNextPage": false, "endCursor": null}
+        }}}}
+    })
+    .to_string();
+    let error = GithubCli::new(FakeExecutor {
+        results: VecDeque::from([result(0, &too_many, "")]),
+        ..FakeExecutor::default()
+    })
+    .load_review_threads(&context())
+    .unwrap_err();
+    assert!(error.to_string().contains("more than 500 eligible"));
 }

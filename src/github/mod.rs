@@ -10,10 +10,12 @@ use crate::diff::model::SourceSpec;
 use crate::input::sanitize_terminal_text;
 use crate::process::command::{CaptureLimits, CommandExecutor, CommandRequest, CommandResult};
 use crate::remote_review::{
-    PullRequestReviewContext, RemoteLineSide, RemoteReviewError, RemoteReviewPublisher,
-    RemoteReviewRequest,
+    GithubReviewThread, PullRequestReviewContext, RemoteLineSide, RemoteReviewError,
+    RemoteReviewPublisher, RemoteReviewRequest,
 };
 use crate::review::{ContextSourceLoader, SourceFailure};
+
+mod threads;
 
 const METADATA_STDOUT_LIMIT: usize = 64 * 1024;
 const DIFF_STDOUT_LIMIT: usize = 32 * 1024 * 1024;
@@ -26,6 +28,12 @@ const SOURCE_TIMEOUT: Duration = Duration::from_secs(15);
 pub trait GithubPullRequestSource {
     fn resolve_pr(&mut self, number: u64) -> Result<PullRequestReviewContext, GithubError>;
     fn load_diff(&mut self, number: u64) -> Result<String, GithubError>;
+    fn load_review_threads(
+        &mut self,
+        _context: &PullRequestReviewContext,
+    ) -> Result<Vec<GithubReviewThread>, GithubError> {
+        Ok(Vec::new())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +42,7 @@ pub enum GithubOperation {
     ResolveRepository,
     ResolvePullRequest,
     LoadDiff,
+    LoadReviewThreads,
     LoadContext,
     RefreshPullRequest,
     SubmitReview,
@@ -46,6 +55,7 @@ impl GithubOperation {
             Self::ResolveRepository => "resolve the GitHub repository",
             Self::ResolvePullRequest => "resolve the GitHub pull request",
             Self::LoadDiff => "load the GitHub pull request diff",
+            Self::LoadReviewThreads => "load GitHub pull request review threads",
             Self::LoadContext => "load pull request context",
             Self::RefreshPullRequest => "refresh the GitHub pull request",
             Self::SubmitReview => "submit the GitHub pull request review",
@@ -368,6 +378,13 @@ impl<E: CommandExecutor> GithubPullRequestSource for GithubCli<E> {
             CaptureLimits::new(DIFF_STDOUT_LIMIT, STDERR_LIMIT, DIFF_TIMEOUT),
             None,
         )
+    }
+
+    fn load_review_threads(
+        &mut self,
+        context: &PullRequestReviewContext,
+    ) -> Result<Vec<GithubReviewThread>, GithubError> {
+        GithubCli::load_review_threads(self, context)
     }
 }
 
