@@ -16,7 +16,9 @@ pub(super) fn load(
     service: &mut dyn GithubPullRequestSource,
 ) -> Result<LoadedPullRequest, LoadError> {
     let ReviewInput::PullRequest {
-        number, options, ..
+        number,
+        with_comments,
+        options,
     } = input
     else {
         return Err(LoadError::UnsupportedInput(input.kind()));
@@ -37,6 +39,11 @@ pub(super) fn load(
         return Err(LoadError::InvalidPullRequestDiff { number: *number });
     }
     attach_remote_sources(&mut files, &context);
+    let imported_threads = if *with_comments {
+        service.load_review_threads(&context)?
+    } else {
+        Vec::new()
+    };
     let mut changeset =
         Changeset::new(format!("GitHub PR #{number}"), context.title.clone(), files);
     if let Some(agent_context) = &agent_context {
@@ -49,6 +56,7 @@ pub(super) fn load(
             agent_context: agent_source,
         },
         context,
+        imported_threads,
     })
 }
 

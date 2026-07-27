@@ -3,12 +3,16 @@ use ramo::core::input::{CommonOptions, ReviewInput};
 use ramo::diff::model::SourceSpec;
 use ramo::github::{GithubError, GithubPullRequestSource};
 use ramo::input::{LoadContext, LoadError, ReloadPlan, ReviewLoader};
-use ramo::remote_review::PullRequestReviewContext;
+use ramo::remote_review::{
+    GithubReviewThread, GithubThreadComment, GithubThreadSubject, PullRequestReviewContext,
+};
 use ramo::vcs::SystemCommandRunner;
 
 struct FakeSource {
     context: PullRequestReviewContext,
     diff: String,
+    threads: Vec<GithubReviewThread>,
+    thread_calls: usize,
 }
 
 impl GithubPullRequestSource for FakeSource {
@@ -18,6 +22,14 @@ impl GithubPullRequestSource for FakeSource {
 
     fn load_diff(&mut self, _number: u64) -> Result<String, GithubError> {
         Ok(self.diff.clone())
+    }
+
+    fn load_review_threads(
+        &mut self,
+        _context: &PullRequestReviewContext,
+    ) -> Result<Vec<GithubReviewThread>, GithubError> {
+        self.thread_calls += 1;
+        Ok(std::mem::take(&mut self.threads))
     }
 }
 
@@ -37,10 +49,10 @@ fn context() -> PullRequestReviewContext {
     }
 }
 
-fn input() -> ReviewInput {
+fn input(with_comments: bool) -> ReviewInput {
     ReviewInput::PullRequest {
         number: 123,
-        with_comments: false,
+        with_comments,
         options: CommonOptions {
             watch: Some(false),
             ..CommonOptions::default()
@@ -50,11 +62,12 @@ fn input() -> ReviewInput {
 
 fn load(
     source: &mut dyn GithubPullRequestSource,
+    with_comments: bool,
 ) -> Result<ramo::input::LoadedPullRequest, LoadError> {
     let config = ResolvedConfig::default();
     let runner = SystemCommandRunner;
     ReviewLoader.load_pull_request(
-        &input(),
+        &input(with_comments),
         &mut std::io::empty(),
         &LoadContext {
             cwd: std::path::Path::new("."),
@@ -63,6 +76,22 @@ fn load(
         },
         source,
     )
+}
+
+fn thread() -> GithubReviewThread {
+    GithubReviewThread {
+        id: "T1".into(),
+        path: "src/lib.rs".into(),
+        subject: GithubThreadSubject::File,
+        comments: vec![GithubThreadComment {
+            id: "C1".into(),
+            author: "alice".into(),
+            body: "Please simplify this".into(),
+            created_at: "2026-07-27T12:00:00Z".into(),
+            url: "https://github.com/owner/repo/pull/123#discussion_r1".into(),
+        }],
+        url: "https://github.com/owner/repo/pull/123#discussion_r1".into(),
+    }
 }
 
 #[test]
@@ -78,14 +107,22 @@ fn valid_metadata_and_diff_become_a_frozen_review() {
             "+new\n",
         )
         .into(),
+        threads: vec![thread()],
+        thread_calls: 0,
     };
-    let loaded = load(&mut source).unwrap();
+    let loaded = load(&mut source, false).unwrap();
     assert_eq!(loaded.context, context());
     assert_eq!(loaded.review.changeset.source_label, "GitHub PR #123");
     assert_eq!(loaded.review.changeset.title, "Improve review flow");
     assert_eq!(loaded.review.changeset.files.len(), 1);
     assert_eq!(loaded.review.changeset.files[0].path, "src/lib.rs");
     assert_eq!(loaded.review.reload_plan, ReloadPlan::None);
+    assert!(loaded.imported_threads.is_empty());
+    assert_eq!(source.thread_calls, 0);
+
+    let loaded = load(&mut source, true).unwrap();
+    assert_eq!(loaded.imported_threads, vec![thread()]);
+    assert_eq!(source.thread_calls, 1);
 }
 
 #[test]
@@ -100,13 +137,16 @@ fn empty_and_unparseable_pr_diffs_fail_before_terminal_entry() {
         let mut source = FakeSource {
             context: context(),
             diff: diff.into(),
+            threads: vec![thread()],
+            thread_calls: 0,
         };
         assert!(
-            load(&mut source)
+            load(&mut source, true)
                 .unwrap_err()
                 .to_string()
                 .contains(expected)
         );
+        assert_eq!(source.thread_calls, 0);
     }
 }
 
@@ -163,9 +203,11 @@ fn valid_pr_files_receive_immutable_remote_sources() {
             "Binary files a/assets/logo.png and b/assets/logo.png differ\n",
         )
         .into(),
+        threads: Vec::new(),
+        thread_calls: 0,
     };
 
-    let loaded = load(&mut source).unwrap();
+    let loaded = load(&mut source, false).unwrap();
     let files = &loaded.review.changeset.files;
     let file = |path: &str| files.iter().find(|file| file.path == path).unwrap();
 

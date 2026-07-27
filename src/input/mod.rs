@@ -47,6 +47,7 @@ pub struct LoadedReview {
 pub struct LoadedPullRequest {
     pub review: LoadedReview,
     pub context: crate::remote_review::PullRequestReviewContext,
+    pub imported_threads: Vec<crate::remote_review::GithubReviewThread>,
 }
 
 #[derive(Debug, Clone)]
