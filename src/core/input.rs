@@ -97,6 +97,7 @@ pub enum ReviewInput {
     },
     PullRequest {
         number: u64,
+        with_comments: bool,
         options: CommonOptions,
     },
 }

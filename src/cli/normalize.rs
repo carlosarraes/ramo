@@ -86,6 +86,7 @@ fn normalize_pr(args: PrArgs) -> ReviewInput {
     options.pager = Some(false);
     ReviewInput::PullRequest {
         number: args.number,
+        with_comments: args.with_comments,
         options,
     }
 }

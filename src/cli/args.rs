@@ -83,6 +83,9 @@ pub struct PrArgs {
     pub review: ReviewFlags,
     #[arg(value_name = "NUMBER", value_parser = clap::value_parser!(u64).range(1..))]
     pub number: u64,
+    /// Include unresolved GitHub review threads as read-only notes.
+    #[arg(long)]
+    pub with_comments: bool,
 }
 
 #[derive(Debug, Subcommand)]

@@ -31,6 +31,7 @@ fn only_piped_stdin_needs_a_tty_replacement() {
 fn remote_reviews_never_fall_through_to_local_markdown_export() {
     let input = ReviewInput::PullRequest {
         number: 123,
+        with_comments: false,
         options: CommonOptions::default(),
     };
     assert!(!should_finish_local_annotations(&input, None));

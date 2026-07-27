@@ -35,6 +35,8 @@ fn pr_help_has_a_number_contract_and_no_watch_mode() {
         .success()
         .stdout(predicate::str::contains("ramo pr"))
         .stdout(predicate::str::contains("<NUMBER>"))
+        .stdout(predicate::str::contains("--with-comments"))
+        .stdout(predicate::str::contains("read-only"))
         .stdout(predicate::str::contains("--watch").not());
 }
 

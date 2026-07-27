@@ -40,6 +40,7 @@ fn context() -> PullRequestReviewContext {
 fn input() -> ReviewInput {
     ReviewInput::PullRequest {
         number: 123,
+        with_comments: false,
         options: CommonOptions {
             watch: Some(false),
             ..CommonOptions::default()

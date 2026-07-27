@@ -229,6 +229,7 @@ fn pr_accepts_a_positive_number_and_review_flags() {
             "ramo",
             "pr",
             "123",
+            "--with-comments",
             "--mode",
             "split",
             "--theme",
@@ -239,12 +240,39 @@ fn pr_accepts_a_positive_number_and_review_flags() {
     .unwrap();
     assert!(matches!(
         invocation.action,
-        Action::Review(ReviewInput::PullRequest { number: 123, options })
+        Action::Review(ReviewInput::PullRequest {
+            number: 123,
+            with_comments: true,
+            options,
+        })
             if options.mode == Some(LayoutMode::Split)
                 && options.theme.as_deref() == Some("tokyo-night")
                 && options.watch == Some(false)
                 && options.pager == Some(false)
     ));
+
+    let plain = parse_from(["ramo", "pr", "123"], true).unwrap();
+    assert!(matches!(
+        plain.action,
+        Action::Review(ReviewInput::PullRequest {
+            with_comments: false,
+            ..
+        })
+    ));
+
+    let help = parse_from(["ramo", "pr", "--help"], true).unwrap();
+    assert!(matches!(
+        help.action,
+        Action::Print(text)
+            if text.contains("--with-comments") && text.contains("read-only")
+    ));
+
+    let error = parse_from(["ramo", "diff", "--with-comments"], true).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unexpected argument '--with-comments'")
+    );
 }
 
 #[test]

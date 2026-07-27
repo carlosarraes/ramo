@@ -7,6 +7,36 @@ pub enum RemoteLineSide {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GithubThreadSubject {
+    File,
+    Line {
+        side: Option<RemoteLineSide>,
+        start_side: Option<RemoteLineSide>,
+        start_line: Option<u32>,
+        end_line: Option<u32>,
+    },
+    Unsupported(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubThreadComment {
+    pub id: String,
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubReviewThread {
+    pub id: String,
+    pub path: String,
+    pub subject: GithubThreadSubject,
+    pub comments: Vec<GithubThreadComment>,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineCommentTarget {
     pub path: String,
     pub side: RemoteLineSide,
