@@ -11,6 +11,7 @@ use super::context::{
     expand_gap_lines,
 };
 use super::emphasis::{ChangedSpan, emphasize_pair};
+use super::github_threads::{PlacedGithubThread, UnplacedGithubThread};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EffectiveLayout {
@@ -116,7 +117,14 @@ pub(crate) struct NoteCard {
     pub tags: Vec<String>,
     pub author: Option<String>,
     pub placement: NoteBoxLayout,
-    pub human: bool,
+    pub kind: NoteCardKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoteCardKind {
+    External,
+    Human,
+    Github,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +221,7 @@ pub(crate) struct NotePlanOptions<'a> {
     pub human_notes: &'a [HumanNote],
     pub live_notes: &'a [LiveNote],
     pub draft: Option<&'a HumanNoteDraft>,
+    pub github_threads: &'a [PlacedGithubThread],
     pub show_agent_notes: bool,
     pub content_width: u16,
 }
@@ -307,6 +316,23 @@ pub(crate) fn build_row_plan_with_notes(
         EffectiveLayout::Stack => crate::core::input::LayoutMode::Stack,
     };
     let mut placements = Vec::<(usize, NoteCard)>::new();
+    let file_level_cards = options
+        .github_threads
+        .iter()
+        .filter(|thread| thread.file_level)
+        .map(|thread| github_card(file, thread, layout_mode, options.content_width))
+        .collect::<Vec<_>>();
+    for thread in options
+        .github_threads
+        .iter()
+        .filter(|thread| !thread.file_level)
+    {
+        let anchor = note_anchor_index(&plan.rows, &thread.target);
+        placements.push((
+            anchor,
+            github_card(file, thread, layout_mode, options.content_width),
+        ));
+    }
     if let Some(agent) = &file.agent {
         for note in &agent.annotations {
             let source = note_source(note);
@@ -369,28 +395,195 @@ pub(crate) fn build_row_plan_with_notes(
             draft_card(file, draft, layout_mode, options.content_width),
         ));
     }
-    if placements.is_empty() {
+    if placements.is_empty() && file_level_cards.is_empty() {
         return plan;
     }
     let mut rows = Vec::with_capacity(plan.rows.len().saturating_add(placements.len()));
+    for card in file_level_cards {
+        rows.push(note_row(file.id.clone(), card));
+    }
     for (index, row) in plan.rows.into_iter().enumerate() {
         rows.push(row);
         for (_, card) in placements.iter().filter(|(anchor, _)| *anchor == index) {
-            rows.push(ReviewRow::Note {
-                key: ReviewRowKey {
-                    file_id: file.id.clone(),
-                    hunk_index: card.target.hunk_index,
-                    kind: ReviewRowKind::Note,
-                    old_line: card.target.old_range.map(|range| range.start),
-                    new_line: card.target.new_range.map(|range| range.start),
-                    note_id: Some(card.id.clone()),
-                },
-                card: card.clone(),
-            });
+            rows.push(note_row(file.id.clone(), card.clone()));
         }
     }
     plan.rows = rows;
     plan
+}
+
+pub(crate) fn github_trailer_plan(
+    threads: &[UnplacedGithubThread],
+    content_width: u16,
+) -> Option<RowPlan> {
+    if threads.is_empty() {
+        return None;
+    }
+    let rows = threads
+        .iter()
+        .map(|unplaced| {
+            let target = NoteTarget {
+                file_id: format!("github:unplaced:{}", unplaced.thread.id),
+                old_range: None,
+                new_range: None,
+                hunk_index: None,
+                anchor_side: None,
+                anchor_line: None,
+            };
+            let placement =
+                note_box_layout(crate::core::input::LayoutMode::Stack, None, content_width);
+            let card = github_note_card(
+                &unplaced.thread,
+                target.clone(),
+                placement,
+                "GitHub · Unplaced".into(),
+                format!(
+                    "{} · {} · {}",
+                    unplaced.thread.path,
+                    github_anchor_label(&unplaced.thread),
+                    unplaced.reason
+                ),
+            );
+            note_row(target.file_id.clone(), card)
+        })
+        .collect();
+    Some(RowPlan {
+        rows,
+        hunk_anchor_keys: Vec::new(),
+        line_number_digits: 1,
+    })
+}
+
+fn note_row(file_id: String, card: NoteCard) -> ReviewRow {
+    ReviewRow::Note {
+        key: ReviewRowKey {
+            file_id,
+            hunk_index: card.target.hunk_index,
+            kind: ReviewRowKind::Note,
+            old_line: card.target.old_range.map(|range| range.start),
+            new_line: card.target.new_range.map(|range| range.start),
+            note_id: Some(card.id.clone()),
+        },
+        card,
+    }
+}
+
+fn github_card(
+    file: &DiffFile,
+    placed: &PlacedGithubThread,
+    layout: crate::core::input::LayoutMode,
+    width: u16,
+) -> NoteCard {
+    let placement = note_box_layout(layout, placed.target.anchor_side, width);
+    let root = &placed.thread.comments[0];
+    github_note_card(
+        &placed.thread,
+        placed.target.clone(),
+        placement,
+        format!("GitHub · @{} · {}", root.author, root.created_at),
+        github_location(file, &placed.thread),
+    )
+}
+
+fn github_note_card(
+    thread: &crate::remote_review::GithubReviewThread,
+    target: NoteTarget,
+    placement: NoteBoxLayout,
+    title: String,
+    location: String,
+) -> NoteCard {
+    NoteCard {
+        id: format!("github:{}", thread.id),
+        target,
+        source: NoteSource::Named("GitHub".into()),
+        title,
+        location,
+        lines: github_conversation_lines(thread, usize::from(placement.content_width)),
+        markup: None,
+        tags: Vec::new(),
+        author: thread
+            .comments
+            .first()
+            .map(|comment| comment.author.clone()),
+        placement,
+        kind: NoteCardKind::Github,
+    }
+}
+
+fn github_conversation_lines(
+    thread: &crate::remote_review::GithubReviewThread,
+    width: usize,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(root) = thread.comments.first() {
+        lines.extend(wrap_note_text(&root.body, width));
+    }
+    for reply in thread.comments.iter().skip(1) {
+        lines.push(format!("↳ @{} · {}", reply.author, reply.created_at));
+        lines.extend(
+            wrap_note_text(&reply.body, width.saturating_sub(2))
+                .into_iter()
+                .map(|line| format!("  {line}")),
+        );
+    }
+    if !thread.url.is_empty() {
+        lines.push(thread.url.clone());
+    }
+    lines
+}
+
+fn github_location(file: &DiffFile, thread: &crate::remote_review::GithubReviewThread) -> String {
+    match &thread.subject {
+        crate::remote_review::GithubThreadSubject::File => format!("{} · file", file.path),
+        crate::remote_review::GithubThreadSubject::Line {
+            side,
+            start_line,
+            end_line,
+            ..
+        } => {
+            let side = match side {
+                Some(crate::remote_review::RemoteLineSide::Left) => "LEFT",
+                Some(crate::remote_review::RemoteLineSide::Right) => "RIGHT",
+                None => "UNKNOWN",
+            };
+            let end = end_line.unwrap_or_default();
+            let start = start_line.unwrap_or(end);
+            if start == end {
+                format!("{} {side}:{end}", file.path)
+            } else {
+                format!("{} {side}:{start}-{end}", file.path)
+            }
+        }
+        crate::remote_review::GithubThreadSubject::Unsupported(_) => {
+            format!("{} · unsupported", file.path)
+        }
+    }
+}
+
+fn github_anchor_label(thread: &crate::remote_review::GithubReviewThread) -> String {
+    match &thread.subject {
+        crate::remote_review::GithubThreadSubject::File => "file".into(),
+        crate::remote_review::GithubThreadSubject::Line {
+            side,
+            start_line,
+            end_line,
+            ..
+        } => {
+            let prefix = match side {
+                Some(crate::remote_review::RemoteLineSide::Left) => 'L',
+                Some(crate::remote_review::RemoteLineSide::Right) => 'R',
+                None => '?',
+            };
+            match (start_line, end_line) {
+                (Some(start), Some(end)) if start != end => {
+                    format!("{prefix}{start}-{prefix}{end}")
+                }
+                (_, Some(end)) => format!("{prefix}{end}"),
+                _ => "unknown line".into(),
+            }
+        }
+        crate::remote_review::GithubThreadSubject::Unsupported(value) => value.clone(),
+    }
 }
 
 fn append_gap_rows(
@@ -832,7 +1025,7 @@ fn external_card(
         author: note.author.clone(),
         placement,
         source,
-        human: false,
+        kind: NoteCardKind::External,
     }
 }
 
@@ -858,7 +1051,7 @@ fn human_card(
         tags: Vec::new(),
         author: None,
         placement,
-        human: true,
+        kind: NoteCardKind::Human,
     }
 }
 
@@ -888,7 +1081,7 @@ fn draft_card(
         tags: Vec::new(),
         author: None,
         placement,
-        human: true,
+        kind: NoteCardKind::Human,
     }
 }
 

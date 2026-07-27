@@ -11,7 +11,7 @@ use crate::notes::{
     NoteAnchorSide, NoteConfidence, NoteSource, NoteTarget, ReviewNote, annotated_hunks,
     note_box_layout, resolve_ranges_target,
 };
-use crate::remote_review::{InlineCommentTarget, RemoteLineSide};
+use crate::remote_review::{GithubReviewThread, InlineCommentTarget, RemoteLineSide};
 
 use super::anchor::{capture_viewport_anchor, restore_viewport_anchor};
 use super::context::{
@@ -22,11 +22,12 @@ use super::geometry::{
     GeometryOptions, PlannedFile, ReviewGeometry, RowBounds, RowOwner, build_review_geometry,
     resolve_responsive_layout, split_columns, stack_columns,
 };
+use super::github_threads::{GithubThreadPlacement, place_github_threads};
 use super::navigation::{signed_offset, wrapping_index};
 use super::progress::ReviewProgress;
 use super::row::{
     EffectiveLayout, NotePlanOptions, ReviewRow, ReviewRowKey, ReviewRowKind, RowPlan,
-    build_row_plan_with_notes, compacted_file_plan,
+    build_row_plan_with_notes, compacted_file_plan, github_trailer_plan,
 };
 use super::selection::{SelectionPoint, SelectionRow, project_selection};
 use super::test_files::TestFileMatcher;
@@ -217,6 +218,7 @@ pub struct ReviewFileSnapshot {
     pub stats_truncated: bool,
     pub status: ReviewFileStatus,
     pub compacted: bool,
+    pub github_thread_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -322,6 +324,8 @@ pub struct ReviewController {
     geometry: Option<ReviewGeometry>,
     planned_files: Vec<PlannedFile>,
     trailer_plan: Option<RowPlan>,
+    github_threads: GithubThreadPlacement,
+    github_thread_source: Vec<GithubReviewThread>,
     effective_layout: EffectiveLayout,
     actual_sidebar: bool,
     last_viewport: Option<Viewport>,
@@ -371,6 +375,8 @@ impl ReviewController {
             geometry: None,
             planned_files: Vec::new(),
             trailer_plan: None,
+            github_threads: GithubThreadPlacement::default(),
+            github_thread_source: Vec::new(),
             effective_layout: EffectiveLayout::Stack,
             actual_sidebar: false,
             last_viewport: None,
@@ -398,6 +404,13 @@ impl ReviewController {
 
     pub fn files(&self) -> &[DiffFile] {
         &self.files
+    }
+
+    pub fn attach_github_threads(&mut self, threads: Vec<GithubReviewThread>, viewport: Viewport) {
+        self.github_thread_source = threads;
+        self.github_threads = place_github_threads(&self.files, self.github_thread_source.clone());
+        self.dirty = true;
+        self.rebuild(viewport, true);
     }
 
     pub fn toggle_agent_notes(&mut self, visible: bool, viewport: Viewport) {
@@ -1422,6 +1435,7 @@ impl ReviewController {
         let selected_hunk_index = self.selected_hunk_index;
 
         self.files = files;
+        self.github_threads = place_github_threads(&self.files, self.github_thread_source.clone());
         self.progress.replace_files(&self.files);
         self.human_notes
             .retain(|note| self.files.iter().any(|file| file.id == note.target.file_id));
@@ -1680,10 +1694,15 @@ impl ReviewController {
                 )
             })
         });
-        let previous_selection_visible = self
-            .selected_file_id
-            .as_deref()
-            .is_some_and(|id| self.matches_filter_id(id));
+        let previous_key = self.selected_row_key.clone();
+        let previous_is_note = previous_key
+            .as_ref()
+            .is_some_and(|key| key.kind == ReviewRowKind::Note);
+        let previous_selection_visible = previous_is_note
+            || self
+                .selected_file_id
+                .as_deref()
+                .is_some_and(|id| self.matches_filter_id(id));
 
         self.visible_indices = self
             .files
@@ -1691,7 +1710,7 @@ impl ReviewController {
             .enumerate()
             .filter_map(|(index, file)| matches_filter(file, &self.filter).then_some(index))
             .collect();
-        if !previous_selection_visible {
+        if !previous_selection_visible && !previous_is_note {
             self.selected_file_id = self
                 .visible_indices
                 .first()
@@ -1732,6 +1751,11 @@ impl ReviewController {
                             human_notes: &self.human_notes,
                             live_notes: &self.live_notes,
                             draft: self.human_note_draft.as_ref(),
+                            github_threads: self
+                                .github_threads
+                                .by_file
+                                .get(&file.id)
+                                .map_or(&[], Vec::as_slice),
                             show_agent_notes: self.options.agent_notes,
                             content_width,
                         },
@@ -1744,6 +1768,17 @@ impl ReviewController {
                 }
             })
             .collect();
+        let filter = self.filter.trim().to_lowercase();
+        let unplaced = self
+            .github_threads
+            .unplaced
+            .iter()
+            .filter(|thread| {
+                filter.is_empty() || thread.thread.path.to_lowercase().contains(&filter)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        self.trailer_plan = github_trailer_plan(&unplaced, content_width);
         let geometry = build_review_geometry(
             &self.planned_files,
             self.trailer_plan.as_ref(),
@@ -1768,15 +1803,31 @@ impl ReviewController {
         }
         self.scroll_top = self.scroll_top.min(geometry.max_scroll_top());
 
-        let previous_key = self.selected_row_key.clone();
         let selected_index = previous_key
             .as_ref()
-            .and_then(|key| selectable_index_by_key(&geometry, &self.planned_files, key))
+            .and_then(|key| {
+                if key.kind == ReviewRowKind::Note {
+                    geometry.rows.iter().position(|bound| bound.key == *key)
+                } else {
+                    selectable_index_by_key(
+                        &geometry,
+                        &self.planned_files,
+                        self.trailer_plan.as_ref(),
+                        key,
+                    )
+                }
+            })
             .or_else(|| {
                 let key = previous_key.as_ref()?;
-                nearest_selectable_index(&geometry, &self.planned_files, key, |candidate| {
-                    candidate.file_id == key.file_id && candidate.hunk_index == key.hunk_index
-                })
+                nearest_selectable_index(
+                    &geometry,
+                    &self.planned_files,
+                    self.trailer_plan.as_ref(),
+                    key,
+                    |candidate| {
+                        candidate.file_id == key.file_id && candidate.hunk_index == key.hunk_index
+                    },
+                )
             })
             .or_else(|| {
                 let file_id = previous_key
@@ -1787,11 +1838,14 @@ impl ReviewController {
                 nearest_selectable_index_for_file(
                     &geometry,
                     &self.planned_files,
+                    self.trailer_plan.as_ref(),
                     file_id,
                     reference,
                 )
             })
-            .or_else(|| first_selectable_index(&geometry, &self.planned_files));
+            .or_else(|| {
+                first_selectable_index(&geometry, &self.planned_files, self.trailer_plan.as_ref())
+            });
         self.geometry = Some(geometry);
         if let Some(index) = selected_index {
             self.set_cursor_index(index);
@@ -1836,21 +1890,17 @@ impl ReviewController {
 
     fn move_annotated_hunk(&mut self, delta: i32, viewport: Viewport) {
         let targets = self
-            .annotated_hunk_targets()
+            .geometry
+            .as_ref()
             .into_iter()
-            .filter(|target| {
-                self.visible_indices.iter().any(|index| {
-                    self.files[*index].id == target.file_id
-                        && target.hunk_index < self.files[*index].hunks.len()
-                })
+            .flat_map(|geometry| geometry.rows.iter().enumerate())
+            .filter_map(|(index, bound)| {
+                (bound.key.kind == ReviewRowKind::Note).then_some((index, bound.key.clone()))
             })
             .collect::<Vec<_>>();
         let current = targets
             .iter()
-            .position(|target| {
-                Some(target.file_id.as_str()) == self.selected_file_id.as_deref()
-                    && Some(target.hunk_index) == self.selected_hunk_index
-            })
+            .position(|(_, key)| self.selected_row_key.as_ref() == Some(key))
             .unwrap_or_else(|| {
                 if delta.is_negative() {
                     0
@@ -1859,8 +1909,9 @@ impl ReviewController {
                 }
             });
         if let Some(next) = wrapping_index(current, targets.len(), delta) {
-            let target = targets[next].clone();
-            self.select_target(target.file_id, target.hunk_index, viewport);
+            self.set_cursor_index(targets[next].0);
+            self.ensure_cursor_visible(viewport);
+            self.refresh_snapshot();
         }
     }
 
@@ -1905,7 +1956,8 @@ impl ReviewController {
             .iter()
             .enumerate()
             .filter(|(_, bound)| {
-                row_for_bound(&self.planned_files, bound).is_some_and(ReviewRow::is_selectable)
+                row_for_bound(&self.planned_files, self.trailer_plan.as_ref(), bound)
+                    .is_some_and(ReviewRow::is_selectable)
             })
             .min_by_key(|(_, bound)| {
                 let midpoint = bound.top.saturating_add(bound.height / 2);
@@ -1953,22 +2005,25 @@ impl ReviewController {
             .into_iter()
             .flat_map(|geometry| geometry.rows.iter().enumerate())
             .filter_map(|(index, bound)| {
-                row_for_bound(&self.planned_files, bound)
+                row_for_bound(&self.planned_files, self.trailer_plan.as_ref(), bound)
                     .is_some_and(ReviewRow::is_selectable)
                     .then_some(index)
             })
     }
 
     fn set_cursor_index(&mut self, index: usize) {
-        let Some((key, sides)) = self.geometry.as_ref().and_then(|geometry| {
+        let Some((key, sides, owner)) = self.geometry.as_ref().and_then(|geometry| {
             let bound = geometry.rows.get(index)?;
-            let row = row_for_bound(&self.planned_files, bound)?;
-            Some((bound.key.clone(), row.available_sides()))
+            let row = row_for_bound(&self.planned_files, self.trailer_plan.as_ref(), bound)?;
+            Some((bound.key.clone(), row.available_sides(), bound.owner))
         }) else {
             return;
         };
-        self.selected_file_id = Some(key.file_id.clone());
-        self.selected_hunk_index = key.hunk_index;
+        self.selected_file_id = match owner {
+            RowOwner::File { .. } => Some(key.file_id.clone()),
+            RowOwner::Trailer => None,
+        };
+        self.selected_hunk_index = self.selected_file_id.as_ref().and(key.hunk_index);
         self.selected_row_key = Some(key);
         self.snap_focused_side_for(sides);
     }
@@ -1978,7 +2033,7 @@ impl ReviewController {
             .selected_row_key
             .as_ref()
             .and_then(|key| self.geometry.as_ref()?.row_by_key(key))
-            .and_then(|bound| row_for_bound(&self.planned_files, bound))
+            .and_then(|bound| row_for_bound(&self.planned_files, self.trailer_plan.as_ref(), bound))
             .map(ReviewRow::available_sides);
         if let Some(sides) = sides {
             self.snap_focused_side_for(sides);
@@ -2229,7 +2284,7 @@ impl ReviewController {
             .selected_row_key
             .as_ref()
             .and_then(|key| geometry?.row_by_key(key))
-            .and_then(|bound| row_for_bound(&self.planned_files, bound))
+            .and_then(|bound| row_for_bound(&self.planned_files, self.trailer_plan.as_ref(), bound))
             .map(|row| row.cursor_lines(self.focused_side == ReviewSide::Right));
         let visible_files = self
             .visible_indices
@@ -2245,6 +2300,11 @@ impl ReviewController {
                     stats_truncated: file.stats_truncated,
                     status: file_status(file),
                     compacted: self.is_file_compacted(file),
+                    github_thread_count: self
+                        .github_threads
+                        .by_file
+                        .get(&file.id)
+                        .map_or(0, Vec::len),
                 }
             })
             .collect();
@@ -2258,7 +2318,14 @@ impl ReviewController {
             .iter()
             .flat_map(|file| &file.plan.rows)
             .filter(|row| matches!(row, ReviewRow::Note { .. }))
-            .count();
+            .count()
+            + self
+                .trailer_plan
+                .as_ref()
+                .into_iter()
+                .flat_map(|plan| &plan.rows)
+                .filter(|row| matches!(row, ReviewRow::Note { .. }))
+                .count();
         let total_additions = self.files.iter().map(|file| file.stats.additions).sum();
         let total_deletions = self.files.iter().map(|file| file.stats.deletions).sum();
         let progress = self.progress.snapshot();
@@ -2485,23 +2552,28 @@ fn file_status(file: &DiffFile) -> ReviewFileStatus {
     }
 }
 
-fn row_for_bound<'a>(planned_files: &'a [PlannedFile], bound: &RowBounds) -> Option<&'a ReviewRow> {
-    let RowOwner::File { file_index } = bound.owner else {
-        return None;
-    };
-    planned_files
-        .get(file_index)?
-        .plan
-        .rows
-        .get(bound.row_index)
+fn row_for_bound<'a>(
+    planned_files: &'a [PlannedFile],
+    trailer_plan: Option<&'a RowPlan>,
+    bound: &RowBounds,
+) -> Option<&'a ReviewRow> {
+    match bound.owner {
+        RowOwner::File { file_index } => planned_files
+            .get(file_index)?
+            .plan
+            .rows
+            .get(bound.row_index),
+        RowOwner::Trailer => trailer_plan?.rows.get(bound.row_index),
+    }
 }
 
 fn first_selectable_index(
     geometry: &ReviewGeometry,
     planned_files: &[PlannedFile],
+    trailer_plan: Option<&RowPlan>,
 ) -> Option<usize> {
     geometry.rows.iter().enumerate().find_map(|(index, bound)| {
-        row_for_bound(planned_files, bound)
+        row_for_bound(planned_files, trailer_plan, bound)
             .is_some_and(ReviewRow::is_selectable)
             .then_some(index)
     })
@@ -2510,10 +2582,11 @@ fn first_selectable_index(
 fn selectable_index_by_key(
     geometry: &ReviewGeometry,
     planned_files: &[PlannedFile],
+    trailer_plan: Option<&RowPlan>,
     key: &ReviewRowKey,
 ) -> Option<usize> {
     let bound = geometry.row_by_key(key)?;
-    row_for_bound(planned_files, bound)
+    row_for_bound(planned_files, trailer_plan, bound)
         .is_some_and(ReviewRow::is_selectable)
         .then(|| {
             geometry
@@ -2527,6 +2600,7 @@ fn selectable_index_by_key(
 fn nearest_selectable_index(
     geometry: &ReviewGeometry,
     planned_files: &[PlannedFile],
+    trailer_plan: Option<&RowPlan>,
     reference: &ReviewRowKey,
     matches: impl Fn(&ReviewRowKey) -> bool,
 ) -> Option<usize> {
@@ -2536,7 +2610,8 @@ fn nearest_selectable_index(
         .enumerate()
         .filter(|(_, bound)| {
             matches(&bound.key)
-                && row_for_bound(planned_files, bound).is_some_and(ReviewRow::is_selectable)
+                && row_for_bound(planned_files, trailer_plan, bound)
+                    .is_some_and(ReviewRow::is_selectable)
         })
         .min_by_key(|(_, bound)| semantic_line_distance(reference, &bound.key))
         .map(|(index, _)| index)
@@ -2545,17 +2620,23 @@ fn nearest_selectable_index(
 fn nearest_selectable_index_for_file(
     geometry: &ReviewGeometry,
     planned_files: &[PlannedFile],
+    trailer_plan: Option<&RowPlan>,
     file_id: &str,
     reference: Option<&ReviewRowKey>,
 ) -> Option<usize> {
     if let Some(reference) = reference {
-        return nearest_selectable_index(geometry, planned_files, reference, |candidate| {
-            candidate.file_id == file_id
-        });
+        return nearest_selectable_index(
+            geometry,
+            planned_files,
+            trailer_plan,
+            reference,
+            |candidate| candidate.file_id == file_id,
+        );
     }
     geometry.rows.iter().enumerate().find_map(|(index, bound)| {
         (bound.key.file_id == file_id
-            && row_for_bound(planned_files, bound).is_some_and(ReviewRow::is_selectable))
+            && row_for_bound(planned_files, trailer_plan, bound)
+                .is_some_and(ReviewRow::is_selectable))
         .then_some(index)
     })
 }

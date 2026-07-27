@@ -4,6 +4,9 @@ use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
+use ramo::remote_review::{
+    GithubReviewThread, GithubThreadComment, GithubThreadSubject, RemoteLineSide,
+};
 use ramo::review::{
     HunkTarget, ReviewAction, ReviewController, ReviewEffect, ReviewFileStatus, ReviewOptions,
     ReviewSide, ScrollUnit, SidebarEntrySnapshot, Viewport,
@@ -72,6 +75,131 @@ fn file(path: &str, previous_path: Option<&str>, hunk_count: usize) -> DiffFile 
 
 fn viewport(width: u16, height: u16) -> Viewport {
     Viewport { width, height }
+}
+
+fn github_thread(id: &str, path: &str, subject: GithubThreadSubject) -> GithubReviewThread {
+    GithubReviewThread {
+        id: id.into(),
+        path: path.into(),
+        subject,
+        comments: vec![GithubThreadComment {
+            id: format!("comment:{id}"),
+            author: "alice".into(),
+            body: format!("feedback {id}"),
+            created_at: "2026-07-26T14:32:00Z".into(),
+            url: format!("https://example.test/{id}"),
+        }],
+        url: format!("https://example.test/{id}"),
+    }
+}
+
+#[test]
+fn github_threads_place_by_frozen_diff_and_keep_unmapped_feedback_visible() {
+    let view = viewport(100, 12);
+    let mut controller = ReviewController::new(
+        vec![
+            file("src/lib.rs", None, 1),
+            file("src/new.rs", Some("src/old.rs"), 1),
+        ],
+        ReviewOptions::default(),
+    );
+    controller.attach_github_threads(
+        vec![
+            github_thread(
+                "right",
+                "src/lib.rs",
+                GithubThreadSubject::Line {
+                    side: Some(RemoteLineSide::Right),
+                    start_side: Some(RemoteLineSide::Right),
+                    start_line: Some(1),
+                    end_line: Some(1),
+                },
+            ),
+            github_thread("rename", "src/old.rs", GithubThreadSubject::File),
+            github_thread(
+                "missing-line",
+                "src/lib.rs",
+                GithubThreadSubject::Line {
+                    side: Some(RemoteLineSide::Right),
+                    start_side: Some(RemoteLineSide::Right),
+                    start_line: Some(999),
+                    end_line: Some(999),
+                },
+            ),
+            github_thread(
+                "missing-side",
+                "src/lib.rs",
+                GithubThreadSubject::Line {
+                    side: None,
+                    start_side: None,
+                    start_line: Some(1),
+                    end_line: Some(1),
+                },
+            ),
+            github_thread("missing-file", "src/absent.rs", GithubThreadSubject::File),
+        ],
+        view,
+    );
+
+    let snapshot = controller.snapshot(view).clone();
+    assert_eq!(snapshot.note_count, 5);
+    assert_eq!(snapshot.visible_files[0].github_thread_count, 1);
+    assert_eq!(snapshot.visible_files[1].github_thread_count, 1);
+    assert_eq!(controller.human_notes().len(), 0);
+    assert_eq!(controller.live_notes().len(), 0);
+
+    controller.apply(ReviewAction::SetFilter("absent".into()), view);
+    let filtered = controller.snapshot(view);
+    assert!(filtered.visible_files.is_empty());
+    assert_eq!(filtered.note_count, 1);
+}
+
+#[test]
+fn annotated_navigation_visits_github_cards_including_the_unplaced_trailer() {
+    let view = viewport(100, 8);
+    let mut controller =
+        ReviewController::new(vec![file("src/lib.rs", None, 1)], ReviewOptions::default());
+    controller.attach_github_threads(
+        vec![
+            github_thread(
+                "placed",
+                "src/lib.rs",
+                GithubThreadSubject::Line {
+                    side: Some(RemoteLineSide::Right),
+                    start_side: Some(RemoteLineSide::Right),
+                    start_line: Some(1),
+                    end_line: Some(1),
+                },
+            ),
+            github_thread("unplaced", "src/absent.rs", GithubThreadSubject::File),
+        ],
+        view,
+    );
+
+    controller.apply(ReviewAction::MoveAnnotatedHunk(1), view);
+    assert_eq!(
+        controller
+            .snapshot(view)
+            .selected_position
+            .as_ref()
+            .unwrap()
+            .new_line,
+        Some(1)
+    );
+
+    controller.apply(ReviewAction::MoveAnnotatedHunk(1), view);
+    let trailer = controller.snapshot(view).clone();
+    assert_eq!(trailer.selected_file_id, None);
+    assert_eq!(
+        trailer.selected_position.as_ref().unwrap().file_id,
+        "github:unplaced:unplaced"
+    );
+
+    controller.apply(ReviewAction::SetLayout(LayoutMode::Stack), view);
+    assert_eq!(
+        controller.snapshot(view).selected_position,
+        trailer.selected_position
+    );
 }
 
 #[test]

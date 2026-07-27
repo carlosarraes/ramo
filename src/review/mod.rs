@@ -2,6 +2,7 @@ mod anchor;
 mod context;
 pub(crate) mod emphasis;
 pub(crate) mod geometry;
+mod github_threads;
 mod navigation;
 mod progress;
 pub(crate) mod row;
