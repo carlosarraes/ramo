@@ -84,6 +84,7 @@ Ramo inside the target repository:
 ```bash
 gh auth login
 ramo pr 123
+ramo pr 123 --with-comments
 ```
 
 Ramo loads a frozen PR snapshot without checking out the branch or changing
@@ -99,16 +100,23 @@ remain open. GitHub receives one review containing the overall body and every
 new Ramo inline comment. Reviews of your own PR offer Comment only because
 GitHub rejects self-approval and self-requested changes.
 
+Add `--with-comments` to fetch one snapshot of unresolved, non-outdated GitHub
+inline and file-level review threads. They appear as read-only conversation
+cards from every author. Ramo maps comments to the frozen diff when possible;
+anything that cannot be mapped remains visible under `Unplaced GitHub comments`.
+Publishing still sends only newly created Ramo comments—imported feedback is
+never copied into the outgoing review.
+
 Press `z` to lazily fetch unchanged context from the captured base or head commit
 through the authenticated GitHub CLI. Ramo does not fetch source blobs when the
 review opens, and it caches each result for later expand/collapse actions. If a
 snapshot file is missing, inaccessible, too large, or otherwise unavailable,
 Ramo shows a dismissible message and keeps the review intact.
 
-PR review v1 does not import existing GitHub threads, reply to or resolve
-comments, watch/reload the PR, or open snapshot files in the local editor.
-GitLab and Bitbucket are not supported yet. The view-only generic patch workflow
-remains available:
+Imported threads are a read-only snapshot: Ramo does not reply to or resolve
+them, refresh them, watch/reload the PR, or open snapshot files in the local
+editor. GitLab and Bitbucket are not supported yet. The view-only generic patch
+workflow remains available:
 
 ```bash
 gh pr diff 123 --color=never | ramo

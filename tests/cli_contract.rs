@@ -50,6 +50,21 @@ fn readme_documents_lazy_pull_request_snapshot_context() {
 }
 
 #[test]
+fn readme_documents_read_only_github_comment_import() {
+    let readme = std::fs::read_to_string("README.md").unwrap();
+    for expected in [
+        "ramo pr 123 --with-comments",
+        "unresolved, non-outdated",
+        "read-only",
+        "Unplaced GitHub comments",
+        "only newly created Ramo comments",
+    ] {
+        assert!(readme.contains(expected), "missing {expected:?}");
+    }
+    assert!(!readme.contains("does not import existing GitHub threads"));
+}
+
+#[test]
 fn version_is_plain_and_successful() {
     Command::cargo_bin("ramo")
         .unwrap()
