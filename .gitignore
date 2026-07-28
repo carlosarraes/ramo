@@ -1,6 +1,7 @@
 /target
 /.worktrees/
 /android/local.properties
+/android/keystore.properties
 /android/.gradle/
 /android/**/build/
 /android/app/src/main/jniLibs/

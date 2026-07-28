@@ -93,3 +93,40 @@ jobs:
       - run: cargo test --locked --workspace --all-targets --all-features
       - name: Check ARM64 Linux portability
         run: cargo check --locked -p ramo --target aarch64-unknown-linux-gnu
+
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-java@7a445ee88d4e23b52c33e64c2b48b79a7c2a9d31 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1a # v3.2.2
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android
+      - name: Install pinned Android SDK packages
+        run: >-
+          sdkmanager
+          "platforms;android-36"
+          "build-tools;36.0.0"
+          "ndk;28.2.13676358"
+          "platform-tools"
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Configure local Android SDK
+        run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > android/local.properties
+      - name: Test Rust workspace
+        run: cargo test --locked --workspace
+      - name: Test, lint, and assemble Android
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ramo-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

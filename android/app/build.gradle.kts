@@ -6,8 +6,8 @@ plugins {
 }
 
 val repositoryRoot = rootProject.projectDir.parentFile
-val generatedUniFfi = projectDir.resolve("build/generated/source/uniffi/debug")
-val generatedJniLibs = projectDir.resolve("build/generated/jniLibs/debug")
+val generatedUniFfi = projectDir.resolve("build/generated/source/uniffi/main")
+val generatedJniLibs = projectDir.resolve("build/generated/jniLibs/main")
 val localProperties = Properties().apply {
     rootProject.file("local.properties").inputStream().use(::load)
 }
@@ -16,13 +16,13 @@ val androidSdk = requireNotNull(localProperties.getProperty("sdk.dir")) {
 }
 val androidNdk = file("$androidSdk/ndk/28.2.13676358")
 
-val buildRustDebug by tasks.registering(Exec::class) {
+val buildRustAndroid by tasks.registering(Exec::class) {
     workingDir(repositoryRoot)
     environment("ANDROID_NDK_HOME", androidNdk.absolutePath)
     commandLine(
         "cargo", "ndk", "-t", "arm64-v8a",
-        "-o", "android/app/build/generated/jniLibs/debug",
-        "build", "-p", "ramo-mobile",
+        "-o", "android/app/build/generated/jniLibs/main",
+        "build", "--release", "-p", "ramo-mobile",
     )
 }
 
@@ -31,15 +31,15 @@ val buildRustHost by tasks.registering(Exec::class) {
     commandLine("cargo", "build", "-p", "ramo-mobile")
 }
 
-val generateUniFfiDebug by tasks.registering(Exec::class) {
-    dependsOn(buildRustDebug)
+val generateUniFfiAndroid by tasks.registering(Exec::class) {
+    dependsOn(buildRustAndroid)
     workingDir(repositoryRoot)
     commandLine(
         "cargo", "run", "-p", "uniffi-bindgen", "--",
         "generate", "--library",
-        "target/aarch64-linux-android/debug/libramo_mobile.so",
+        "target/aarch64-linux-android/release/libramo_mobile.so",
         "--language", "kotlin", "--out-dir",
-        "android/app/build/generated/source/uniffi/debug",
+        "android/app/build/generated/source/uniffi/main",
     )
 }
 
@@ -53,7 +53,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0-dev"
+        versionName = "0.1.0"
         buildConfigField("String", "APP_NAME", "\"Ramo\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
@@ -69,11 +69,27 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val releaseSigning = if (keystorePropertiesFile.exists()) {
+        val signingProperties = Properties().apply { keystorePropertiesFile.inputStream().use(::load) }
+        signingConfigs.create("personalRelease") {
+            storeFile = file(requireNotNull(signingProperties.getProperty("storeFile")))
+            storePassword = requireNotNull(signingProperties.getProperty("storePassword"))
+            keyAlias = requireNotNull(signingProperties.getProperty("keyAlias"))
+            keyPassword = requireNotNull(signingProperties.getProperty("keyPassword"))
+        }
+    } else null
+
+    buildTypes.getByName("release") {
+        isMinifyEnabled = false
+        signingConfig = releaseSigning
+    }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 
-    sourceSets.getByName("debug") {
+    sourceSets.getByName("main") {
         kotlin.directories.add(generatedUniFfi.absolutePath)
         jniLibs.directories.add(generatedJniLibs.absolutePath)
     }
@@ -98,8 +114,8 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
 }
 
-tasks.matching { it.name == "compileDebugKotlin" }.configureEach {
-    dependsOn(generateUniFfiDebug)
+tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach {
+    dependsOn(generateUniFfiAndroid)
 }
 
 tasks.matching { it.name == "testDebugUnitTest" }.configureEach {

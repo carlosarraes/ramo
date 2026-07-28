@@ -40,6 +40,12 @@ The release matrix produces one archive containing one executable for Linux, mac
 
 After a successful Unix install, the script checks for the legacy binary in the same install directory and asks before removing it. It never removes a similarly named program elsewhere on `PATH`. For unattended migration, set `RAMO_REMOVE_LEGACY=yes` or `RAMO_REMOVE_LEGACY=no`.
 
+### Android PR reviews
+
+Ramo also has a standalone, personal Android client for focused GitHub reviews: a two-tab inbox, one-file unified diffs, Tokyo Night syntax colors, encrypted drafts, Viewed synchronization, and Comment/Approve/Request changes publication. It uses a narrow fine-grained GitHub token and ships as an arm64 APK; no desktop Ramo process or `gh` installation is required on the phone.
+
+See [Ramo for Android](docs/android.md) for token setup, build/install commands, notification behavior, security details, and v1 limitations.
+
 ## Verified review inputs
 
 Review patch output from any command:

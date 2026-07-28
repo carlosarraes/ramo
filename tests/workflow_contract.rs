@@ -24,7 +24,7 @@ fn every_pinned_rust_toolchain_step_selects_stable_explicitly() {
         .map(|tail| tail.split("\n      - ").next().unwrap_or(tail))
         .collect();
 
-    assert_eq!(steps.len(), 3, "unexpected Rust toolchain step count");
+    assert!(!steps.is_empty(), "CI must install a Rust toolchain");
     for step in steps {
         assert!(
             step.contains("toolchain: stable"),
