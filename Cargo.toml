@@ -37,7 +37,7 @@ shell-words = "1"
 unicode-width = "0.2"
 notify = "8"
 globset = "0.4"
-margem = { git = "https://github.com/carlosarraes/margem", rev = "e70fda32f9eeb8a49037903e8726dd1c6e7de156", version = "0.0.1" }
+margem = { git = "https://github.com/carlosarraes/margem", rev = "7a2a0b34c45ccd424ad0b2bdf462c65764681999", version = "0.0.1" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
