@@ -81,16 +81,22 @@ fun InboxScreen(
         PullToRefreshBox(isRefreshing = tab.loading && tab.items.isNotEmpty(), onRefresh = onRefresh) {
             when {
                 tab.loading && tab.items.isEmpty() -> Text("Loading…", Modifier.padding(20.dp))
-                tab.error != null && tab.items.isEmpty() -> Column(Modifier.padding(20.dp)) {
-                    Text(tab.error, color = MaterialTheme.colorScheme.error)
-                    Button(onClick = onRefresh) { Text("Try again") }
+                tab.failure != null && tab.items.isEmpty() -> Column(Modifier.padding(20.dp)) {
+                    Text(tab.failure.message, color = MaterialTheme.colorScheme.error)
+                    if (tab.failure.retryable) {
+                        Button(onClick = onRefresh) { Text("Retry") }
+                    }
                 }
                 tab.items.isEmpty() -> Text(
-                    if (state.selected == InboxTab.ReviewRequests) "No reviews waiting" else "No open pull requests",
+                    if (state.selected == InboxTab.ReviewRequests) {
+                        "No reviews waiting. If you expected private pull requests, check whether organization access is still awaiting approval."
+                    } else {
+                        "No open pull requests"
+                    },
                     Modifier.padding(20.dp),
                 )
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    tab.error?.let { message -> item { Text(message, Modifier.padding(12.dp)) } }
+                    tab.failure?.let { failure -> item { Text(failure.message, Modifier.padding(12.dp)) } }
                     tab.warnings.forEach { warning -> item { Text(warning, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.tertiary) } }
                     items(tab.items, key = InboxItem::nodeId) { item ->
                         PullRequestRow(item, onOpen)

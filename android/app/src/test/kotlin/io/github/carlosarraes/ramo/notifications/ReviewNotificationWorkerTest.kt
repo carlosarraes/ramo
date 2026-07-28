@@ -49,6 +49,20 @@ class ReviewNotificationWorkerTest {
     @Test fun rateLimitAndNetworkFailuresRetry() = runTest {
         assertEquals(WorkerOutcome.Retry, fixture(failure = PollFailure.Retryable).runner.run())
     }
+
+    @Test fun unavailableOrganizationAccessDoesNotClearToken() = runTest {
+        val fixture = fixture(failure = PollFailure.AccessUnavailable)
+
+        assertEquals(WorkerOutcome.Failure, fixture.runner.run())
+        assertEquals("token", fixture.tokens.token)
+    }
+
+    @Test fun unknownPollingFailureRetriesWithoutClearingToken() = runTest {
+        val fixture = fixture(failure = IllegalStateException("event loop thread panicked"))
+
+        assertEquals(WorkerOutcome.Retry, fixture.runner.run())
+        assertEquals("token", fixture.tokens.token)
+    }
 }
 
 private class Fixture(
@@ -63,7 +77,7 @@ private fun fixture(
     token: String? = "token",
     page: NotificationPoll = NotificationPoll(emptyList(), null, null, false),
     cursor: NotificationCursor = NotificationCursor(),
-    failure: PollFailure? = null,
+    failure: Throwable? = null,
 ): Fixture {
     val tokens = MemoryTokens(token)
     val cursors = MemoryCursor(cursor)

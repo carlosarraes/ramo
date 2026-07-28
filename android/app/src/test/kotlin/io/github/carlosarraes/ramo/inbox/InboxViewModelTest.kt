@@ -1,5 +1,7 @@
 package io.github.carlosarraes.ramo.inbox
 
+import io.github.carlosarraes.ramo.errors.FailureKind
+import io.github.carlosarraes.ramo.uniffi.MobileException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -11,6 +13,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class InboxViewModelTest {
@@ -47,7 +50,21 @@ class InboxViewModelTest {
         model.refresh()
         advanceUntilIdle()
         assertEquals("cached", model.state.value.reviewRequests.items.single().nodeId)
-        assertEquals("Offline · showing last refresh", model.state.value.reviewRequests.error)
+        assertEquals(
+            "Offline · showing last refresh",
+            model.state.value.reviewRequests.failure?.message,
+        )
+    }
+
+    @Test fun unavailableOrganizationAccessUsesApprovalGuidance() = runTest(dispatcher) {
+        val model = InboxViewModel(AccessUnavailableInboxRepository(), MemoryInboxCache())
+
+        model.refresh()
+        advanceUntilIdle()
+
+        val failure = model.state.value.reviewRequests.failure!!
+        assertEquals(FailureKind.AccessUnavailable, failure.kind)
+        assertFalse(failure.message.contains("Forbidden"))
     }
 }
 
@@ -60,6 +77,11 @@ private class FakeInboxRepository : InboxRepository {
 }
 private class FailingInboxRepository : InboxRepository {
     override suspend fun load(tab: InboxTab, after: String?) = error("offline")
+}
+private class AccessUnavailableInboxRepository : InboxRepository {
+    override suspend fun load(tab: InboxTab, after: String?): InboxPage {
+        throw MobileException.AccessUnavailable()
+    }
 }
 private class MemoryInboxCache(var value: Pair<InboxPage, InboxPage>? = null) : InboxCache {
     override fun load() = value

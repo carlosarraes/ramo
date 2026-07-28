@@ -1,5 +1,7 @@
 package io.github.carlosarraes.ramo.inbox
 
+import io.github.carlosarraes.ramo.errors.UserFacingFailure
+
 enum class InboxTab { ReviewRequests, Authored }
 
 data class InboxItem(
@@ -28,7 +30,7 @@ data class TabState(
     val cursor: String? = null,
     val hasNextPage: Boolean = false,
     val loading: Boolean = false,
-    val error: String? = null,
+    val failure: UserFacingFailure? = null,
     val fromCache: Boolean = false,
     val warnings: List<String> = emptyList(),
 )

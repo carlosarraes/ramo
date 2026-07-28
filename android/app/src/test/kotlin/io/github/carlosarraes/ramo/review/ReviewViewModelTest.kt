@@ -94,12 +94,31 @@ class ReviewViewModelTest {
         assertEquals(null, store.value)
         assertEquals("Review published", model.state.value.success)
     }
+
+    @Test fun unknownOpenFailureDoesNotLeakItsRuntimeMessage() = runTest(dispatcher) {
+        val model = ReviewViewModel(
+            FakeReviewRepository(openFailure = IllegalStateException("event loop thread panicked")),
+            "ramo/ramo",
+            7,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals("Could not load this pull request", model.state.value.error)
+        assertFalse(model.state.value.error!!.contains("panicked"))
+    }
 }
 
-private class FakeReviewRepository(private val failViewed: Boolean = false) : ReviewRepository {
+private class FakeReviewRepository(
+    private val failViewed: Boolean = false,
+    private val openFailure: Throwable? = null,
+) : ReviewRepository {
     val viewedCalls = mutableListOf<Boolean>()
     var publishCalls = 0
-    override suspend fun open(repository: String, number: Long) = pull()
+    override suspend fun open(repository: String, number: Long): PullRequestUi {
+        openFailure?.let { throw it }
+        return pull()
+    }
     override suspend fun file(repository: String, number: Long, index: Int, startRow: Long, limit: Long): FileScreenUi {
         val rows = if (startRow == 0L) listOf(row("a")) else listOf(row("a"), row("b"))
         return screen(index, rows, if (startRow == 0L) 1 else null)

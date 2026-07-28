@@ -2,12 +2,13 @@ package io.github.carlosarraes.ramo.review
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.carlosarraes.ramo.errors.toUserFacingFailure
+import io.github.carlosarraes.ramo.uniffi.MobileException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import io.github.carlosarraes.ramo.uniffi.MobileException
 
 class ReviewViewModel(
     private val repository: ReviewRepository,
@@ -258,7 +259,8 @@ class ReviewViewModel(
         )
     }
 
-    private fun message(error: Throwable) = error.message?.takeIf(String::isNotBlank) ?: "Could not load this pull request"
+    private fun message(error: Throwable) =
+        error.toUserFacingFailure("Could not load this pull request").message
 
     private fun persistDrafts() {
         mutableState.value.toDraftReview()?.let(draftStore::save)

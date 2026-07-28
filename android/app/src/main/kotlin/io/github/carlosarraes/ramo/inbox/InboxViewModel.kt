@@ -2,6 +2,7 @@ package io.github.carlosarraes.ramo.inbox
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.carlosarraes.ramo.errors.toUserFacingFailure
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +33,7 @@ class InboxViewModel(
     fun refresh() {
         val tab = mutableState.value.selected
         jobs[tab]?.cancel()
-        update(tab) { it.copy(loading = true, error = null) }
+        update(tab) { it.copy(loading = true, failure = null) }
         jobs[tab] = viewModelScope.launch {
             runCatching { repository.load(tab, null) }
                 .onSuccess { page ->
@@ -40,11 +41,12 @@ class InboxViewModel(
                     saveCache()
                 }
                 .onFailure { error ->
+                    val failure = error.toUserFacingFailure("Could not load pull requests")
                     update(tab) { current ->
                         current.copy(
                             loading = false,
-                            error = if (current.items.isEmpty()) error.message ?: "Could not load pull requests"
-                            else "Offline · showing last refresh",
+                            failure = if (current.items.isEmpty()) failure
+                            else failure.copy(message = "Offline · showing last refresh"),
                         )
                     }
                 }
@@ -55,7 +57,7 @@ class InboxViewModel(
         val tab = mutableState.value.selected
         val current = mutableState.value.tab(tab)
         if (current.loading || !current.hasNextPage) return
-        update(tab) { it.copy(loading = true, error = null) }
+        update(tab) { it.copy(loading = true, failure = null) }
         jobs[tab] = viewModelScope.launch {
             runCatching { repository.load(tab, current.cursor) }
                 .onSuccess { page ->
@@ -64,7 +66,14 @@ class InboxViewModel(
                         page.toTabState().copy(items = merged)
                     }
                 }
-                .onFailure { update(tab) { it.copy(loading = false, error = "Could not load more") } }
+                .onFailure { error ->
+                    update(tab) {
+                        it.copy(
+                            loading = false,
+                            failure = error.toUserFacingFailure("Could not load more"),
+                        )
+                    }
+                }
         }
     }
 

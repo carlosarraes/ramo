@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import io.github.carlosarraes.ramo.MainActivity
+import io.github.carlosarraes.ramo.errors.toUserFacingFailure
 import io.github.carlosarraes.ramo.security.SecureTokenStore
 import io.github.carlosarraes.ramo.security.TokenStore
 import io.github.carlosarraes.ramo.uniffi.MobileException
@@ -22,7 +23,7 @@ data class NotificationPoll(val alerts: List<ReviewAlert>, val etag: String?, va
 sealed class PollFailure : Exception() {
     data object Revoked : PollFailure()
     data object Retryable : PollFailure()
-    data object Fatal : PollFailure()
+    data object AccessUnavailable : PollFailure()
 }
 
 interface ReviewPoller { suspend fun poll(cursor: NotificationCursor): NotificationPoll }
@@ -59,9 +60,12 @@ class ReviewNotificationRunner(
         } catch (_: PollFailure.Revoked) {
             tokens.clear()
             WorkerOutcome.Failure
-        } catch (_: PollFailure.Fatal) {
+        } catch (_: PollFailure.AccessUnavailable) {
             WorkerOutcome.Failure
         } catch (_: PollFailure.Retryable) {
+            WorkerOutcome.Retry
+        } catch (error: Throwable) {
+            error.toUserFacingFailure("Could not refresh review notifications")
             WorkerOutcome.Retry
         }
     }
@@ -86,7 +90,7 @@ class BridgeReviewPoller(private val token: String) : ReviewPoller {
         } catch (_: MobileException.InvalidCredentials) {
             throw PollFailure.Revoked
         } catch (_: MobileException.AccessUnavailable) {
-            throw PollFailure.Fatal
+            throw PollFailure.AccessUnavailable
         } catch (_: MobileException.Network) {
             throw PollFailure.Retryable
         } catch (_: MobileException.RateLimited) {
