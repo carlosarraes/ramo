@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
@@ -8,6 +9,25 @@ plugins {
 val repositoryRoot = rootProject.projectDir.parentFile
 val generatedUniFfi = projectDir.resolve("build/generated/source/uniffi/main")
 val generatedJniLibs = projectDir.resolve("build/generated/jniLibs/main")
+val rustlsVerifierAndroidVersion = providers.exec {
+    workingDir(repositoryRoot)
+    commandLine(
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--filter-platform",
+        "aarch64-linux-android",
+    )
+}.standardOutput.asText.map { metadata ->
+    @Suppress("UNCHECKED_CAST")
+    val packages = (JsonSlurper().parseText(metadata) as Map<String, Any?>)
+        .getValue("packages") as List<Map<String, Any?>>
+    packages
+        .singleOrNull { it["name"] == "rustls-platform-verifier-android" }
+        ?.get("version") as? String
+        ?: error("Cargo metadata does not contain rustls-platform-verifier-android")
+}
 val localProperties = Properties().apply {
     rootProject.file("local.properties").inputStream().use(::load)
 }
@@ -80,8 +100,16 @@ android {
         }
     } else null
 
+    buildTypes.getByName("debug") {
+        if (releaseSigning != null) signingConfig = releaseSigning
+    }
+
     buildTypes.getByName("release") {
         isMinifyEnabled = false
+        proguardFiles(
+            getDefaultProguardFile("proguard-android-optimize.txt"),
+            "proguard-rules.pro",
+        )
         signingConfig = releaseSigning
     }
 
@@ -103,6 +131,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.work.runtime)
+    implementation("rustls:rustls-platform-verifier:${rustlsVerifierAndroidVersion.get()}@aar")
     implementation("net.java.dev.jna:jna:5.12.0@aar")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     debugImplementation(libs.androidx.compose.ui.tooling)

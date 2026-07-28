@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".RamoApplication"
         android:allowBackup="false"
         android:label="Ramo"
         android:supportsRtl="true"

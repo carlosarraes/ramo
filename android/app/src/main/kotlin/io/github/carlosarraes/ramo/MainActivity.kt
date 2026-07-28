@@ -7,11 +7,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.carlosarraes.ramo.auth.AuthState
 import io.github.carlosarraes.ramo.auth.AuthViewModel
@@ -22,6 +26,8 @@ import io.github.carlosarraes.ramo.inbox.InboxViewModel
 import io.github.carlosarraes.ramo.inbox.NativeInboxRepository
 import io.github.carlosarraes.ramo.inbox.SecureInboxCache
 import io.github.carlosarraes.ramo.notifications.NotificationScheduler
+import io.github.carlosarraes.ramo.network.BootstrapStatus
+import io.github.carlosarraes.ramo.network.NativeNetworkBootstrap
 import io.github.carlosarraes.ramo.review.NativeReviewRepository
 import io.github.carlosarraes.ramo.review.ReviewPreferencesStore
 import io.github.carlosarraes.ramo.review.ReviewScreen
@@ -40,6 +46,13 @@ class MainActivity : ComponentActivity() {
         requestedPull = intent.pullRequest()
         setContent {
             RamoTheme {
+                if (NativeNetworkBootstrap.status != BootstrapStatus.Ready) {
+                    Text(
+                        "Ramo couldn't initialize secure networking. Restart the app and try again.",
+                        modifier = Modifier.padding(24.dp),
+                    )
+                    return@RamoTheme
+                }
                 val auth: AuthViewModel = viewModel {
                     AuthViewModel(SecureTokenStore(applicationContext), authenticator)
                 }

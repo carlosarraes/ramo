@@ -1,5 +1,7 @@
 uniffi::setup_scaffolding!();
 
+#[cfg(target_os = "android")]
+mod android;
 mod models;
 
 use std::collections::HashMap;

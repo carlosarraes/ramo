@@ -1932,8 +1932,10 @@ dependencies = [
 name = "ramo-mobile"
 version = "0.0.15"
 dependencies = [
+ "jni",
  "ramo-core",
  "ramo-github",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
