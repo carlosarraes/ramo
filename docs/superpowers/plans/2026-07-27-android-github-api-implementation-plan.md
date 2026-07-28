@@ -297,7 +297,7 @@ Expected: FAIL because `list_inbox` does not exist.
 
 Use one reusable fragment containing `id`, `number`, `title`, `url`, `updatedAt`, `isDraft`, `additions`, `deletions`, `changedFiles`, `author.login`, and `repository.nameWithOwner`. Query direct review requests first. Discover the viewer's accessible team slugs through `/user/teams?per_page=100`; query each team qualifier and deduplicate by PR node ID.
 
-If `/user/teams` returns 403 because organization-member permission is absent, return direct review results plus the exact warning `Team review requests need organization Members read permission.` in `InboxPage::warnings` and cover it in fixture tests.
+If `/user/teams` returns 403 because the token's resource owner is not the organization (or the organization has not approved the token), return direct review results plus the exact warning `Team review requests need a token whose resource owner is that organization.` in `InboxPage::warnings` and cover it in fixture tests.
 
 - [ ] **Step 4: Run inbox tests**
 

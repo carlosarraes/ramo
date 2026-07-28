@@ -6,6 +6,7 @@ data class NotificationCursor(
     val etag: String? = null,
     val lastModified: String? = null,
     val seenIds: Set<String> = emptySet(),
+    val initialized: Boolean = false,
 )
 
 interface NotificationCursorStore {
@@ -20,6 +21,7 @@ class PreferencesNotificationCursorStore(context: Context) : NotificationCursorS
         preferences.getString("etag", null),
         preferences.getString("last-modified", null),
         preferences.getStringSet("seen", emptySet()).orEmpty(),
+        preferences.getBoolean("initialized", false),
     )
 
     override fun write(cursor: NotificationCursor) {
@@ -27,6 +29,7 @@ class PreferencesNotificationCursorStore(context: Context) : NotificationCursorS
             .putString("etag", cursor.etag)
             .putString("last-modified", cursor.lastModified)
             .putStringSet("seen", cursor.seenIds.toList().takeLast(MAX_SEEN).toSet())
+            .putBoolean("initialized", cursor.initialized)
             .apply()
     }
 

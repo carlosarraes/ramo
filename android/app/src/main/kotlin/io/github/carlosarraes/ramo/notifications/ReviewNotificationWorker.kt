@@ -43,12 +43,15 @@ class ReviewNotificationRunner(
         return try {
             val page = pollers.create(token).poll(cursor)
             if (!page.notModified) {
-                page.alerts.filterNot { it.id in cursor.seenIds }.forEach(poster::post)
+                if (cursor.initialized) {
+                    page.alerts.filterNot { it.id in cursor.seenIds }.forEach(poster::post)
+                }
                 cursors.write(
                     NotificationCursor(
                         page.etag,
                         page.lastModified,
                         cursor.seenIds + page.alerts.map(ReviewAlert::id),
+                        initialized = true,
                     ),
                 )
             }

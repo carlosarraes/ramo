@@ -9,8 +9,7 @@ use std::sync::Mutex;
 pub use models::*;
 use ramo_core::drafts::{DraftAnchor, create_draft as validate_draft};
 use ramo_core::github::{
-    ConditionalCursor, InboxKind, InboxPage, PullRequestKey, PullRequestSnapshot,
-    PullRequestSummary, ReviewNotificationPage,
+    InboxKind, InboxPage, PullRequestKey, PullRequestSnapshot, PullRequestSummary,
 };
 use ramo_core::remote_review::GithubReviewThread;
 use ramo_core::remote_review::{
@@ -113,27 +112,6 @@ pub struct MobileNotificationPage {
     pub not_modified: bool,
 }
 
-impl From<ReviewNotificationPage> for MobileNotificationPage {
-    fn from(value: ReviewNotificationPage) -> Self {
-        Self {
-            notifications: value
-                .notifications
-                .into_iter()
-                .map(|item| MobileReviewNotification {
-                    id: item.id,
-                    repository: item.key.repository,
-                    number: item.key.number,
-                    title: item.title,
-                    updated_at: item.updated_at,
-                })
-                .collect(),
-            etag: value.cursor.etag,
-            last_modified: value.cursor.last_modified,
-            not_modified: value.not_modified,
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MobileError {
     #[error("GitHub rejected this token")]
@@ -206,16 +184,27 @@ impl MobileSession {
 
     pub fn review_notifications(
         &self,
-        etag: Option<String>,
-        last_modified: Option<String>,
+        _etag: Option<String>,
+        _last_modified: Option<String>,
     ) -> Result<MobileNotificationPage, MobileError> {
-        Ok(self
-            .client
-            .review_notifications(&ConditionalCursor {
-                etag,
-                last_modified,
-            })?
-            .into())
+        let page = self.client.list_inbox(InboxKind::ReviewRequests, None)?;
+        let last_modified = page.items.first().map(|item| item.updated_at.clone());
+        Ok(MobileNotificationPage {
+            notifications: page
+                .items
+                .into_iter()
+                .map(|item| MobileReviewNotification {
+                    id: item.node_id,
+                    repository: item.key.repository,
+                    number: item.key.number,
+                    title: item.title,
+                    updated_at: item.updated_at,
+                })
+                .collect(),
+            etag: None,
+            last_modified,
+            not_modified: false,
+        })
     }
 
     pub fn open_pull_request(

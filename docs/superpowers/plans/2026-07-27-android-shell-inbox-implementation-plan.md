@@ -311,7 +311,7 @@ Map errors to sanitized user messages and stable kinds; do not expose HTTP bodie
 
 - [ ] **Step 4: Build the token screen**
 
-Use an obscured text field, `Paste token`, `Validate and continue`, a link that opens GitHub's fine-grained-token settings in the browser, and copy describing Pull requests write plus organization Members read for team requests. Do not request notification permission on this screen.
+Use an obscured text field, `Paste token`, `Validate and continue`, a link that opens GitHub's fine-grained-token settings in the browser, and copy describing Pull requests write. Explain that team requests require selecting the organization as the token's resource owner; GitHub exposes no additional fine-grained permission for `GET /user/teams`. Do not request notification permission on this screen.
 
 - [ ] **Step 5: Run unit and device crypto tests**
 

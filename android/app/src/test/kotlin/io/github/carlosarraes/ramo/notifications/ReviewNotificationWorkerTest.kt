@@ -25,7 +25,7 @@ class ReviewNotificationWorkerTest {
         val fresh = ReviewAlert("new", "a/b", 2, "New")
         val fixture = fixture(
             page = NotificationPoll(listOf(old, fresh), "next", "now", false),
-            cursor = NotificationCursor("before", null, setOf("old")),
+            cursor = NotificationCursor("before", null, setOf("old"), initialized = true),
         )
         assertEquals(WorkerOutcome.Success, fixture.runner.run())
         assertEquals(listOf(fresh), fixture.posts)
@@ -37,6 +37,13 @@ class ReviewNotificationWorkerTest {
         assertEquals(WorkerOutcome.Failure, fixture.runner.run())
         assertNull(fixture.tokens.token)
         assertEquals(0, fixture.cursor.writes)
+    }
+
+    @Test fun firstSuccessfulPollSeedsWithoutSpammingExistingRequests() = runTest {
+        val fixture = fixture(page = NotificationPoll(listOf(ReviewAlert("old", "a/b", 1, "Old")), null, null, false))
+        assertEquals(WorkerOutcome.Success, fixture.runner.run())
+        assertEquals(emptyList(), fixture.posts)
+        assertEquals(setOf("old"), fixture.cursor.value.seenIds)
     }
 
     @Test fun rateLimitAndNetworkFailuresRetry() = runTest {
