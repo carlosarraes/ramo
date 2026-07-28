@@ -146,6 +146,6 @@ fn missing_team_permission_keeps_direct_results_and_returns_a_warning() {
     assert_eq!(page.items.len(), 1);
     assert_eq!(
         page.warnings,
-        ["Team review requests need organization Members read permission."]
+        ["Team review requests need a token whose resource owner is that organization."]
     );
 }

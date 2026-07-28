@@ -66,7 +66,7 @@ fun TokenScreen(state: AuthState, onValidate: (String) -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Grant Pull requests: read/write. Add Members: read when team review requests should appear.",
+            "Grant Pull requests: read/write. For team requests, choose the organization as the token's resource owner; GitHub exposes no extra permission for that endpoint.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

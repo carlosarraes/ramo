@@ -7,7 +7,7 @@ use crate::{GithubClient, GithubError};
 
 const SEARCH_DOCUMENT: &str = "query SearchPullRequests($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE, first: $first, after: $after) { nodes { ... on PullRequest { id number title url updatedAt isDraft additions deletions changedFiles author { login } repository { nameWithOwner } } } pageInfo { endCursor hasNextPage } } }";
 const TEAM_PERMISSION_WARNING: &str =
-    "Team review requests need organization Members read permission.";
+    "Team review requests need a token whose resource owner is that organization.";
 
 #[derive(serde::Serialize)]
 struct SearchVariables<'a> {
