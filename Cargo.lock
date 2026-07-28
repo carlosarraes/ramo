@@ -1910,6 +1910,8 @@ version = "0.0.15"
 dependencies = [
  "serde",
  "serde_json",
+ "syntect",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
