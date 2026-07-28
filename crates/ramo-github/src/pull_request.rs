@@ -175,7 +175,7 @@ fn validate_repository(repository: &str) -> Result<(&str, &str), GithubError> {
         })
 }
 
-fn repository_parts(key: &PullRequestKey) -> Result<(&str, &str), GithubError> {
+pub(crate) fn repository_parts(key: &PullRequestKey) -> Result<(&str, &str), GithubError> {
     validate_repository(&key.repository)
 }
 

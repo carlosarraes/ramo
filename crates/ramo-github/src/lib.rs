@@ -3,6 +3,7 @@ mod error;
 mod graphql;
 mod inbox;
 mod notifications;
+mod publish;
 mod pull_request;
 mod viewed;
 
