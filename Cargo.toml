@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/ramo-core"]
+members = [".", "crates/ramo-core", "crates/ramo-github"]
 resolver = "2"
 
 [workspace.package]
