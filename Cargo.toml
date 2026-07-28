@@ -1,5 +1,11 @@
 [workspace]
-members = [".", "crates/ramo-core", "crates/ramo-github"]
+members = [
+    ".",
+    "crates/ramo-core",
+    "crates/ramo-github",
+    "crates/ramo-mobile",
+    "crates/uniffi-bindgen",
+]
 resolver = "2"
 
 [workspace.package]

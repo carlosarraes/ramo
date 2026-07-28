@@ -28,7 +28,8 @@ yes | "$sdkmanager" --sdk_root="$sdk_root" --licenses >/dev/null || true
   "ndk;28.2.13676358" \
   "platform-tools"
 
-rustup target add aarch64-linux-android
+rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt
+rustup target add --toolchain 1.97.0 aarch64-linux-android
 if ! cargo ndk --version 2>/dev/null | grep -Fq 'cargo-ndk 4.1.2'; then
   cargo install cargo-ndk --version 4.1.2 --locked
 fi
