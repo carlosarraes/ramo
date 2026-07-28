@@ -11,3 +11,4 @@ crate-type = ["cdylib", "rlib"]
 ramo-core = { path = "../ramo-core" }
 ramo-github = { path = "../ramo-github" }
 uniffi = "0.32.0"
+thiserror = "2.0.19"

@@ -1932,6 +1932,7 @@ version = "0.0.15"
 dependencies = [
  "ramo-core",
  "ramo-github",
+ "thiserror 2.0.19",
  "uniffi",
 ]
 

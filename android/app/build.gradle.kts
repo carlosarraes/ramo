@@ -55,6 +55,7 @@ android {
         versionCode = 1
         versionName = "0.1.0-dev"
         buildConfigField("String", "APP_NAME", "\"Ramo\"")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
     }
 
@@ -92,6 +93,9 @@ dependencies {
     testImplementation(kotlin("test-junit"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testRuntimeOnly("net.java.dev.jna:jna:5.12.0")
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
 }
 
 tasks.matching { it.name == "compileDebugKotlin" }.configureEach {
