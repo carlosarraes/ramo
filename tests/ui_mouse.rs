@@ -71,6 +71,8 @@ fn clicking_a_github_thread_selects_it_without_opening_an_editor() {
         vec![GithubReviewThread {
             id: "T1".into(),
             path: "src/lib.rs".into(),
+            is_resolved: false,
+            is_outdated: false,
             subject: GithubThreadSubject::Line {
                 side: Some(RemoteLineSide::Right),
                 start_side: Some(RemoteLineSide::Right),

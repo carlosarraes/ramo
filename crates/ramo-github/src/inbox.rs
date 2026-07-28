@@ -3,35 +3,17 @@ use std::collections::HashMap;
 use ramo_core::github::{InboxKind, InboxPage, PullRequestKey, PullRequestSummary};
 use reqwest::StatusCode;
 
-use crate::{GithubClient, GithubError, GithubErrorKind};
+use crate::{GithubClient, GithubError};
 
 const SEARCH_DOCUMENT: &str = "query SearchPullRequests($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE, first: $first, after: $after) { nodes { ... on PullRequest { id number title url updatedAt isDraft additions deletions changedFiles author { login } repository { nameWithOwner } } } pageInfo { endCursor hasNextPage } } }";
 const TEAM_PERMISSION_WARNING: &str =
     "Team review requests need organization Members read permission.";
 
 #[derive(serde::Serialize)]
-struct GraphqlRequest<'a, T> {
-    query: &'a str,
-    variables: T,
-}
-
-#[derive(serde::Serialize)]
 struct SearchVariables<'a> {
     query: String,
     first: usize,
     after: Option<&'a str>,
-}
-
-#[derive(serde::Deserialize)]
-struct GraphqlEnvelope<T> {
-    data: Option<T>,
-    #[serde(default)]
-    errors: Vec<GraphqlResponseError>,
-}
-
-#[derive(serde::Deserialize)]
-struct GraphqlResponseError {
-    message: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -149,29 +131,8 @@ impl GithubClient {
             first: 20,
             after,
         };
-        let envelope: GraphqlEnvelope<SearchData> =
-            self.send_json(self.graphql_request().json(&GraphqlRequest {
-                query: SEARCH_DOCUMENT,
-                variables,
-            }))?;
-        if !envelope.errors.is_empty() {
-            let message = envelope
-                .errors
-                .into_iter()
-                .map(|error| error.message)
-                .collect::<Vec<_>>()
-                .join("; ");
-            return Err(GithubError::new(
-                GithubErrorKind::Graphql,
-                format!("GitHub GraphQL request failed: {message}"),
-            ));
-        }
-        envelope.data.map(|data| data.search).ok_or_else(|| {
-            GithubError::new(
-                GithubErrorKind::Decode,
-                "GitHub GraphQL response had no data",
-            )
-        })
+        self.graphql::<SearchData, _>(SEARCH_DOCUMENT, variables)
+            .map(|data| data.search)
     }
 
     fn accessible_teams(&self) -> Result<TeamAccess, GithubError> {

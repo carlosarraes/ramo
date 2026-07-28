@@ -151,6 +151,8 @@ fn decode_thread(raw: RawThread) -> Result<GithubReviewThread, GithubError> {
     Ok(GithubReviewThread {
         id: clean(&raw.id),
         path: clean(&raw.path),
+        is_resolved: raw.is_resolved,
+        is_outdated: raw.is_outdated,
         subject,
         comments,
         url,

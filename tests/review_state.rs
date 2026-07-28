@@ -81,6 +81,8 @@ fn github_thread(id: &str, path: &str, subject: GithubThreadSubject) -> GithubRe
     GithubReviewThread {
         id: id.into(),
         path: path.into(),
+        is_resolved: false,
+        is_outdated: false,
         subject,
         comments: vec![GithubThreadComment {
             id: format!("comment:{id}"),

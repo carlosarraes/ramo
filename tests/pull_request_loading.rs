@@ -82,6 +82,8 @@ fn thread() -> GithubReviewThread {
     GithubReviewThread {
         id: "T1".into(),
         path: "src/lib.rs".into(),
+        is_resolved: false,
+        is_outdated: false,
         subject: GithubThreadSubject::File,
         comments: vec![GithubThreadComment {
             id: "C1".into(),

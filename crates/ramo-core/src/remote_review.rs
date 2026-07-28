@@ -33,6 +33,10 @@ pub struct GithubThreadComment {
 pub struct GithubReviewThread {
     pub id: String,
     pub path: String,
+    #[serde(default)]
+    pub is_resolved: bool,
+    #[serde(default)]
+    pub is_outdated: bool,
     pub subject: GithubThreadSubject,
     pub comments: Vec<GithubThreadComment>,
     pub url: String,
