@@ -1,4 +1,20 @@
 const CI_WORKFLOW: &str = include_str!("../.github/workflows/ci.yml");
+const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
+
+#[test]
+fn workspace_gates_cover_every_crate_and_release_only_packages_ramo() {
+    for command in [
+        "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+        "cargo test --locked --workspace --all-targets --all-features",
+    ] {
+        assert!(CI_WORKFLOW.contains(command), "missing CI gate: {command}");
+    }
+    assert!(
+        RELEASE_WORKFLOW
+            .contains("cargo build --locked --release -p ramo --target ${{ matrix.target }}"),
+        "release builds must select only the terminal package"
+    );
+}
 
 #[test]
 fn every_pinned_rust_toolchain_step_selects_stable_explicitly() {
