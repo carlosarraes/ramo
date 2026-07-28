@@ -85,7 +85,7 @@ class BridgeReviewPoller(private val token: String) : ReviewPoller {
             }
         } catch (_: MobileException.InvalidCredentials) {
             throw PollFailure.Revoked
-        } catch (_: MobileException.Forbidden) {
+        } catch (_: MobileException.AccessUnavailable) {
             throw PollFailure.Fatal
         } catch (_: MobileException.Network) {
             throw PollFailure.Retryable

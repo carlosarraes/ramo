@@ -94,7 +94,7 @@ class AuthViewModel(
     private fun userMessage(error: Throwable): String {
         when (error) {
             is MobileException.InvalidCredentials -> return "GitHub rejected this token"
-            is MobileException.Forbidden -> return "This token is missing a required permission"
+            is MobileException.AccessUnavailable -> return "This token is missing a required permission"
             is MobileException.RateLimited -> return "GitHub rate limit exceeded; try again later"
             is MobileException.Network -> return "Could not reach GitHub"
             is MobileException.Unexpected -> return "GitHub returned an unexpected response"

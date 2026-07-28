@@ -116,8 +116,8 @@ pub struct MobileNotificationPage {
 pub enum MobileError {
     #[error("GitHub rejected this token")]
     InvalidCredentials,
-    #[error("GitHub denied this operation")]
-    Forbidden,
+    #[error("Organization access is not active")]
+    AccessUnavailable,
     #[error("GitHub rate limit exceeded")]
     RateLimited,
     #[error("Could not reach GitHub")]
@@ -134,7 +134,7 @@ impl From<GithubError> for MobileError {
     fn from(error: GithubError) -> Self {
         match error.kind() {
             GithubErrorKind::InvalidCredentials => Self::InvalidCredentials,
-            GithubErrorKind::Forbidden => Self::Forbidden,
+            GithubErrorKind::Forbidden => Self::AccessUnavailable,
             GithubErrorKind::RateLimited { .. } => Self::RateLimited,
             GithubErrorKind::Transport => Self::Network,
             GithubErrorKind::StaleRevision { .. } => Self::StaleRevision,
@@ -505,6 +505,19 @@ mod tests {
         assert!(matches!(
             super::MobileSession::new("  ".to_owned()),
             Err(super::MobileError::InvalidCredentials)
+        ));
+    }
+
+    #[test]
+    fn maps_forbidden_github_failures_to_unavailable_access() {
+        let error = ramo_github::GithubError::new(
+            ramo_github::GithubErrorKind::Forbidden,
+            "private detail that must not cross FFI",
+        );
+
+        assert!(matches!(
+            super::MobileError::from(error),
+            super::MobileError::AccessUnavailable
         ));
     }
 
