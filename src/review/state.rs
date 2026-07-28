@@ -90,7 +90,7 @@ pub struct ReviewOptions {
 impl Default for ReviewOptions {
     fn default() -> Self {
         Self {
-            layout: LayoutMode::Auto,
+            layout: LayoutMode::Stack,
             show_sidebar: true,
             line_numbers: true,
             wrap_lines: false,

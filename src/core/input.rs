@@ -3,9 +3,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LayoutMode {
-    #[default]
     Auto,
     Split,
+    #[default]
+    #[serde(alias = "unified")]
     Stack,
 }
 

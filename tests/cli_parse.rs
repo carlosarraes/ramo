@@ -50,6 +50,17 @@ fn diff_supports_range_flags_and_pathspecs() {
 }
 
 #[test]
+fn unified_and_legacy_stack_select_the_same_layout() {
+    for spelling in ["unified", "stack"] {
+        let invocation = parse_from(["ramo", "diff", "--mode", spelling], true).unwrap();
+        let Action::Review(input) = invocation.action else {
+            panic!("expected review action")
+        };
+        assert_eq!(input.options().mode, Some(LayoutMode::Stack));
+    }
+}
+
+#[test]
 fn existing_two_file_operands_become_a_file_pair() {
     let temp = tempfile::tempdir().unwrap();
     let left = temp.path().join("before.rs");

@@ -42,6 +42,29 @@ fn patch_input(options: CommonOptions) -> ReviewInput {
 }
 
 #[test]
+fn missing_configuration_defaults_to_unified() {
+    let input = patch_input(CommonOptions::default());
+    let resolved = ConfigResolver::new(ConfigPaths::default())
+        .resolve(&input)
+        .unwrap();
+    assert_eq!(resolved.mode, LayoutMode::Stack);
+}
+
+#[test]
+fn unified_configuration_selects_stack_renderer() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user.toml");
+    std::fs::write(&user, "mode = \"unified\"\n").unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+    assert_eq!(resolved.mode, LayoutMode::Stack);
+}
+
+#[test]
 fn repository_command_values_override_user_command_values() {
     let temp = tempfile::tempdir().unwrap();
     let user = temp.path().join("user.toml");
@@ -113,7 +136,7 @@ fn missing_files_are_ignored() {
     })
     .resolve(&patch_input(CommonOptions::default()))
     .unwrap();
-    assert_eq!(resolved.mode, LayoutMode::Auto);
+    assert_eq!(resolved.mode, LayoutMode::Stack);
     assert_eq!(resolved.theme, "auto");
     assert!(resolved.line_numbers);
 }

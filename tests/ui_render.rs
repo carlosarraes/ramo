@@ -226,7 +226,10 @@ fn responsive_stream_has_no_top_menu_and_later_files_have_headers() {
                 file("src/alpha.rs", FileChangeKind::Modified, 4),
                 file("docs/beta.rs", FileChangeKind::Renamed, 4),
             ],
-            ReviewOptions::default(),
+            ReviewOptions {
+                layout: LayoutMode::Auto,
+                ..ReviewOptions::default()
+            },
         );
         let frame = text(&buffer);
         assert_eq!(
@@ -249,7 +252,10 @@ fn cursor_paints_the_focused_split_side_and_selection_overrides_it() {
     };
     let mut controller = ReviewController::new(
         vec![file("src/cursor.rs", FileChangeKind::Modified, 2)],
-        ReviewOptions::default(),
+        ReviewOptions {
+            layout: LayoutMode::Split,
+            ..ReviewOptions::default()
+        },
     );
     let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
 

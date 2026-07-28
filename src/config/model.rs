@@ -98,7 +98,7 @@ pub struct ResolvedConfig {
 impl Default for ResolvedConfig {
     fn default() -> Self {
         Self {
-            mode: LayoutMode::Auto,
+            mode: LayoutMode::Stack,
             vcs: None,
             theme: "auto".into(),
             show_sidebar: true,

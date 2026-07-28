@@ -64,6 +64,24 @@ fn preferences() -> ViewPreferences {
 }
 
 #[test]
+fn saving_stack_layout_uses_unified_vocabulary() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    let initial = preferences();
+    let current = ViewPreferences {
+        mode: LayoutMode::Stack,
+        ..initial.clone()
+    };
+
+    save_view_preferences(&path, &ViewPreferenceChanges::between(&initial, &current)).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "mode = \"unified\"\n"
+    );
+}
+
+#[test]
 fn targeted_save_changes_only_owned_global_keys_and_preserves_toml_text() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("config.toml");

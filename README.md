@@ -265,7 +265,7 @@ The broker starts on demand, prunes sessions silent for 45 seconds, and exits af
 
 ## Current controls
 
-The review UI is a continuous file stream with an explicit highlighted cursor. Every file keeps a visible identity header even when the responsive sidebar is hidden. A sticky header shows the review identity, file count, and colored total additions/deletions; the footer shows monotonic changed-line review progress. `auto` uses split layout at 160 columns and stack layout below 160; the sidebar appears at 220 columns. There is deliberately no dropdown UI.
+The review UI is a continuous file stream with an explicit highlighted cursor. Every file keeps a visible identity header even when the responsive sidebar is hidden. A sticky header shows the review identity, file count, and colored total additions/deletions; the footer shows monotonic changed-line review progress. Unified layout is the default. `--mode split` keeps the side-by-side view, while `--mode auto` uses split layout at 160 columns and unified layout below 160; the sidebar appears at 220 columns. The deprecated `stack` spelling remains accepted as a compatibility alias for `unified`. There is deliberately no dropdown UI.
 
 | Key | Action |
 |---|---|
@@ -278,7 +278,7 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `[` / `]` | Previous/next hunk |
 | `,` / `.` | Previous/next file |
 | `{` / `}` | Previous/next annotated hunk |
-| `1` / `2` / `0` | Split/stack/auto layout |
+| `1` / `2` / `0` | Split/unified/auto layout |
 | `s`, `n`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
 | `a` | Reveal/hide AI and agent notes |
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
@@ -307,7 +307,7 @@ The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel even
 User preferences live at the platform config path (for example `~/.config/ramo/config.toml` on Linux); repository overrides live in the nearest `.ramo/config.toml`:
 
 ```toml
-mode = "auto"
+mode = "unified"
 theme = "auto"
 show_sidebar = true
 line_numbers = true

@@ -163,6 +163,6 @@ fn layout_name(mode: LayoutMode) -> &'static str {
     match mode {
         LayoutMode::Auto => "auto",
         LayoutMode::Split => "split",
-        LayoutMode::Stack => "stack",
+        LayoutMode::Stack => "unified",
     }
 }

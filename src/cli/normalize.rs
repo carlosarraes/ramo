@@ -453,7 +453,7 @@ fn common_options(
         mode: flags.mode.map(|mode| match mode {
             LayoutArg::Auto => LayoutMode::Auto,
             LayoutArg::Split => LayoutMode::Split,
-            LayoutArg::Stack => LayoutMode::Stack,
+            LayoutArg::Unified => LayoutMode::Stack,
         }),
         theme: flags.theme,
         agent_context: flags.agent_context,
