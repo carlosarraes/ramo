@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FileStats {
     pub additions: usize,
     pub deletions: usize,
