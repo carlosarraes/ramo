@@ -1173,6 +1173,7 @@ mod tests {
     };
 
     use crate::review::context::{FileContextState, derive_collapsed_gaps};
+    use ramo_core::changeset::Changeset;
 
     use super::{
         CellKind, EffectiveLayout, PlaceholderKind, ReviewRow, ReviewRowKind, build_row_plan,
@@ -1362,6 +1363,130 @@ mod tests {
         assert_eq!(cell.text(), "  new link");
         assert!(!cell.text().contains("https://bad"));
         assert_eq!(key.kind, ReviewRowKind::DiffLine);
+    }
+
+    #[test]
+    fn margem_rows_match_the_legacy_planner_field_for_field() {
+        let mut moved = line(
+            LineType::Addition,
+            "\tnew\x1b]8;;https://bad\x1b\\ link\x1b]8;;\x1b\\\x07",
+            None,
+            Some(12),
+        );
+        moved.moved = Some(MovedLineKind::NewMovedDimmed);
+        let sample = file(vec![
+            line(LineType::Context, "fn demo() {", Some(1), Some(1)),
+            line(LineType::Deletion, "  old_one();", Some(2), None),
+            line(LineType::Deletion, "  old_two();", Some(3), None),
+            moved,
+            line(LineType::Context, "}", Some(4), Some(13)),
+        ]);
+        let changeset = Changeset::new("working-tree", "Working tree", vec![sample.clone()]);
+        let document = crate::margem::build_margem_document(&changeset).unwrap();
+        let document = document.as_diff().unwrap();
+
+        for (legacy_layout, margem_layout) in [
+            (EffectiveLayout::Split, ::margem::DiffLayout::Split),
+            (EffectiveLayout::Stack, ::margem::DiffLayout::Unified),
+        ] {
+            let legacy = build_row_plan(&sample, legacy_layout, true);
+            let extracted = ::margem::plan_diff_rows(
+                document,
+                margem_layout,
+                ::margem::DiffPlanOptions::default(),
+            );
+            let extracted = &extracted.files[0];
+
+            assert_eq!(legacy.rows.len(), extracted.rows.len());
+            assert_eq!(legacy.line_number_digits, extracted.line_number_digits);
+            assert_eq!(
+                legacy.hunk_anchor_keys.len(),
+                extracted.hunk_anchor_ids.len()
+            );
+            for (legacy, extracted) in legacy.rows.iter().zip(&extracted.rows) {
+                assert_matching_row(legacy, extracted);
+            }
+        }
+    }
+
+    fn assert_matching_row(legacy: &ReviewRow, extracted: &::margem::DiffRow) {
+        match (legacy, extracted) {
+            (
+                ReviewRow::HunkHeader { key, text },
+                ::margem::DiffRow::HunkHeader {
+                    id,
+                    text: extracted_text,
+                },
+            ) => {
+                assert_matching_id(key, id);
+                assert_eq!(text, extracted_text);
+            }
+            (
+                ReviewRow::Stack { key, cell },
+                ::margem::DiffRow::Unified {
+                    id,
+                    cell: extracted_cell,
+                },
+            ) => {
+                assert_matching_id(key, id);
+                assert_matching_cell(cell, extracted_cell);
+            }
+            (
+                ReviewRow::Split { key, left, right },
+                ::margem::DiffRow::Split {
+                    id,
+                    left: extracted_left,
+                    right: extracted_right,
+                },
+            ) => {
+                assert_matching_id(key, id);
+                assert_matching_cell(left, extracted_left);
+                assert_matching_cell(right, extracted_right);
+            }
+            _ => panic!("row variants differ: {legacy:?} != {extracted:?}"),
+        }
+    }
+
+    fn assert_matching_id(legacy: &super::ReviewRowKey, extracted: &::margem::DiffRowId) {
+        assert_eq!(legacy.file_id, extracted.file_id);
+        assert_eq!(legacy.hunk_index, extracted.hunk_index);
+        assert_eq!(legacy.old_line, extracted.old_line);
+        assert_eq!(legacy.new_line, extracted.new_line);
+    }
+
+    fn assert_matching_cell(legacy: &super::ReviewCell, extracted: &::margem::DiffCell) {
+        let kind = match legacy.kind {
+            super::CellKind::Context => ::margem::DiffCellKind::Context,
+            super::CellKind::Addition => ::margem::DiffCellKind::Addition,
+            super::CellKind::Deletion => ::margem::DiffCellKind::Deletion,
+            super::CellKind::Empty => ::margem::DiffCellKind::Empty,
+        };
+        assert_eq!(kind, extracted.kind);
+        assert_eq!(legacy.sign, extracted.sign);
+        assert_eq!(legacy.old_line, extracted.old_line);
+        assert_eq!(legacy.new_line, extracted.new_line);
+        assert_eq!(legacy.text(), extracted.text());
+        assert_eq!(
+            legacy
+                .spans
+                .iter()
+                .map(|span| (span.text.as_str(), span.emphasized))
+                .collect::<Vec<_>>(),
+            extracted
+                .spans
+                .iter()
+                .map(|span| (span.text.as_str(), span.emphasized))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            legacy.moved.map(|moved| match moved {
+                MovedLineKind::OldMoved => "old_moved",
+                MovedLineKind::OldMovedDimmed => "old_moved_dimmed",
+                MovedLineKind::NewMoved => "new_moved",
+                MovedLineKind::NewMovedDimmed => "new_moved_dimmed",
+            }),
+            extracted.moved.as_deref()
+        );
     }
 
     #[test]

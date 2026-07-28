@@ -464,6 +464,7 @@ mod tests {
         GeometryOptions, PlannedFile, ResponsiveViewport, RowOwner, build_review_geometry,
         resolve_responsive_layout,
     };
+    use ramo_core::changeset::Changeset;
 
     fn planned(path: &str, additions: usize) -> PlannedFile {
         let file = DiffFile::for_test(path, FileChangeKind::Modified, additions, 0);
@@ -532,6 +533,71 @@ mod tests {
             resolve_responsive_layout(LayoutMode::Stack, 220, true).layout,
             EffectiveLayout::Stack
         );
+    }
+
+    #[test]
+    fn margem_geometry_matches_legacy_at_responsive_and_wrapped_widths() {
+        for width in [240, 180, 100, 42, 12] {
+            let legacy_responsive = resolve_responsive_layout(LayoutMode::Auto, width, true);
+            let extracted = ::margem::resolve_diff_responsive_layout(None, width, true);
+            assert_eq!(
+                legacy_responsive.layout == EffectiveLayout::Split,
+                extracted.layout == ::margem::DiffLayout::Split
+            );
+            assert_eq!(legacy_responsive.show_sidebar, extracted.show_sidebar);
+        }
+
+        let mut file = DiffFile::for_test("src/lib.rs", FileChangeKind::Modified, 2, 1);
+        file.hunks[0].lines[0].content = "界界界界 long addition".into();
+        let changeset = Changeset::new("working-tree", "Working tree", vec![file.clone()]);
+        let document = crate::margem::build_margem_document(&changeset).unwrap();
+        let extracted_plan = ::margem::plan_diff_rows(
+            document.as_diff().unwrap(),
+            ::margem::DiffLayout::Unified,
+            ::margem::DiffPlanOptions::default(),
+        );
+        let legacy_plan = build_row_plan(&file, EffectiveLayout::Stack, true);
+
+        for width in [100, 42, 12] {
+            let options = GeometryOptions {
+                content_width: width,
+                viewport_height: 5,
+                show_line_numbers: true,
+                wrap_lines: true,
+            };
+            let legacy = build_review_geometry(
+                &[PlannedFile::new(file.id.clone(), legacy_plan.clone())],
+                None,
+                options,
+            );
+            let extracted = ::margem::build_diff_geometry(
+                &extracted_plan,
+                ::margem::DiffGeometryOptions {
+                    content_width: width,
+                    viewport_height: 5,
+                    show_line_numbers: true,
+                    wrap_lines: true,
+                },
+            );
+            assert_eq!(legacy.total_height, extracted.total_height);
+            assert_eq!(legacy.sections[0].body_top, extracted.sections[0].body_top);
+            assert_eq!(
+                legacy.sections[0].body_height,
+                extracted.sections[0].body_height
+            );
+            assert_eq!(
+                legacy
+                    .rows
+                    .iter()
+                    .map(|row| (row.top, row.height))
+                    .collect::<Vec<_>>(),
+                extracted
+                    .rows
+                    .iter()
+                    .map(|row| (row.top, row.height))
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]
