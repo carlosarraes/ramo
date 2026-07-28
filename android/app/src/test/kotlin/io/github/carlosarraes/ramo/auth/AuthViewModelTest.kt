@@ -27,11 +27,11 @@ class AuthViewModelTest {
     @Test fun savesOnlyAfterValidationSucceeds() = runTest(dispatcher) {
         val store = MemoryTokenStore()
         val model = AuthViewModel(store, FakeAuthenticator(Result.success("carraes")))
-        model.validate("github_pat_secret")
+        model.validate("candidate-token")
         assertEquals(AuthState.Validating, model.state.value)
         advanceUntilIdle()
         assertEquals(AuthState.SignedIn("carraes"), model.state.value)
-        assertEquals("github_pat_secret", store.token)
+        assertEquals("candidate-token", store.token)
     }
 
     @Test fun invalidValidationDoesNotPersistToken() = runTest(dispatcher) {
