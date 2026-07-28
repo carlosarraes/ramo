@@ -1,0 +1,8 @@
+[package]
+name = "ramo-core"
+version = "0.0.15"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

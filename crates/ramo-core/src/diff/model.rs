@@ -1,19 +1,23 @@
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
 pub struct FileStats {
     pub additions: usize,
     pub deletions: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LineType {
     Context,
     Addition,
     Deletion,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MovedLineKind {
     OldMoved,
     OldMovedDimmed,
@@ -31,7 +35,7 @@ impl LineType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiffLine {
     pub kind: LineType,
     pub content: String,
@@ -40,7 +44,8 @@ pub struct DiffLine {
     pub moved: Option<MovedLineKind>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceSpec {
     None,
     File(PathBuf),
@@ -60,7 +65,7 @@ pub enum SourceSpec {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Hunk {
     pub old_start: u32,
     pub new_start: u32,
@@ -68,7 +73,8 @@ pub struct Hunk {
     pub lines: Vec<DiffLine>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FileChangeKind {
     Modified,
     Added,
@@ -77,13 +83,13 @@ pub enum FileChangeKind {
     Copied,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiffFile {
     pub id: String,
     pub path: String,
     pub previous_path: Option<String>,
     pub summary: Option<String>,
-    pub agent: Option<crate::notes::AgentFileContext>,
+    pub agent: Option<crate::agent::AgentFileContext>,
     pub patch: String,
     pub hunks: Vec<Hunk>,
     pub change_kind: FileChangeKind,
@@ -103,8 +109,8 @@ impl DiffFile {
     }
 }
 
-#[cfg(test)]
 impl DiffFile {
+    #[doc(hidden)]
     pub fn for_test(
         path: &str,
         change_kind: FileChangeKind,
@@ -127,7 +133,7 @@ impl DiffFile {
             moved: None,
         }));
         Self {
-            id: crate::core::changeset::stable_file_id(path, None),
+            id: crate::changeset::stable_file_id(path, None),
             path: path.into(),
             previous_path: None,
             summary: None,

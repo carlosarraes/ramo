@@ -1,4 +1,4 @@
-use crate::core::changeset::stable_file_id;
+use crate::changeset::stable_file_id;
 
 use super::model::{DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec};
 

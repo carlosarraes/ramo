@@ -1,3 +1,11 @@
+[workspace]
+members = [".", "crates/ramo-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+
 [package]
 name = "ramo"
 version = "0.0.15"
@@ -8,6 +16,7 @@ name = "ramo"
 path = "src/lib.rs"
 
 [dependencies]
+ramo-core = { path = "crates/ramo-core" }
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }
 clap = { version = "4", features = ["derive"] }
