@@ -124,7 +124,16 @@ impl GithubClient {
         Err(GithubError::new(kind, format!("{prefix}: {message}")))
     }
 
-    fn authorize(&self, request: RequestBuilder) -> RequestBuilder {
+    pub(crate) fn graphql_request(&self) -> RequestBuilder {
+        self.authorize(
+            self.http
+                .post(&self.graphql_url)
+                .header(ACCEPT, REST_ACCEPT)
+                .header("X-GitHub-Api-Version", API_VERSION),
+        )
+    }
+
+    pub(crate) fn authorize(&self, request: RequestBuilder) -> RequestBuilder {
         request.bearer_auth(self.token.as_str())
     }
 }
