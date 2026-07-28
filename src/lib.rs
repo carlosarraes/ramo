@@ -8,6 +8,7 @@ pub mod diff;
 pub mod error;
 pub mod github;
 pub mod input;
+pub mod margem;
 pub mod markup;
 pub mod notes;
 pub mod pager;
