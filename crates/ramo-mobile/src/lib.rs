@@ -1,6 +1,8 @@
 uniffi::setup_scaffolding!();
 
-use ramo_core::github::{InboxKind, InboxPage, PullRequestSummary};
+use ramo_core::github::{
+    ConditionalCursor, InboxKind, InboxPage, PullRequestSummary, ReviewNotificationPage,
+};
 use ramo_github::{GithubClient, GithubError, GithubErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -81,6 +83,44 @@ pub struct MobileInboxCache {
     pub authored: MobileInboxPage,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobileReviewNotification {
+    pub id: String,
+    pub repository: String,
+    pub number: u64,
+    pub title: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobileNotificationPage {
+    pub notifications: Vec<MobileReviewNotification>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    pub not_modified: bool,
+}
+
+impl From<ReviewNotificationPage> for MobileNotificationPage {
+    fn from(value: ReviewNotificationPage) -> Self {
+        Self {
+            notifications: value
+                .notifications
+                .into_iter()
+                .map(|item| MobileReviewNotification {
+                    id: item.id,
+                    repository: item.key.repository,
+                    number: item.key.number,
+                    title: item.title,
+                    updated_at: item.updated_at,
+                })
+                .collect(),
+            etag: value.cursor.etag,
+            last_modified: value.cursor.last_modified,
+            not_modified: value.not_modified,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MobileError {
     #[error("GitHub rejected this token")]
@@ -136,6 +176,20 @@ impl MobileSession {
         Ok(self
             .client
             .list_inbox(kind.into(), after.as_deref())?
+            .into())
+    }
+
+    pub fn review_notifications(
+        &self,
+        etag: Option<String>,
+        last_modified: Option<String>,
+    ) -> Result<MobileNotificationPage, MobileError> {
+        Ok(self
+            .client
+            .review_notifications(&ConditionalCursor {
+                etag,
+                last_modified,
+            })?
             .into())
     }
 }

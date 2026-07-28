@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.carlosarraes.ramo.security.TokenStore
 import io.github.carlosarraes.ramo.uniffi.MobileSession
+import io.github.carlosarraes.ramo.uniffi.MobileException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,6 +92,13 @@ class AuthViewModel(
     }
 
     private fun userMessage(error: Throwable): String {
+        when (error) {
+            is MobileException.InvalidCredentials -> return "GitHub rejected this token"
+            is MobileException.Forbidden -> return "This token is missing a required permission"
+            is MobileException.RateLimited -> return "GitHub rate limit exceeded; try again later"
+            is MobileException.Network -> return "Could not reach GitHub"
+            is MobileException.Unexpected -> return "GitHub returned an unexpected response"
+        }
         val message = error.message.orEmpty()
         return when {
             message.contains("token", ignoreCase = true) -> "GitHub rejected this token"

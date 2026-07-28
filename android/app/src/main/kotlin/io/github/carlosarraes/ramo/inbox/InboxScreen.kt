@@ -21,6 +21,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -40,8 +44,10 @@ fun InboxScreen(
     onLoadMore: () -> Unit,
     onOpen: (InboxItem) -> Unit,
     onSignOut: () -> Unit,
+    onEnableNotifications: () -> Unit = {},
 ) {
     val tab = state.tab(state.selected)
+    var showNotificationPrompt by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -61,6 +67,16 @@ fun InboxScreen(
                 onClick = { onSelect(InboxTab.Authored) },
                 text = { Text("Your PRs") },
             )
+        }
+        if (showNotificationPrompt) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Get a quiet alert when a review is requested.", Modifier.weight(1f).padding(vertical = 12.dp))
+                TextButton(onClick = {
+                    showNotificationPrompt = false
+                    onEnableNotifications()
+                }) { Text("Enable") }
+                TextButton(onClick = { showNotificationPrompt = false }) { Text("Dismiss") }
+            }
         }
         PullToRefreshBox(isRefreshing = tab.loading && tab.items.isNotEmpty(), onRefresh = onRefresh) {
             when {
