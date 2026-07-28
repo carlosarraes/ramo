@@ -6,7 +6,9 @@
     <application
         android:name=".RamoApplication"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="Ramo"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Ramo">
         <activity
