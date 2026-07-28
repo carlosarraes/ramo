@@ -499,7 +499,7 @@ pub fn core_version() -> String {
 mod tests {
     #[test]
     fn reports_workspace_version() {
-        assert_eq!(super::core_version(), "0.0.15");
+        assert_eq!(super::core_version(), "0.0.16");
     }
 
     #[test]

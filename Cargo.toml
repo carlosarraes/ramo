@@ -14,7 +14,7 @@ rust-version = "1.85"
 
 [package]
 name = "ramo"
-version = "0.0.15"
+version = "0.0.16"
 edition = "2024"
 
 [lib]
@@ -37,7 +37,7 @@ shell-words = "1"
 unicode-width = "0.2"
 notify = "8"
 globset = "0.4"
-margem = { git = "https://github.com/carlosarraes/margem", rev = "7a2a0b34c45ccd424ad0b2bdf462c65764681999", version = "0.0.1" }
+margem = { git = "https://github.com/carlosarraes/margem", rev = "47c100e4be071e5773de91b0226c86defde60c69", version = "0.0.2" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
