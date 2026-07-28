@@ -937,6 +937,7 @@ name = "ramo-core"
 version = "0.0.15"
 dependencies = [
  "serde",
+ "serde_json",
 ]
 
 [[package]]
