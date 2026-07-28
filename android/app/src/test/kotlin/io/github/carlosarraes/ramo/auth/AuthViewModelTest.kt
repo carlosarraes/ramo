@@ -1,6 +1,8 @@
 package io.github.carlosarraes.ramo.auth
 
+import io.github.carlosarraes.ramo.errors.FailureKind
 import io.github.carlosarraes.ramo.security.TokenStore
+import io.github.carlosarraes.ramo.uniffi.MobileException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -13,6 +15,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AuthViewModelTest {
@@ -31,12 +34,18 @@ class AuthViewModelTest {
         assertEquals("github_pat_secret", store.token)
     }
 
-    @Test fun failedValidationDoesNotPersistToken() = runTest(dispatcher) {
+    @Test fun invalidValidationDoesNotPersistToken() = runTest(dispatcher) {
         val store = MemoryTokenStore()
-        val model = AuthViewModel(store, FakeAuthenticator(Result.failure(Exception("bad token"))))
+        val model = AuthViewModel(
+            store,
+            FakeAuthenticator(Result.failure(MobileException.InvalidCredentials())),
+        )
         model.validate("bad")
         advanceUntilIdle()
-        assertEquals(AuthState.Error("GitHub rejected this token"), model.state.value)
+        assertEquals(
+            FailureKind.InvalidCredentials,
+            (model.state.value as AuthState.Failure).failure.kind,
+        )
         assertNull(store.token)
     }
 
@@ -51,6 +60,49 @@ class AuthViewModelTest {
         assertNull(store.token)
         assertEquals(1, authenticator.closed)
     }
+
+    @Test fun restoredTokenCanRetryWithoutAnotherPaste() = runTest(dispatcher) {
+        val store = MemoryTokenStore("saved")
+        val authenticator = RetryAuthenticator()
+        val model = AuthViewModel(store, authenticator)
+
+        model.restore()
+        advanceUntilIdle()
+        assertTrue((model.state.value as AuthState.Failure).tokenRetained)
+
+        model.retry()
+        advanceUntilIdle()
+
+        assertEquals(listOf("saved", "saved"), authenticator.tokens)
+        assertEquals(AuthState.SignedIn("carraes"), model.state.value)
+    }
+
+    @Test fun forbiddenTokenIsRetainedForOrganizationApproval() = runTest(dispatcher) {
+        val store = MemoryTokenStore()
+        val model = AuthViewModel(
+            store,
+            FakeAuthenticator(Result.failure(MobileException.AccessUnavailable())),
+        )
+
+        model.validate("candidate-token")
+        advanceUntilIdle()
+
+        assertEquals("candidate-token", store.token)
+        assertTrue((model.state.value as AuthState.Failure).tokenRetained)
+    }
+
+    @Test fun invalidRestoredTokenIsRemoved() = runTest(dispatcher) {
+        val store = MemoryTokenStore("revoked")
+        val model = AuthViewModel(
+            store,
+            FakeAuthenticator(Result.failure(MobileException.InvalidCredentials())),
+        )
+
+        model.restore()
+        advanceUntilIdle()
+
+        assertNull(store.token)
+    }
 }
 
 private class MemoryTokenStore(var token: String? = null) : TokenStore {
@@ -63,4 +115,16 @@ private class FakeAuthenticator(private val answer: Result<String>) : Authentica
     var closed = 0
     override suspend fun validate(token: String) = answer.getOrThrow()
     override fun close() { closed += 1 }
+}
+
+private class RetryAuthenticator : Authenticator {
+    val tokens = mutableListOf<String>()
+
+    override suspend fun validate(token: String): String {
+        tokens += token
+        if (tokens.size == 1) throw MobileException.Network()
+        return "carraes"
+    }
+
+    override fun close() = Unit
 }

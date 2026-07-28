@@ -2,9 +2,11 @@ package io.github.carlosarraes.ramo.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.carlosarraes.ramo.errors.FailureKind
+import io.github.carlosarraes.ramo.errors.UserFacingFailure
+import io.github.carlosarraes.ramo.errors.toUserFacingFailure
 import io.github.carlosarraes.ramo.security.TokenStore
 import io.github.carlosarraes.ramo.uniffi.MobileSession
-import io.github.carlosarraes.ramo.uniffi.MobileException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +20,10 @@ sealed interface AuthState {
     data object Validating : AuthState
     data class SignedIn(val login: String) : AuthState
     data class Error(val message: String) : AuthState
+    data class Failure(
+        val failure: UserFacingFailure,
+        val tokenRetained: Boolean,
+    ) : AuthState
 }
 
 interface Authenticator {
@@ -63,6 +69,11 @@ class AuthViewModel(
 
     fun validate(token: String) = validate(token, persist = true)
 
+    fun retry() {
+        val token = tokenStore.read() ?: return
+        validate(token, persist = false)
+    }
+
     private fun validate(token: String, persist: Boolean) {
         if (token.isBlank()) {
             mutableState.value = AuthState.Error("Paste a GitHub token first")
@@ -76,7 +87,16 @@ class AuthViewModel(
                     mutableState.value = AuthState.SignedIn(login)
                 }
                 .onFailure { error ->
-                    mutableState.value = AuthState.Error(userMessage(error))
+                    val failure = error.toUserFacingFailure("Could not sign in to GitHub")
+                    when (failure.kind) {
+                        FailureKind.InvalidCredentials -> tokenStore.clear()
+                        FailureKind.AccessUnavailable -> tokenStore.write(token)
+                        else -> Unit
+                    }
+                    mutableState.value = AuthState.Failure(
+                        failure,
+                        tokenRetained = tokenStore.read() != null,
+                    )
                 }
         }
     }
@@ -89,21 +109,5 @@ class AuthViewModel(
 
     override fun onCleared() {
         authenticator.close()
-    }
-
-    private fun userMessage(error: Throwable): String {
-        when (error) {
-            is MobileException.InvalidCredentials -> return "GitHub rejected this token"
-            is MobileException.AccessUnavailable -> return "This token is missing a required permission"
-            is MobileException.RateLimited -> return "GitHub rate limit exceeded; try again later"
-            is MobileException.Network -> return "Could not reach GitHub"
-            is MobileException.Unexpected -> return "GitHub returned an unexpected response"
-        }
-        val message = error.message.orEmpty()
-        return when {
-            message.contains("token", ignoreCase = true) -> "GitHub rejected this token"
-            message.contains("reach", ignoreCase = true) -> "Could not reach GitHub"
-            else -> message.ifBlank { "Could not sign in to GitHub" }
-        }
     }
 }

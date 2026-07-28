@@ -29,9 +29,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun TokenScreen(state: AuthState, onValidate: (String) -> Unit) {
+fun TokenScreen(
+    state: AuthState,
+    onValidate: (String) -> Unit,
+    onRetry: () -> Unit,
+    onSignOut: () -> Unit,
+) {
     var token by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val retainedFailure = (state as? AuthState.Failure)?.takeIf { it.tokenRetained }
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 36.dp),
         verticalArrangement = Arrangement.Center,
@@ -40,6 +46,19 @@ fun TokenScreen(state: AuthState, onValidate: (String) -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text("A quiet place to review pull requests.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(28.dp))
+        if (retainedFailure != null) {
+            Text(retainedFailure.failure.message, color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Retry") }
+            TextButton(
+                onClick = onSignOut,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Sign out") }
+            return@Column
+        }
         OutlinedTextField(
             value = token,
             onValueChange = { token = it },
@@ -60,9 +79,14 @@ fun TokenScreen(state: AuthState, onValidate: (String) -> Unit) {
             enabled = state != AuthState.Validating,
             modifier = Modifier.fillMaxWidth(),
         ) { Text(if (state == AuthState.Validating) "Validating…" else "Validate and continue") }
-        if (state is AuthState.Error) {
+        val failureMessage = when (state) {
+            is AuthState.Error -> state.message
+            is AuthState.Failure -> state.failure.message
+            else -> null
+        }
+        if (failureMessage != null) {
             Spacer(Modifier.height(12.dp))
-            Text(state.message, color = MaterialTheme.colorScheme.error)
+            Text(failureMessage, color = MaterialTheme.colorScheme.error)
         }
         Spacer(Modifier.height(16.dp))
         Text(

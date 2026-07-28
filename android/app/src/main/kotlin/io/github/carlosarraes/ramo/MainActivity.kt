@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
                             },
                         )
                     }
-                    else -> TokenScreen(current, auth::validate)
+                    else -> TokenScreen(current, auth::validate, auth::retry, auth::signOut)
                 }
             }
         }
