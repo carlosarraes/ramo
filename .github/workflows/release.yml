@@ -38,6 +38,9 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
+      - name: Install target for pinned toolchain
+        run: rustup target add ${{ matrix.target }}
+
       - name: Install cross-linker (Linux aarch64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |

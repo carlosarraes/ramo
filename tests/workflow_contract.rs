@@ -14,6 +14,10 @@ fn workspace_gates_cover_every_crate_and_release_only_packages_ramo() {
             .contains("cargo build --locked --release -p ramo --target ${{ matrix.target }}"),
         "release builds must select only the terminal package"
     );
+    assert!(
+        RELEASE_WORKFLOW.contains("rustup target add ${{ matrix.target }}"),
+        "release targets must be installed into the repository-pinned toolchain"
+    );
 }
 
 #[test]
