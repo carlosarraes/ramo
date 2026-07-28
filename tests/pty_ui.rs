@@ -398,7 +398,7 @@ fn cancel_returns_to_review_and_repeated_quit_discards_without_writing() {
         &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
     );
     process.read_until("println!");
-    process.send("2q");
+    process.send("1q");
     process.read_until("Save view preferences?");
     process.send("\x1bqq");
     assert_eq!(process.wait(), 0);
