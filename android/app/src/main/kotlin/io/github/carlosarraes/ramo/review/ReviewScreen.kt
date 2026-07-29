@@ -56,6 +56,7 @@ fun ReviewScreen(
     onHorizontalOffset: (Int) -> Unit,
     onSelectLine: (DiffRowUi) -> Unit,
     onOpenComment: () -> Unit,
+    onEditDraft: (DraftCommentUi) -> Unit,
     onClearSelection: () -> Unit,
     onExpand: (DiffRowUi) -> Unit,
     onFinish: (Boolean) -> Unit,
@@ -193,18 +194,23 @@ fun ReviewScreen(
                     }
                 }
                 items(screen.rows, key = DiffRowUi::key) { row ->
+                    val conversations = screen.threads.filter { thread ->
+                        !thread.outdated && thread.endLine != null &&
+                            (thread.endLine == row.newLine || thread.endLine == row.oldLine)
+                    }
+                    val drafts = state.drafts.filter { draft -> draft.attachesTo(screen.file.path, row) }
                     DiffRow(
                         row = row,
                         horizontalScroll = horizontal,
                         codeSize = codeSize,
                         selected = row.isSelected(state.selection),
+                        hasConversation = conversations.isNotEmpty(),
+                        hasDraft = drafts.isNotEmpty(),
                         onSelect = onSelectLine,
                         onExpand = onExpand,
                     )
-                    screen.threads.filter { thread ->
-                        !thread.outdated && thread.endLine != null &&
-                            (thread.endLine == row.newLine || thread.endLine == row.oldLine)
-                    }.forEach { ConversationCard(it) }
+                    conversations.forEach { ConversationCard(it) }
+                    drafts.forEach { draft -> LocalDraftCard(draft, onEdit = { onEditDraft(draft) }) }
                 }
                 val previous = screen.threads.filter { it.outdated || it.endLine == null }
                 if (previous.isNotEmpty()) {
@@ -255,6 +261,13 @@ private fun DiffRowUi.isSelected(selection: LineSelectionUi?): Boolean {
     val line = if (side == CommentSideUi.Left) oldLine else newLine
     return side == selection.side && hunkIndex == selection.hunk &&
         line != null && line in selection.startLine..selection.endLine
+}
+
+private fun DraftCommentUi.attachesTo(path: String, row: DiffRowUi): Boolean {
+    if (this.path != path || row.kind == LineKindUi.Hunk) return false
+    val rowSide = if (row.kind == LineKindUi.Deletion) CommentSideUi.Left else CommentSideUi.Right
+    val rowLine = if (rowSide == CommentSideUi.Left) row.oldLine else row.newLine
+    return side == rowSide && rowLine == endLine
 }
 
 @Composable

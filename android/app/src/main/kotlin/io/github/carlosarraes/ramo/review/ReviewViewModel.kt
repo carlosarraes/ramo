@@ -114,6 +114,20 @@ class ReviewViewModel(
         }
     }
 
+    fun editDraft(draft: DraftCommentUi) {
+        val screen = mutableState.value.screen ?: return
+        if (draft.path != screen.file.path) return
+        val hunk = screen.rows.firstOrNull { row ->
+            row.commentable && row.side() == draft.side &&
+                row.lineFor(draft.side) in draft.startLine..draft.endLine
+        }?.hunkIndex ?: return
+        val selection = LineSelectionUi(draft.side, hunk, draft.startLine, draft.endLine)
+        mutableState.value = mutableState.value.copy(
+            selection = selection,
+            editor = DraftEditorUi(selection, draft.id, draft.body),
+        )
+    }
+
     fun clearSelection() {
         mutableState.value = mutableState.value.copy(selection = null, editor = null)
     }
@@ -144,7 +158,8 @@ class ReviewViewModel(
         viewModelScope.launch {
             runCatching { repository.createDraft(input) }
                 .onSuccess { draft ->
-                    val drafts = (mutableState.value.drafts.filterNot { it.id == draft.id } + draft)
+                    val replacedIds = setOfNotNull(editor.draftId, draft.id)
+                    val drafts = mutableState.value.drafts.filterNot { it.id in replacedIds } + draft
                     mutableState.value = mutableState.value.copy(
                         drafts = drafts,
                         selection = null,
@@ -294,10 +309,10 @@ class ReviewViewModel(
         val state = mutableState.value
         val pull = state.pullRequest ?: return
         val file = pull.files.getOrNull(index) ?: return
-        if (file.viewed == viewed && viewedJobs[index]?.isActive != true) return
+        if (file.viewed == viewed) return
         val beforeViewed = file.viewed
         val pullRequestId = state.screen?.pullRequestId ?: pull.nodeId
-        viewedJobs.remove(index)?.cancel()
+        val predecessor = viewedJobs[index]
         val mutationId = ++viewedMutationId
         viewedMutations[index] = mutationId
         applyViewed(index, viewed)
@@ -307,6 +322,7 @@ class ReviewViewModel(
             )
         }
         val job = viewModelScope.launch {
+            predecessor?.join()
             runCatching { repository.setViewed(pullRequestId, file.path, viewed) }
                 .onFailure {
                     if (viewedMutations[index] == mutationId) {

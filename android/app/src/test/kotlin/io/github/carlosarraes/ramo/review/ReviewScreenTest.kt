@@ -6,12 +6,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import io.github.carlosarraes.ramo.ui.theme.RamoAppSurface
 import org.junit.Rule
@@ -69,6 +71,18 @@ class ReviewScreenTest {
     }
 
     @Test
+    fun savedDraftIsInlineAndCanBeReopenedForEditing() {
+        val draft = draftComment("Needs explanation")
+        setReviewContent(drafts = listOf(draft))
+
+        compose.onNodeWithText("Draft · R1").assertIsDisplayed()
+        compose.onNodeWithText("Needs explanation").assertIsDisplayed()
+        compose.onNodeWithText("Edit").performClick()
+        compose.onNodeWithText("Draft comment").assertIsDisplayed()
+        compose.onAllNodesWithText("Needs explanation").assertCountEquals(2)
+    }
+
+    @Test
     fun viewedNoticeOffersUndo() {
         setReviewContent(notice = ReviewNoticeUi(1, "Marked viewed", 0))
 
@@ -96,6 +110,7 @@ class ReviewScreenTest {
         pull: PullRequestUi? = pullRequest(),
         screen: FileScreenUi? = fileScreen(0),
         error: String? = null,
+        drafts: List<DraftCommentUi> = emptyList(),
     ) {
         compose.setContent {
             RamoAppSurface {
@@ -112,6 +127,7 @@ class ReviewScreenTest {
                         fileSheetOpen = fileSheetOpen,
                         selection = selection,
                         editor = editor,
+                        drafts = drafts,
                         notice = notice,
                         error = error,
                     ),
@@ -134,6 +150,10 @@ class ReviewScreenTest {
                         selection = line?.let { LineSelectionUi(side, row.hunkIndex, it, it) }
                     },
                     onOpenComment = { selection?.let { editor = DraftEditorUi(it) } },
+                    onEditDraft = { draft ->
+                        val selection = LineSelectionUi(draft.side, 0, draft.startLine, draft.endLine)
+                        editor = DraftEditorUi(selection, draft.id, draft.body)
+                    },
                     onClearSelection = { selection = null },
                     onExpand = {},
                     onFinish = {},
@@ -203,4 +223,19 @@ private fun fileSummary(path: String) = FileSummaryUi(
     deletions = 4,
     viewed = false,
     binary = false,
+)
+
+private fun draftComment(body: String) = DraftCommentUi(
+    id = "draft-1",
+    repository = "ramo/ramo",
+    number = 7,
+    revision = "sha",
+    path = "a.rs",
+    side = CommentSideUi.Right,
+    startLine = 1,
+    endLine = 1,
+    contextBefore = emptyList(),
+    selectedText = listOf("fn main() {}"),
+    contextAfter = emptyList(),
+    body = body,
 )

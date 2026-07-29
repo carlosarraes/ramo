@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
                                     onHorizontalOffset = review::setHorizontalOffset,
                                     onSelectLine = review::selectLine,
                                     onOpenComment = review::openComment,
+                                    onEditDraft = review::editDraft,
                                     onClearSelection = review::clearSelection,
                                     onExpand = review::expand,
                                     onFinish = review::setFinishing,

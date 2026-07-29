@@ -2,6 +2,9 @@ package io.github.carlosarraes.ramo.review
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -58,6 +61,22 @@ class ReviewViewModelTest {
         advanceUntilIdle()
         assertFalse(model.state.value.pullRequest!!.files[0].viewed)
         assertEquals(listOf(false), repository.viewedCalls.takeLast(1))
+    }
+
+    @Test fun undoWaitsForTheBlockingViewedWriteSoRemoteStateEndsFalse() = runTest(dispatcher) {
+        val repository = FakeReviewRepository(
+            firstPageComplete = true,
+            viewedDelays = mapOf(true to 200L, false to 10L),
+        )
+        val model = ReviewViewModel(repository, "ramo/ramo", 7)
+        advanceUntilIdle()
+
+        model.lastRowVisible()
+        model.undoViewed()
+        advanceUntilIdle()
+
+        assertEquals(listOf(true, false), repository.viewedCalls)
+        assertFalse(repository.remoteViewed)
     }
 
     @Test fun navigatingBeforeTheRealEndNeverOffersUndo() = runTest(dispatcher) {
@@ -160,6 +179,23 @@ class ReviewViewModelTest {
         assertEquals(null, model.state.value.selection)
     }
 
+    @Test fun savedDraftCanBeReopenedAndReplacedInline() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.selectLine(model.state.value.screen!!.rows.first())
+        model.openComment()
+        model.saveDraft("Needs explanation")
+        advanceUntilIdle()
+
+        val draft = model.state.value.drafts.single()
+        model.editDraft(draft)
+        assertEquals("Needs explanation", model.state.value.editor!!.initialBody)
+        model.saveDraft("Clear now")
+        advanceUntilIdle()
+
+        assertEquals(listOf("Clear now"), model.state.value.drafts.map(DraftCommentUi::body))
+    }
+
     @Test fun successfulPublishClearsOnlyThisReview() = runTest(dispatcher) {
         val repository = FakeReviewRepository()
         val store = MemoryReviewDraftStore()
@@ -215,8 +251,10 @@ private class FakeReviewRepository(
     private val openFailure: Throwable? = null,
     private val rows: List<DiffRowUi>? = null,
     private val firstPageComplete: Boolean = false,
+    private val viewedDelays: Map<Boolean, Long> = emptyMap(),
 ) : ReviewRepository {
     val viewedCalls = mutableListOf<Boolean>()
+    var remoteViewed = false
     var publishCalls = 0
     override suspend fun open(repository: String, number: Long): PullRequestUi {
         openFailure?.let { throw it }
@@ -231,13 +269,17 @@ private class FakeReviewRepository(
         return screen(index, pageRows, nextRow)
     }
     override suspend fun setViewed(pullRequestId: String, path: String, viewed: Boolean) {
+        viewedDelays[viewed]?.let { delayMillis ->
+            withContext(NonCancellable) { delay(delayMillis) }
+        }
         viewedCalls += viewed
+        remoteViewed = viewed
         if (failViewed) error("no")
     }
     override suspend fun expand(repository: String, number: Long, index: Int, gapKey: String) =
         screen(index, listOf(row("expanded")), null)
     override suspend fun createDraft(input: DraftInputUi) = DraftCommentUi(
-        "id", input.repository, input.number, input.revision, input.path, input.side,
+        "id-${input.body}", input.repository, input.number, input.revision, input.path, input.side,
         input.startLine, input.endLine, input.contextBefore, input.selectedText, input.contextAfter, input.body,
     )
     override suspend fun publish(review: DraftReviewUi, verdict: ReviewVerdictUi) { publishCalls += 1 }

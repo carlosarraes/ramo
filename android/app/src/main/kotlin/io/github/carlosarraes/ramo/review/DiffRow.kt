@@ -30,6 +30,8 @@ fun DiffRow(
     horizontalScroll: ScrollState,
     codeSize: Int,
     selected: Boolean,
+    hasConversation: Boolean,
+    hasDraft: Boolean,
     onSelect: (DiffRowUi) -> Unit,
     onExpand: (DiffRowUi) -> Unit,
 ) {
@@ -51,7 +53,7 @@ fun DiffRow(
             },
     ) {
         Text(
-            text = "${row.oldLine ?: ""} ${row.newLine ?: ""}",
+            text = "${if (hasDraft) "●" else if (hasConversation) "○" else " "} ${row.oldLine ?: ""} ${row.newLine ?: ""}",
             modifier = Modifier
                 .width(72.dp)
                 .padding(horizontal = 6.dp, vertical = 2.dp),

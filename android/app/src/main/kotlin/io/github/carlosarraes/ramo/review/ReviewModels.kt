@@ -156,7 +156,11 @@ data class LineSelectionUi(
     val label: String get() = "${if (side == CommentSideUi.Left) "L" else "R"}${if (startLine == endLine) endLine else "$startLine–$endLine"}"
 }
 
-data class DraftEditorUi(val selection: LineSelectionUi) {
-    val rowKey: String get() = "${selection.side}:${selection.hunk}:${selection.startLine}:${selection.endLine}"
+data class DraftEditorUi(
+    val selection: LineSelectionUi,
+    val draftId: String? = null,
+    val initialBody: String = "",
+) {
+    val rowKey: String get() = "${draftId ?: "new"}:${selection.side}:${selection.hunk}:${selection.startLine}:${selection.endLine}"
     val label: String get() = selection.label
 }

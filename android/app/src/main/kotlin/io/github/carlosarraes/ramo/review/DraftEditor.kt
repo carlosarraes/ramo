@@ -27,7 +27,7 @@ fun DraftEditor(
     onSave: (String) -> Unit,
     onCancel: () -> Unit,
 ) {
-    var body by remember(editor.rowKey) { mutableStateOf("") }
+    var body by remember(editor.rowKey) { mutableStateOf(editor.initialBody) }
     ModalBottomSheet(onDismissRequest = onCancel) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
