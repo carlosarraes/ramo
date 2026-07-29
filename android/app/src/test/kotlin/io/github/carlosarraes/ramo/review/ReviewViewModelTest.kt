@@ -36,6 +36,14 @@ class ReviewViewModelTest {
         assertEquals(1, model.state.value.selectedFile)
     }
 
+    @Test fun opensTheFileSelectedByTheReviewMap() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7, initialPath = "b.rs")
+        advanceUntilIdle()
+
+        assertEquals(1, model.state.value.selectedFile)
+        assertEquals("b.rs", model.state.value.screen!!.file.path)
+    }
+
     @Test fun rowPagesDeduplicateAndAutoViewedOnlyAtTheRealEnd() = runTest(dispatcher) {
         val repository = FakeReviewRepository()
         val model = ReviewViewModel(repository, "ramo/ramo", 7)

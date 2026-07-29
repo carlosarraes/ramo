@@ -16,6 +16,7 @@ class ReviewViewModel(
     private val repositoryName: String,
     private val number: Long,
     private val draftStore: ReviewDraftStore = NoopDraftStore(),
+    private val initialPath: String? = null,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ReviewUiState())
     val state: StateFlow<ReviewUiState> = mutableState.asStateFlow()
@@ -47,14 +48,16 @@ class ReviewViewModel(
                     viewedConfirmed.clear()
                     pull.files.forEach { file -> viewedConfirmed[file.path] = file.viewed }
                     val stored = draftStore.load(repositoryName, number)
+                    val initialIndex = initialPath?.let { path -> pull.files.indexOfFirst { it.path == path } }
+                        ?.takeIf { it >= 0 } ?: 0
                     mutableState.value = mutableState.value.copy(
                         pullRequest = pull,
-                        selectedFile = 0,
+                        selectedFile = initialIndex,
                         drafts = stored?.comments.orEmpty(),
                         overallBody = stored?.body.orEmpty(),
                         needsAttention = stored != null && stored.revision != pull.revision,
                     )
-                    loadFile(0)
+                    loadFile(initialIndex)
                 }
                 .onFailure { mutableState.value = mutableState.value.copy(loading = false, error = message(it)) }
         }

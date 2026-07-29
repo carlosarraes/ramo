@@ -19,6 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -30,11 +34,14 @@ fun SettingsScreen(
     login: String,
     codeSize: Int,
     notificationsGranted: Boolean,
+    localAnalysisEndpoint: String? = null,
     onCodeSize: (Int) -> Unit,
     onEnableNotifications: () -> Unit,
     onBack: () -> Unit,
+    onUnpair: () -> Unit = {},
     onSignOut: () -> Unit,
 ) {
+    var confirmUnpair by remember { mutableStateOf(false) }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -72,6 +79,17 @@ fun SettingsScreen(
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Local analysis", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    localAnalysisEndpoint?.let { "Paired with ${java.net.URI(it).host}" }
+                        ?: "Not paired. Scan the QR code printed by ramo server pair.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (localAnalysisEndpoint != null) {
+                    OutlinedButton(onClick = { confirmUnpair = true }) { Text("Unpair laptop") }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Notifications", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (notificationsGranted) "Review-request notifications are enabled."
@@ -90,5 +108,16 @@ fun SettingsScreen(
                 Text("Sign out", color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+    if (confirmUnpair) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmUnpair = false },
+            title = { Text("Unpair laptop analysis?") },
+            text = { Text("Exact Review Maps will still work. This removes the encrypted phone credential.") },
+            confirmButton = {
+                TextButton(onClick = { confirmUnpair = false; onUnpair() }) { Text("Unpair") }
+            },
+            dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text("Cancel") } },
+        )
     }
 }

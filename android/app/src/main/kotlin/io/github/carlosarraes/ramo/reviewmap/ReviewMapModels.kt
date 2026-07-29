@@ -4,7 +4,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
-data class PairingLink private constructor(val endpoint: String, val code: String) {
+class PairingLink private constructor(val endpoint: String, val code: String) {
     override fun toString(): String = "PairingLink(endpoint=$endpoint, code=<redacted>)"
 
     companion object {
