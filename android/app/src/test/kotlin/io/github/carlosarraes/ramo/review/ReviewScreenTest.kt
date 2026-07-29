@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -14,7 +15,10 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.unit.dp
 import io.github.carlosarraes.ramo.ui.theme.RamoAppSurface
 import org.junit.Rule
 import org.junit.Test
@@ -54,9 +58,33 @@ class ReviewScreenTest {
     fun codeAndBottomNavigationRemainInsideSafeDrawingBounds() {
         setReviewContent()
 
-        compose.onNodeWithTag("review-top-title").assertIsDisplayed()
-        compose.onNodeWithTag("review-bottom-nav").assertIsDisplayed()
-        compose.onNodeWithTag("diff-list").assertIsDisplayed()
+        val root = compose.onRoot().getUnclippedBoundsInRoot()
+        val top = compose.onNodeWithTag("review-top-title").getUnclippedBoundsInRoot()
+        val list = compose.onNodeWithTag("diff-list").getUnclippedBoundsInRoot()
+        val bottom = compose.onNodeWithTag("review-bottom-nav").getUnclippedBoundsInRoot()
+
+        kotlin.test.assertTrue(top.top >= root.top)
+        kotlin.test.assertTrue(list.top >= top.bottom)
+        kotlin.test.assertTrue(list.bottom <= bottom.top)
+        kotlin.test.assertTrue(bottom.bottom <= root.bottom)
+        compose.onNodeWithText("Back").assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithText("1 / 2").assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithText("Previous file").assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithText("Finish").assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithText("Next file").assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w360dp-h800dp")
+    fun narrowPhoneKeepsReviewChromeAndCodeSeparated() {
+        setReviewContent()
+
+        val root = compose.onRoot().getUnclippedBoundsInRoot()
+        val list = compose.onNodeWithTag("diff-list").getUnclippedBoundsInRoot()
+        val bottom = compose.onNodeWithTag("review-bottom-nav").getUnclippedBoundsInRoot()
+        kotlin.test.assertTrue(root.right - root.left <= 360.dp)
+        kotlin.test.assertEquals(root.right - root.left, list.right - list.left)
+        kotlin.test.assertTrue(list.bottom <= bottom.top)
     }
 
     @Test
