@@ -92,7 +92,7 @@ jobs:
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked --workspace --all-targets --all-features
       - name: Check ARM64 Linux portability
-        run: cargo check --locked -p ramo --target aarch64-unknown-linux-gnu
+        run: cargo check --locked -p ramo -p ramo-server --target aarch64-unknown-linux-gnu
 
   android:
     name: Android debug APK

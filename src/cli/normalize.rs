@@ -74,6 +74,7 @@ pub fn normalize(cli: Cli, stdin_is_terminal: bool) -> Result<Invocation, CliErr
         (Some(Command::Skill { command }), None) => match command {
             SkillCommand::Path => Action::SkillPath,
         },
+        (Some(Command::Server { arguments }), None) => Action::Server(arguments),
         (Some(_), Some(_)) => unreachable!("conflicting input returned above"),
     };
 

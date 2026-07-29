@@ -93,6 +93,7 @@ main() {
   if [ "${RAMO_INSTALL_DRY_RUN:-0}" = "1" ]; then
     echo "Download: ${download_url}"
     echo "Install: ${INSTALL_DIR}/ramo"
+    echo "Install: ${INSTALL_DIR}/ramo-server"
     return
   fi
   mkdir -p "$INSTALL_DIR"
@@ -102,10 +103,16 @@ main() {
 
   curl -fsSL "$download_url" -o "$ramo_install_tmp/ramo.tar.gz"
   tar xzf "$ramo_install_tmp/ramo.tar.gz" -C "$ramo_install_tmp"
+  if [ ! -f "$ramo_install_tmp/ramo" ] || [ ! -f "$ramo_install_tmp/ramo-server" ]; then
+    echo "The Ramo release archive is missing ramo or ramo-server." >&2
+    exit 1
+  fi
+  chmod +x "$ramo_install_tmp/ramo" "$ramo_install_tmp/ramo-server"
   mv "$ramo_install_tmp/ramo" "$INSTALL_DIR/ramo"
-  chmod +x "$INSTALL_DIR/ramo"
+  mv "$ramo_install_tmp/ramo-server" "$INSTALL_DIR/ramo-server"
 
-  echo "Installed ramo to $INSTALL_DIR/ramo"
+  echo "Installed ramo and ramo-server to $INSTALL_DIR"
+  echo "Run 'ramo server setup' to enable private mobile AI analysis."
   remove_legacy_binary
 
   if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then

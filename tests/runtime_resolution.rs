@@ -1,7 +1,8 @@
 use ramo::cli::Action;
 use ramo::core::input::{CommonOptions, ReviewInput};
 use ramo::runtime::{
-    StartupAction, resolve_action, should_finish_local_annotations, stdin_needs_tty_replacement,
+    StartupAction, companion_path, resolve_action, should_finish_local_annotations,
+    stdin_needs_tty_replacement,
 };
 
 #[test]
@@ -39,4 +40,16 @@ fn remote_reviews_never_fall_through_to_local_markdown_export() {
         &input,
         Some(ramo::app::RemoteReviewOutcome::Published)
     ));
+}
+
+#[test]
+fn companion_is_resolved_beside_the_current_ramo_binary() {
+    assert_eq!(
+        companion_path(std::path::Path::new("/opt/ramo/ramo")),
+        std::path::Path::new("/opt/ramo/ramo-server")
+    );
+    assert_eq!(
+        companion_path(std::path::Path::new("/opt/ramo/ramo.exe")),
+        std::path::Path::new("/opt/ramo/ramo-server.exe")
+    );
 }

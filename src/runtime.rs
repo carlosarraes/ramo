@@ -1,3 +1,4 @@
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
@@ -31,6 +32,7 @@ pub enum StartupAction {
     Session,
     Daemon,
     Skill,
+    Server,
 }
 
 pub fn resolve_action(action: &Action) -> StartupAction {
@@ -43,6 +45,7 @@ pub fn resolve_action(action: &Action) -> StartupAction {
         Action::Session(_) => StartupAction::Session,
         Action::DaemonServe => StartupAction::Daemon,
         Action::SkillPath => StartupAction::Skill,
+        Action::Server(_) => StartupAction::Server,
     }
 }
 
@@ -87,8 +90,41 @@ pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
             crate::session::run_daemon_from_environment()?;
             Ok(ExitCode::SUCCESS)
         }
+        Action::Server(arguments) => run_server_companion(&arguments),
         Action::Review(input) => run_review(input, invocation.output),
     }
+}
+
+pub fn companion_path(ramo_executable: &std::path::Path) -> PathBuf {
+    let file_name = if ramo_executable.extension() == Some(OsStr::new("exe")) {
+        "ramo-server.exe"
+    } else {
+        "ramo-server"
+    };
+    ramo_executable.with_file_name(file_name)
+}
+
+fn run_server_companion(arguments: &[OsString]) -> Result<ExitCode, AppError> {
+    let current = std::env::current_exe()?;
+    let companion = companion_path(&current);
+    if !companion.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "ramo-server is not installed; reinstall Ramo or run cargo install --path crates/ramo-server",
+        )
+        .into());
+    }
+    let status = std::process::Command::new(companion)
+        .args(arguments)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+    let code = status
+        .code()
+        .and_then(|code| u8::try_from(code).ok())
+        .unwrap_or(1);
+    Ok(ExitCode::from(code))
 }
 
 fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCode, AppError> {

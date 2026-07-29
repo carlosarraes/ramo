@@ -14,6 +14,7 @@ fn powershell_installer_maps_both_windows_archives_and_has_a_network_free_dry_ru
     }
     assert!(POWERSHELL_INSTALLER.contains("[switch]$DryRun"));
     assert!(POWERSHELL_INSTALLER.contains("ramo-${Target}.zip"));
+    assert!(POWERSHELL_INSTALLER.contains("ramo-server.exe"));
 }
 
 #[cfg(unix)]
@@ -52,6 +53,14 @@ fn unix_installer_dry_run_selects_archives_without_network_or_filesystem_mutatio
             "{stdout}"
         );
         assert!(!install.path().join("ramo").exists());
+        assert!(
+            stdout.contains(&format!(
+                "Install: {}/ramo-server",
+                install.path().display()
+            )),
+            "{stdout}"
+        );
+        assert!(!install.path().join("ramo-server").exists());
     }
 }
 

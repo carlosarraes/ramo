@@ -2,7 +2,7 @@
 
 Ramo is a fast, review-first diff viewer for the terminal. It turns working-tree changes, revision ranges, patches, and direct file comparisons into one keyboard-first review surface.
 
-It is written entirely in Rust and ships as one native `ramo` executable—no Node.js, Bun, TypeScript, browser, or language runtime. Ramo includes Hunk-compatible review workflows while keeping Vim-style selection, Markdown comments, tmux sending, live agent sessions, and optional Pi integration. Hunk's top menu bar and dropdowns are intentionally excluded.
+It is written entirely in Rust and needs no Node.js, Bun, TypeScript, browser, or language runtime. The normal terminal workflow remains one native `ramo` executable. Release archives also include the optional native `ramo-server` companion for private local-AI Review Maps and phone access. Ramo includes Hunk-compatible review workflows while keeping Vim-style selection, Markdown comments, tmux sending, live agent sessions, and optional Pi integration. Hunk's top menu bar and dropdowns are intentionally excluded.
 
 ```bash
 # Review everything changed on the current branch since it diverged from main
@@ -26,7 +26,9 @@ curl -fsSL https://raw.githubusercontent.com/carlosarraes/ramo/main/install.sh |
 Or install the Rust package directly:
 
 ```bash
-cargo install --git https://github.com/carlosarraes/ramo --locked
+cargo install --git https://github.com/carlosarraes/ramo --package ramo --locked
+# Optional local-AI/mobile companion:
+cargo install --git https://github.com/carlosarraes/ramo --package ramo-server --locked
 ```
 
 On Windows PowerShell:
@@ -36,13 +38,26 @@ Invoke-WebRequest https://raw.githubusercontent.com/carlosarraes/ramo/main/insta
 .\install.ps1
 ```
 
-The release matrix produces one archive containing one executable for Linux, macOS, and Windows on x86-64 and ARM64. `install.sh` selects the Linux/macOS tarball; `install.ps1` selects the Windows zip and installs `ramo.exe` under `%LOCALAPPDATA%\Programs\ramo` by default. Neither installer adds a language runtime.
+The release matrix produces one archive containing `ramo` and the optional `ramo-server` companion for Linux, macOS, and Windows on x86-64 and ARM64. `install.sh` selects the Linux/macOS tarball; `install.ps1` selects the Windows zip and installs both `.exe` files under `%LOCALAPPDATA%\Programs\ramo` by default. Neither installer adds a language runtime or enables the background service automatically.
 
 After a successful Unix install, the script checks for the legacy binary in the same install directory and asks before removing it. It never removes a similarly named program elsewhere on `PATH`. For unattended migration, set `RAMO_REMOVE_LEGACY=yes` or `RAMO_REMOVE_LEGACY=no`.
 
+### Private local-AI Review Maps
+
+Ramo can build a review-first map of a GitHub PR: exact file/addition/deletion facts appear immediately, while a local Ollama model adds bounded summaries, risk cues, logical groups, and recommended review order. Private source stays on your laptop. The companion binds only to loopback; Android reaches it through authenticated Tailscale Serve.
+
+```bash
+ramo server setup --dry-run
+ramo server setup
+ramo server status
+ramo server pair
+```
+
+Setup is explicit and currently automated on Linux. It checks `gh`, a running Ollama service, Tailscale/MagicDNS, and `systemd --user` before writing anything. See [Private local Review Maps](docs/server.md) for the privacy boundary, pairing, cache commands, troubleshooting, and typed failures.
+
 ### Android PR reviews
 
-Ramo also has a standalone, personal Android client for focused GitHub reviews: a two-tab inbox, one-file unified diffs, Tokyo Night syntax colors, encrypted drafts, Viewed synchronization, and Comment/Approve/Request changes publication. It uses a narrow fine-grained GitHub token and ships as an arm64 APK; no desktop Ramo process or `gh` installation is required on the phone.
+Ramo also has a standalone, personal Android client for focused GitHub reviews: a two-tab inbox, one-file unified diffs, Tokyo Night syntax colors, encrypted drafts, Viewed synchronization, and Comment/Approve/Request changes publication. Its existing GitHub review path uses a narrow fine-grained token and does not require the desktop. Local-AI Review Maps are optional and pair to `ramo-server` over your tailnet; raw code is never sent to a cloud model.
 
 See [Ramo for Android](docs/android.md) for token setup, build/install commands, notification behavior, security details, and v1 limitations.
 

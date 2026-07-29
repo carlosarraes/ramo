@@ -297,3 +297,12 @@ fn pr_rejects_zero_and_non_numeric_identifiers() {
         assert!(parse_from(["ramo", "pr", value], true).is_err(), "{value}");
     }
 }
+
+#[test]
+fn server_subcommand_preserves_arguments_for_the_companion() {
+    let invocation = parse_from(["ramo", "server", "setup", "--dry-run"], true).unwrap();
+    assert_eq!(
+        invocation.action,
+        Action::Server(vec!["setup".into(), "--dry-run".into()])
+    );
+}

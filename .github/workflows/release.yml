@@ -50,20 +50,20 @@ jobs:
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --locked --release -p ramo --target ${{ matrix.target }}
+        run: cargo build --locked --release -p ramo -p ramo-server --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../ramo-${{ matrix.target }}.tar.gz ramo
+          tar czf ../../../ramo-${{ matrix.target }}.tar.gz ramo ramo-server
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/ramo.exe" -DestinationPath "ramo-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/ramo.exe","target/${{ matrix.target }}/release/ramo-server.exe" -DestinationPath "ramo-${{ matrix.target }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

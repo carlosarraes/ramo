@@ -28,11 +28,13 @@ $DownloadUrl = if ($Version -eq "latest") {
     "https://github.com/${Repository}/releases/download/${Version}/${Archive}"
 }
 $Destination = Join-Path $InstallDir "ramo.exe"
+$ServerDestination = Join-Path $InstallDir "ramo-server.exe"
 
 Write-Output "Installing ramo for ${Target}..."
 if ($DryRun) {
     Write-Output "Download: ${DownloadUrl}"
     Write-Output "Install: ${Destination}"
+    Write-Output "Install: ${ServerDestination}"
     return
 }
 
@@ -43,14 +45,20 @@ try {
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $Zip
     Expand-Archive -Path $Zip -DestinationPath $Temporary
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+    if (-not (Test-Path -LiteralPath (Join-Path $Temporary "ramo.exe")) -or
+        -not (Test-Path -LiteralPath (Join-Path $Temporary "ramo-server.exe"))) {
+        throw "The Ramo release archive is missing ramo.exe or ramo-server.exe."
+    }
     Move-Item -Force -Path (Join-Path $Temporary "ramo.exe") -Destination $Destination
+    Move-Item -Force -Path (Join-Path $Temporary "ramo-server.exe") -Destination $ServerDestination
 } finally {
     if (Test-Path -LiteralPath $Temporary) {
         Remove-Item -LiteralPath $Temporary -Recurse -Force
     }
 }
 
-Write-Output "Installed ramo to ${Destination}"
+Write-Output "Installed ramo and ramo-server to ${InstallDir}"
+Write-Output "Run 'ramo server setup' to enable private mobile AI analysis."
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (($UserPath -split ";") -notcontains $InstallDir) {
     Write-Output "Add to your user PATH: ${InstallDir}"

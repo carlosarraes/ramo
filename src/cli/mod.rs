@@ -22,6 +22,7 @@ pub enum Action {
     Session(SessionCommand),
     DaemonServe,
     SkillPath,
+    Server(Vec<OsString>),
 }
 
 #[derive(Debug, PartialEq, Eq)]

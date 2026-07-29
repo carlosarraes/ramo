@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
@@ -74,6 +75,11 @@ pub enum Command {
     Skill {
         #[command(subcommand)]
         command: SkillCommand,
+    },
+    /// Configure or control the optional private local Review Map server.
+    Server {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<OsString>,
     },
 }
 
