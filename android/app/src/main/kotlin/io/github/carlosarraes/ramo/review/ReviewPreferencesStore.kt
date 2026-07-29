@@ -7,4 +7,8 @@ class ReviewPreferencesStore(context: Context) {
     var codeSize: Int
         get() = preferences.getInt("code-size", 13).coerceIn(11, 20)
         set(value) { preferences.edit().putInt("code-size", value.coerceIn(11, 20)).apply() }
+
+    var notificationPromptHandled: Boolean
+        get() = preferences.getBoolean("notification-prompt-handled", false)
+        set(value) { preferences.edit().putBoolean("notification-prompt-handled", value).apply() }
 }
