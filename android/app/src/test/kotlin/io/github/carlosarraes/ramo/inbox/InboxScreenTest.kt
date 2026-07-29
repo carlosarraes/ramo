@@ -3,6 +3,9 @@ package io.github.carlosarraes.ramo.inbox
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import io.github.carlosarraes.ramo.ui.theme.RamoAppSurface
@@ -11,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -44,6 +48,37 @@ class InboxScreenTest {
         compose.onNodeWithText("Review requested").assertIsDisplayed()
         compose.onNodeWithText("@carlosarraes · Sign out").assertDoesNotExist()
         compose.onNodeWithTag("inbox-row-reviews").assertHasClickAction()
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w360dp-h800dp")
+    fun narrowQueueKeepsRowsAndStatusInsideTheViewport() {
+        compose.setContent {
+            RamoAppSurface {
+                InboxScreen(
+                    login = "carlosarraes",
+                    state = inboxState(changedFiles = 20),
+                    nowMillis = 2_000_000L,
+                    onSelect = {},
+                    onQuery = {},
+                    onDismissFailure = {},
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpen = {},
+                    onSettings = {},
+                    onSignOut = {},
+                )
+            }
+        }
+
+        val root = compose.onRoot().getUnclippedBoundsInRoot()
+        val row = compose.onNodeWithTag("inbox-row-reviews").getUnclippedBoundsInRoot()
+        assertTrue(root.right - root.left <= 360.dp)
+        assertTrue(row.left >= root.left)
+        assertTrue(row.right <= root.right)
+        assertTrue(row.bottom <= root.bottom)
+        compose.onNodeWithText("Review requested").assertIsDisplayed()
+        compose.onNodeWithText("20 files").assertIsDisplayed()
     }
 }
 
