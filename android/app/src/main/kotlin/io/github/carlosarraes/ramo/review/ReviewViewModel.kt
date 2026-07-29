@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
 class ReviewViewModel(
@@ -20,8 +21,9 @@ class ReviewViewModel(
     val state: StateFlow<ReviewUiState> = mutableState.asStateFlow()
     private var openJob: Job? = null
     private var pageJob: Job? = null
-    private val viewedJobs = mutableMapOf<Int, Job>()
-    private val viewedMutations = mutableMapOf<Int, Long>()
+    private val viewedJobs = mutableMapOf<String, Job>()
+    private val viewedMutations = mutableMapOf<String, Long>()
+    private val viewedConfirmed = mutableMapOf<String, Boolean>()
     private var viewedMutationId = 0L
     private var noticeId = 0L
 
@@ -30,9 +32,6 @@ class ReviewViewModel(
     fun open() {
         openJob?.cancel()
         pageJob?.cancel()
-        viewedJobs.values.forEach(Job::cancel)
-        viewedJobs.clear()
-        viewedMutations.clear()
         mutableState.value = mutableState.value.copy(
             loading = true,
             screen = null,
@@ -42,8 +41,11 @@ class ReviewViewModel(
             editor = null,
         )
         openJob = viewModelScope.launch {
+            awaitViewedWrites()
             runCatching { repository.open(repositoryName, number) }
                 .onSuccess { pull ->
+                    viewedConfirmed.clear()
+                    pull.files.forEach { file -> viewedConfirmed[file.path] = file.viewed }
                     val stored = draftStore.load(repositoryName, number)
                     mutableState.value = mutableState.value.copy(
                         pullRequest = pull,
@@ -310,11 +312,12 @@ class ReviewViewModel(
         val pull = state.pullRequest ?: return
         val file = pull.files.getOrNull(index) ?: return
         if (file.viewed == viewed) return
-        val beforeViewed = file.viewed
+        val path = file.path
+        viewedConfirmed.putIfAbsent(path, file.viewed)
         val pullRequestId = state.screen?.pullRequestId ?: pull.nodeId
-        val predecessor = viewedJobs[index]
+        val predecessor = viewedJobs[path]
         val mutationId = ++viewedMutationId
-        viewedMutations[index] = mutationId
+        viewedMutations[path] = mutationId
         applyViewed(index, viewed)
         if (offerUndo) {
             mutableState.value = mutableState.value.copy(
@@ -324,9 +327,10 @@ class ReviewViewModel(
         val job = viewModelScope.launch {
             predecessor?.join()
             runCatching { repository.setViewed(pullRequestId, file.path, viewed) }
+                .onSuccess { viewedConfirmed[path] = viewed }
                 .onFailure {
-                    if (viewedMutations[index] == mutationId) {
-                        applyViewed(index, beforeViewed)
+                    if (viewedMutations[path] == mutationId) {
+                        applyViewed(index, viewedConfirmed[path] ?: file.viewed)
                         mutableState.value = mutableState.value.copy(
                             notice = null,
                             error = "Could not sync viewed state",
@@ -334,12 +338,20 @@ class ReviewViewModel(
                     }
                 }
         }
-        viewedJobs[index] = job
+        viewedJobs[path] = job
         job.invokeOnCompletion {
-            if (viewedMutations[index] == mutationId) {
-                viewedJobs.remove(index, job)
-                viewedMutations.remove(index)
+            if (viewedMutations[path] == mutationId) {
+                viewedJobs.remove(path, job)
+                viewedMutations.remove(path)
             }
+        }
+    }
+
+    private suspend fun awaitViewedWrites() {
+        while (true) {
+            val active = viewedJobs.values.filter(Job::isActive)
+            if (active.isEmpty()) return
+            active.joinAll()
         }
     }
 

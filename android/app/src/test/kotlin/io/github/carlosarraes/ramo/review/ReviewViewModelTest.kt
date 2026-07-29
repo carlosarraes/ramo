@@ -79,6 +79,41 @@ class ReviewViewModelTest {
         assertFalse(repository.remoteViewed)
     }
 
+    @Test fun twoFailedViewedWritesRestoreTheLastConfirmedRemoteState() = runTest(dispatcher) {
+        val repository = FakeReviewRepository(
+            failViewed = true,
+            firstPageComplete = true,
+            viewedDelays = mapOf(true to 200L, false to 10L),
+        )
+        val model = ReviewViewModel(repository, "ramo/ramo", 7)
+        advanceUntilIdle()
+
+        model.lastRowVisible()
+        model.undoViewed()
+        advanceUntilIdle()
+
+        assertEquals(listOf(true, false), repository.viewedCalls)
+        assertFalse(repository.remoteViewed)
+        assertFalse(model.state.value.pullRequest!!.files[0].viewed)
+    }
+
+    @Test fun retryWaitsForANonCancellableViewedWriteBeforeReloading() = runTest(dispatcher) {
+        val repository = FakeReviewRepository(
+            firstPageComplete = true,
+            viewedDelays = mapOf(true to 200L),
+            openUsesRemoteViewed = true,
+        )
+        val model = ReviewViewModel(repository, "ramo/ramo", 7)
+        advanceUntilIdle()
+
+        model.setViewed(true)
+        model.open()
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), repository.viewedCalls)
+        assertTrue(model.state.value.pullRequest!!.files[0].viewed)
+    }
+
     @Test fun navigatingBeforeTheRealEndNeverOffersUndo() = runTest(dispatcher) {
         val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
         advanceUntilIdle()
@@ -252,13 +287,19 @@ private class FakeReviewRepository(
     private val rows: List<DiffRowUi>? = null,
     private val firstPageComplete: Boolean = false,
     private val viewedDelays: Map<Boolean, Long> = emptyMap(),
+    private val openUsesRemoteViewed: Boolean = false,
 ) : ReviewRepository {
     val viewedCalls = mutableListOf<Boolean>()
     var remoteViewed = false
     var publishCalls = 0
     override suspend fun open(repository: String, number: Long): PullRequestUi {
         openFailure?.let { throw it }
-        return pull()
+        val pull = pull()
+        return if (openUsesRemoteViewed) {
+            pull.copy(files = pull.files.map { it.copy(viewed = remoteViewed) })
+        } else {
+            pull
+        }
     }
     override suspend fun file(repository: String, number: Long, index: Int, startRow: Long, limit: Long): FileScreenUi {
         val pageRows = rows ?: if (startRow == 0L) listOf(row("a")) else listOf(row("a"), row("b"))
