@@ -4,6 +4,7 @@ members = [
     "crates/ramo-core",
     "crates/ramo-github",
     "crates/ramo-mobile",
+    "crates/ramo-server",
     "crates/uniffi-bindgen",
 ]
 resolver = "2"
