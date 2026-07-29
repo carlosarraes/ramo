@@ -92,7 +92,6 @@ pub struct ReviewMapTotals {
 pub struct FileInsight {
     pub summary: String,
     pub risk: Option<String>,
-    pub recommended_order: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -114,6 +113,7 @@ pub struct ReviewMapFile {
     pub owner: Option<String>,
     pub coverage: PatchCoverage,
     pub insight: Option<FileInsight>,
+    pub recommended_order: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

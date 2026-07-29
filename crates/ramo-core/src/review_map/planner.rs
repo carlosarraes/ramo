@@ -71,6 +71,7 @@ pub fn build_review_map(
                 .map(str::to_owned),
             coverage: coverage(source.binary, source.patch.as_deref()),
             insight: None,
+            recommended_order: None,
         });
     }
 
@@ -122,10 +123,20 @@ pub fn validate_exact_map(map: &ReviewMap) -> Result<(), ReviewMapError> {
         .collect::<HashSet<_>>();
     let mut memberships = HashSet::new();
     for group in &map.groups {
+        let mut additions = 0;
+        let mut deletions = 0;
         for id in &group.file_ids {
             if !memberships.insert(id.as_str()) {
                 return Err(ReviewMapError::DuplicateMembership(id.clone()));
             }
+            let Some(file) = map.files.iter().find(|file| file.id == *id) else {
+                return Err(ReviewMapError::TotalsMismatch);
+            };
+            additions += file.additions;
+            deletions += file.deletions;
+        }
+        if additions != group.additions || deletions != group.deletions {
+            return Err(ReviewMapError::TotalsMismatch);
         }
     }
     if let Some(missing) = ids.difference(&memberships).next() {
