@@ -184,6 +184,23 @@ impl SetupEnvironment for SystemEnvironment {
     }
 
     fn run(&self, program: &Path, arguments: &[String]) -> Result<CommandOutput, std::io::Error> {
+        if program.file_name().is_some_and(|name| name == "tailscale")
+            && arguments
+                .first()
+                .is_some_and(|argument| argument == "serve")
+            && arguments.get(1).is_none_or(|argument| argument != "status")
+        {
+            let status = std::process::Command::new(program)
+                .args(arguments)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()?;
+            return Ok(CommandOutput {
+                success: status.success(),
+                stdout: String::new(),
+            });
+        }
         let output = std::process::Command::new(program)
             .args(arguments)
             .output()?;
