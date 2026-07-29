@@ -56,6 +56,7 @@ impl SetupPaths {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupPlan {
+    pub server_executable: PathBuf,
     pub bind_address: String,
     pub systemd_unit: String,
     pub public_endpoint: String,
@@ -69,10 +70,7 @@ impl SetupPlan {
     pub fn render(&self) -> String {
         format!(
             "Ramo server setup plan\nServer: {}\nBind: {}\nUnit: {}\nEndpoint: {}\nTailscale: {} {}\n",
-            self.dependencies
-                .systemctl
-                .parent()
-                .map_or_else(|| "resolved".into(), |path| path.display().to_string()),
+            self.server_executable.display(),
             self.bind_address,
             self.unit_path.display(),
             self.public_endpoint,
@@ -122,6 +120,7 @@ pub fn build_setup_plan(
     .collect();
     let systemd_unit = systemd::unit_contents(&paths.server_executable, &bind_address)?;
     Ok(SetupPlan {
+        server_executable: paths.server_executable,
         bind_address,
         systemd_unit,
         public_endpoint,

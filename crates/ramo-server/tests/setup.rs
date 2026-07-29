@@ -12,6 +12,7 @@ fn setup_binds_loopback_and_publishes_only_through_tailscale() {
     let plan = build_setup_plan(&harness, paths()).unwrap();
 
     assert_eq!(plan.bind_address, "127.0.0.1:47831");
+    assert!(plan.render().contains("Server: /opt/ramo/ramo-server"));
     assert!(
         plan.systemd_unit
             .contains("ExecStart=/opt/ramo/ramo-server serve")
