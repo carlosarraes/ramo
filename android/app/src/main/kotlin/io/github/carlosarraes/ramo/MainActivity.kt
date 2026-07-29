@@ -1,15 +1,19 @@
 package io.github.carlosarraes.ramo
 
 import android.content.Intent
-import android.Manifest
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,6 +33,7 @@ import io.github.carlosarraes.ramo.inbox.SecureInboxCache
 import io.github.carlosarraes.ramo.notifications.NotificationScheduler
 import io.github.carlosarraes.ramo.network.BootstrapStatus
 import io.github.carlosarraes.ramo.network.NativeNetworkBootstrap
+import io.github.carlosarraes.ramo.navigation.AppDestination
 import io.github.carlosarraes.ramo.review.NativeReviewRepository
 import io.github.carlosarraes.ramo.review.ReviewPreferencesStore
 import io.github.carlosarraes.ramo.review.ReviewScreen
@@ -39,13 +44,12 @@ import io.github.carlosarraes.ramo.ui.theme.RamoAppSurface
 
 class MainActivity : ComponentActivity() {
     private val authenticator = NativeAuthenticator()
-    private var requestedPull by mutableStateOf<Pair<String, Long>?>(null)
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private var destination by mutableStateOf<AppDestination>(AppDestination.Inbox)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        requestedPull = intent.pullRequest()
+        destination = intent.pullRequest() ?: AppDestination.Inbox
         setContent {
             RamoAppSurface {
                 if (NativeNetworkBootstrap.status != BootstrapStatus.Ready) {
@@ -73,13 +77,15 @@ class MainActivity : ComponentActivity() {
                             inbox.refresh()
                             NotificationScheduler.schedule(applicationContext)
                         }
-                        val requested = requestedPull
-                        if (requested != null) {
-                            val review: ReviewViewModel = viewModel(key = "${requested.first}#${requested.second}") {
+                        when (val currentDestination = destination) {
+                            is AppDestination.Review -> {
+                            val review: ReviewViewModel = viewModel(
+                                key = "${currentDestination.repository}#${currentDestination.number}",
+                            ) {
                                 ReviewViewModel(
                                     NativeReviewRepository(authenticator),
-                                    requested.first,
-                                    requested.second,
+                                    currentDestination.repository,
+                                    currentDestination.number,
                                     SecureDraftStore(applicationContext),
                                 )
                             }
@@ -87,7 +93,7 @@ class MainActivity : ComponentActivity() {
                             ReviewScreen(
                                 state = reviewState,
                                 codeSize = ReviewPreferencesStore(applicationContext).codeSize,
-                                onBack = { requestedPull = null },
+                                onBack = { destination = AppDestination.Inbox },
                                 onDrawer = review::setDrawer,
                                 onSelectFile = review::selectFile,
                                 onPrevious = review::previousFile,
@@ -110,22 +116,34 @@ class MainActivity : ComponentActivity() {
                                 onDismissSuccess = review::dismissSuccess,
                                 onRefreshAfterAttention = review::refreshAfterAttention,
                             )
-                        } else InboxScreen(
-                            login = current.login,
-                            state = inboxState,
-                            onSelect = inbox::select,
-                            onRefresh = inbox::refresh,
-                            onLoadMore = inbox::loadMore,
-                            onOpen = { requestedPull = it.repository to it.number },
-                            onSignOut = {
-                                inbox.clear()
-                                SecureDraftStore(applicationContext).clearAll()
-                                auth.signOut()
-                            },
-                            onEnableNotifications = {
-                                if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            },
-                        )
+                            }
+                            AppDestination.Inbox -> InboxScreen(
+                                login = current.login,
+                                state = inboxState,
+                                onSelect = inbox::select,
+                                onQuery = inbox::setQuery,
+                                onDismissFailure = inbox::dismissFailure,
+                                onRefresh = inbox::refresh,
+                                onLoadMore = inbox::loadMore,
+                                onOpen = { destination = AppDestination.Review(it.repository, it.number) },
+                                onSettings = { destination = AppDestination.Settings },
+                                onSignOut = {
+                                    inbox.clear()
+                                    SecureDraftStore(applicationContext).clearAll()
+                                    auth.signOut()
+                                },
+                            )
+                            AppDestination.Settings -> Column(
+                                Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                                    .padding(20.dp),
+                            ) {
+                                TextButton(onClick = { destination = AppDestination.Inbox }) { Text("Back") }
+                                Text("Settings", style = MaterialTheme.typography.headlineSmall)
+                                Text("@${current.login}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                     else -> TokenScreen(current, auth::validate, auth::retry, auth::signOut)
                 }
@@ -135,13 +153,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        requestedPull = intent.pullRequest()
+        intent.pullRequest()?.let { destination = it }
     }
 
-    private fun Intent.pullRequest(): Pair<String, Long>? {
+    private fun Intent.pullRequest(): AppDestination.Review? {
         val repository = getStringExtra(EXTRA_REPOSITORY) ?: return null
         val number = getLongExtra(EXTRA_NUMBER, -1).takeIf { it > 0 } ?: return null
-        return repository to number
+        return AppDestination.Review(repository, number)
     }
 
     companion object {

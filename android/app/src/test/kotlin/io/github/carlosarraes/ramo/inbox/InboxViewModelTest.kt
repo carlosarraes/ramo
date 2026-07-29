@@ -14,6 +14,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class InboxViewModelTest {
@@ -46,7 +47,10 @@ class InboxViewModelTest {
 
     @Test fun cachedRowsRemainVisibleWhenOffline() = runTest(dispatcher) {
         val page = InboxPage(listOf(item("cached")))
-        val model = InboxViewModel(FailingInboxRepository(), MemoryInboxCache(page to InboxPage()))
+        val model = InboxViewModel(
+            FailingInboxRepository(),
+            MemoryInboxCache(InboxCacheValue(page, InboxPage(), 99L)),
+        )
         model.refresh()
         advanceUntilIdle()
         assertEquals("cached", model.state.value.reviewRequests.items.single().nodeId)
@@ -66,6 +70,37 @@ class InboxViewModelTest {
         assertEquals(FailureKind.AccessUnavailable, failure.kind)
         assertFalse(failure.message.contains("Forbidden"))
     }
+
+    @Test fun queryFiltersRepositoryTitleAndAuthorCaseInsensitively() = runTest(dispatcher) {
+        val model = InboxViewModel(FakeInboxRepository(), MemoryInboxCache(), nowMillis = { 42L })
+        model.refresh()
+        advanceUntilIdle()
+        model.setQuery("OWNER")
+        assertEquals(listOf("reviews"), model.visibleItems().map(InboxItem::nodeId))
+        model.setQuery("missing")
+        assertTrue(model.visibleItems().isEmpty())
+    }
+
+    @Test fun successfulRefreshRecordsAndCachesItsTimestamp() = runTest(dispatcher) {
+        val cache = MemoryInboxCache()
+        val model = InboxViewModel(FakeInboxRepository(), cache, nowMillis = { 1234L })
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(1234L, model.state.value.reviewRequests.refreshedAtEpochMillis)
+        assertEquals(1234L, cache.value?.refreshedAtEpochMillis)
+    }
+
+    @Test fun cachedFailureCanBeDismissedWithoutRemovingRows() = runTest(dispatcher) {
+        val cached = InboxCacheValue(InboxPage(listOf(item("cached"))), InboxPage(), 99L)
+        val model = InboxViewModel(FailingInboxRepository(), MemoryInboxCache(cached))
+        model.refresh()
+        advanceUntilIdle()
+        model.dismissFailure(InboxTab.ReviewRequests)
+        assertEquals(null, model.state.value.reviewRequests.failure)
+        assertEquals("cached", model.state.value.reviewRequests.items.single().nodeId)
+        assertTrue(model.state.value.reviewRequests.fromCache)
+        assertEquals(99L, model.state.value.reviewRequests.refreshedAtEpochMillis)
+    }
 }
 
 private class FakeInboxRepository : InboxRepository {
@@ -83,9 +118,9 @@ private class AccessUnavailableInboxRepository : InboxRepository {
         throw MobileException.AccessUnavailable()
     }
 }
-private class MemoryInboxCache(var value: Pair<InboxPage, InboxPage>? = null) : InboxCache {
+private class MemoryInboxCache(var value: InboxCacheValue? = null) : InboxCache {
     override fun load() = value
-    override fun save(reviewRequests: InboxPage, authored: InboxPage) { value = reviewRequests to authored }
+    override fun save(value: InboxCacheValue) { this.value = value }
     override fun clear() { value = null }
 }
 private fun item(id: String) = InboxItem(id, "owner/repo", 12, "Title", "url", "author", "2026-07-27", false, 4, 2, 1)

@@ -9,25 +9,38 @@ import io.github.carlosarraes.ramo.uniffi.decodeInboxCache
 import io.github.carlosarraes.ramo.uniffi.encodeInboxCache
 
 interface InboxCache {
-    fun load(): Pair<InboxPage, InboxPage>?
-    fun save(reviewRequests: InboxPage, authored: InboxPage)
+    fun load(): InboxCacheValue?
+    fun save(value: InboxCacheValue)
     fun clear()
 }
 
 class SecureInboxCache(context: Context) : InboxCache {
     private val blobs = EncryptedBlobStore(context, "ramo.mobile.inbox.v1", "inbox.enc")
+    private val metadata = context.getSharedPreferences("ramo.mobile.inbox.metadata.v1", Context.MODE_PRIVATE)
 
-    override fun load(): Pair<InboxPage, InboxPage>? = runCatching {
+    override fun load(): InboxCacheValue? = runCatching {
         val value = blobs.read()?.toString(Charsets.UTF_8) ?: return null
-        decodeInboxCache(value).let { it.reviewRequests.toLocal() to it.authored.toLocal() }
+        decodeInboxCache(value).let {
+            InboxCacheValue(
+                reviewRequests = it.reviewRequests.toLocal(),
+                authored = it.authored.toLocal(),
+                refreshedAtEpochMillis = metadata.getLong("refreshed-at", 0L),
+            )
+        }
     }.getOrNull()
 
-    override fun save(reviewRequests: InboxPage, authored: InboxPage) {
-        val encoded = encodeInboxCache(MobileInboxCache(reviewRequests.toMobile(), authored.toMobile()))
+    override fun save(value: InboxCacheValue) {
+        val encoded = encodeInboxCache(
+            MobileInboxCache(value.reviewRequests.toMobile(), value.authored.toMobile()),
+        )
         blobs.write(encoded.toByteArray(Charsets.UTF_8))
+        metadata.edit().putLong("refreshed-at", value.refreshedAtEpochMillis).apply()
     }
 
-    override fun clear() = blobs.clear()
+    override fun clear() {
+        blobs.clear()
+        metadata.edit().clear().apply()
+    }
 }
 
 private fun InboxPage.toMobile() = MobileInboxPage(

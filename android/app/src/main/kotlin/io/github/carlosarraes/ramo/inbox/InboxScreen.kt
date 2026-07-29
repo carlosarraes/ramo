@@ -1,109 +1,186 @@
 package io.github.carlosarraes.ramo.inbox
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.github.carlosarraes.ramo.ui.theme.Green
-import io.github.carlosarraes.ramo.ui.theme.Red
+
+internal fun TabState.visibleItems(query: String): List<InboxItem> {
+    val normalized = query.trim()
+    if (normalized.isEmpty()) return items
+    return items.filter { item ->
+        listOf(item.repository, item.title, item.author, "#${item.number}")
+            .any { field -> field.contains(normalized, ignoreCase = true) }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InboxScreen(
     login: String,
     state: InboxUiState,
+    nowMillis: Long = System.currentTimeMillis(),
     onSelect: (InboxTab) -> Unit,
+    onQuery: (String) -> Unit,
+    onDismissFailure: (InboxTab) -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onOpen: (InboxItem) -> Unit,
+    onSettings: () -> Unit,
     onSignOut: () -> Unit,
-    onEnableNotifications: () -> Unit = {},
 ) {
     val tab = state.tab(state.selected)
-    var showNotificationPrompt by rememberSaveable { mutableStateOf(true) }
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("ramo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            TextButton(onClick = onSignOut) { Text("@$login · Sign out") }
-        }
-        PrimaryTabRow(selectedTabIndex = state.selected.ordinal) {
-            Tab(
-                selected = state.selected == InboxTab.ReviewRequests,
-                onClick = { onSelect(InboxTab.ReviewRequests) },
-                text = { Text("Review requests") },
-            )
-            Tab(
-                selected = state.selected == InboxTab.Authored,
-                onClick = { onSelect(InboxTab.Authored) },
-                text = { Text("Your PRs") },
-            )
-        }
-        if (showNotificationPrompt) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Get a quiet alert when a review is requested.", Modifier.weight(1f).padding(vertical = 12.dp))
-                TextButton(onClick = {
-                    showNotificationPrompt = false
-                    onEnableNotifications()
-                }) { Text("Enable") }
-                TextButton(onClick = { showNotificationPrompt = false }) { Text("Dismiss") }
-            }
-        }
-        PullToRefreshBox(isRefreshing = tab.loading && tab.items.isNotEmpty(), onRefresh = onRefresh) {
-            when {
-                tab.loading && tab.items.isEmpty() -> Text("Loading…", Modifier.padding(20.dp))
-                tab.failure != null && tab.items.isEmpty() -> Column(Modifier.padding(20.dp)) {
-                    Text(tab.failure.message, color = MaterialTheme.colorScheme.error)
-                    if (tab.failure.retryable) {
-                        Button(onClick = onRefresh) { Text("Retry") }
-                    }
-                }
-                tab.items.isEmpty() -> Text(
-                    if (state.selected == InboxTab.ReviewRequests) {
-                        "No reviews waiting. If you expected private pull requests, check whether organization access is still awaiting approval."
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
+    val visibleItems = tab.visibleItems(state.query)
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                title = {
+                    if (searching) {
+                        TextField(
+                            value = state.query,
+                            onValueChange = onQuery,
+                            placeholder = { Text("Search reviews") },
+                            singleLine = true,
+                        )
                     } else {
-                        "No open pull requests"
-                    },
-                    Modifier.padding(20.dp),
-                )
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    tab.failure?.let { failure -> item { Text(failure.message, Modifier.padding(12.dp)) } }
-                    tab.warnings.forEach { warning -> item { Text(warning, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.tertiary) } }
-                    items(tab.items, key = InboxItem::nodeId) { item ->
-                        PullRequestRow(item, onOpen)
-                        HorizontalDivider()
+                        Text("Review queue", fontWeight = FontWeight.SemiBold)
                     }
-                    if (tab.hasNextPage) {
-                        item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("Load more") } }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            searching = !searching
+                            if (!searching) onQuery("")
+                        },
+                        modifier = Modifier.semantics { contentDescription = "Search" },
+                    ) { Text(if (searching) "×" else "⌕") }
+                    Box {
+                        IconButton(
+                            onClick = { menuOpen = true },
+                            modifier = Modifier.semantics { contentDescription = "More options" },
+                        ) { Text("⋮") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Refresh") },
+                                onClick = { menuOpen = false; onRefresh() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                onClick = { menuOpen = false; onSettings() },
+                            )
+                            DropdownMenuItem(text = { Text("@$login") }, onClick = {}, enabled = false)
+                            DropdownMenuItem(
+                                text = { Text("Sign out") },
+                                onClick = { menuOpen = false; onSignOut() },
+                            )
+                        }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = state.selected == InboxTab.ReviewRequests,
+                    onClick = { onSelect(InboxTab.ReviewRequests) },
+                    label = { Text("Review requests") },
+                )
+                FilterChip(
+                    selected = state.selected == InboxTab.Authored,
+                    onClick = { onSelect(InboxTab.Authored) },
+                    label = { Text("Your PRs") },
+                )
+            }
+            tab.failure?.takeIf { tab.items.isNotEmpty() }?.let { failure ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(failure.message, Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                    if (failure.retryable) TextButton(onClick = onRefresh) { Text("Retry") }
+                    TextButton(onClick = { onDismissFailure(state.selected) }) { Text("Dismiss") }
+                }
+            }
+            PullToRefreshBox(
+                isRefreshing = tab.loading && tab.items.isNotEmpty(),
+                onRefresh = onRefresh,
+                modifier = Modifier.weight(1f),
+            ) {
+                when {
+                    tab.loading && tab.items.isEmpty() -> CenteredMessage("Loading…")
+                    tab.failure != null && tab.items.isEmpty() -> Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(tab.failure.message, color = MaterialTheme.colorScheme.error)
+                        if (tab.failure.retryable) Button(onClick = onRefresh) { Text("Retry") }
+                    }
+                    visibleItems.isEmpty() -> CenteredMessage(
+                        if (state.query.isNotBlank()) {
+                            "No matching pull requests"
+                        } else if (state.selected == InboxTab.ReviewRequests) {
+                            "No reviews waiting"
+                        } else {
+                            "No open pull requests"
+                        },
+                    )
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        tab.warnings.forEach { warning ->
+                            item { Text(warning, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.tertiary) }
+                        }
+                        items(visibleItems, key = InboxItem::nodeId) { item ->
+                            InboxRow(item, nowMillis, onOpen)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        if (tab.hasNextPage && state.query.isBlank()) {
+                            item {
+                                TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Load more")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -112,24 +189,8 @@ fun InboxScreen(
 }
 
 @Composable
-private fun PullRequestRow(item: InboxItem, onOpen: (InboxItem) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickable { onOpen(item) }
-            .semantics { contentDescription = "${item.repository} #${item.number}, ${item.title}" }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text("${item.repository}  #${item.number}", style = MaterialTheme.typography.labelMedium)
-        Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-        Row {
-            Text("+${item.additions}", color = Green)
-            Spacer(Modifier.width(10.dp))
-            Text("−${item.deletions}", color = Red)
-            Spacer(Modifier.width(10.dp))
-            Text("${item.changedFiles} files")
-            Spacer(Modifier.width(10.dp))
-            Text(item.updatedAt.take(10), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+private fun CenteredMessage(message: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

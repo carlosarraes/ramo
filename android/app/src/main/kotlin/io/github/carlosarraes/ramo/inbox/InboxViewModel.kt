@@ -12,16 +12,18 @@ import kotlinx.coroutines.launch
 class InboxViewModel(
     private val repository: InboxRepository,
     private val cache: InboxCache,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(InboxUiState())
     val state: StateFlow<InboxUiState> = mutableState.asStateFlow()
     private val jobs = mutableMapOf<InboxTab, Job>()
 
     init {
-        cache.load()?.let { (reviews, authored) ->
+        cache.load()?.let { cached ->
+            val refreshedAt = cached.refreshedAtEpochMillis.takeIf { it > 0 }
             mutableState.value = InboxUiState(
-                reviewRequests = reviews.toTabState(fromCache = true),
-                authored = authored.toTabState(fromCache = true),
+                reviewRequests = cached.reviewRequests.toTabState(true, refreshedAt),
+                authored = cached.authored.toTabState(true, refreshedAt),
             )
         }
     }
@@ -37,7 +39,8 @@ class InboxViewModel(
         jobs[tab] = viewModelScope.launch {
             runCatching { repository.load(tab, null) }
                 .onSuccess { page ->
-                    update(tab) { page.toTabState() }
+                    val refreshedAt = nowMillis()
+                    update(tab) { page.toTabState(refreshedAtEpochMillis = refreshedAt) }
                     saveCache()
                 }
                 .onFailure { error ->
@@ -63,7 +66,10 @@ class InboxViewModel(
                 .onSuccess { page ->
                     update(tab) {
                         val merged = (it.items + page.items).distinctBy(InboxItem::nodeId)
-                        page.toTabState().copy(items = merged)
+                        page.toTabState().copy(
+                            items = merged,
+                            refreshedAtEpochMillis = it.refreshedAtEpochMillis,
+                        )
                     }
                 }
                 .onFailure { error ->
@@ -79,9 +85,31 @@ class InboxViewModel(
 
     fun clear() = cache.clear()
 
+    fun setQuery(query: String) {
+        mutableState.value = mutableState.value.copy(query = query)
+    }
+
+    fun visibleItems(): List<InboxItem> {
+        val value = mutableState.value
+        return value.tab(value.selected).visibleItems(value.query)
+    }
+
+    fun dismissFailure(tab: InboxTab) {
+        update(tab) { it.copy(failure = null) }
+    }
+
     private fun saveCache() {
         val value = mutableState.value
-        cache.save(value.reviewRequests.toPage(), value.authored.toPage())
+        cache.save(
+            InboxCacheValue(
+                reviewRequests = value.reviewRequests.toPage(),
+                authored = value.authored.toPage(),
+                refreshedAtEpochMillis = listOfNotNull(
+                    value.reviewRequests.refreshedAtEpochMillis,
+                    value.authored.refreshedAtEpochMillis,
+                ).maxOrNull() ?: 0L,
+            ),
+        )
     }
 
     private fun update(tab: InboxTab, transform: (TabState) -> TabState) {
@@ -94,7 +122,15 @@ class InboxViewModel(
     }
 }
 
-private fun InboxPage.toTabState(fromCache: Boolean = false) = TabState(
-    items, cursor, hasNextPage, fromCache = fromCache, warnings = warnings,
+private fun InboxPage.toTabState(
+    fromCache: Boolean = false,
+    refreshedAtEpochMillis: Long? = null,
+) = TabState(
+    items,
+    cursor,
+    hasNextPage,
+    fromCache = fromCache,
+    warnings = warnings,
+    refreshedAtEpochMillis = refreshedAtEpochMillis,
 )
 private fun TabState.toPage() = InboxPage(items, cursor, hasNextPage, warnings)

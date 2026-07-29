@@ -25,6 +25,12 @@ data class InboxPage(
     val warnings: List<String> = emptyList(),
 )
 
+data class InboxCacheValue(
+    val reviewRequests: InboxPage,
+    val authored: InboxPage,
+    val refreshedAtEpochMillis: Long,
+)
+
 data class TabState(
     val items: List<InboxItem> = emptyList(),
     val cursor: String? = null,
@@ -33,12 +39,14 @@ data class TabState(
     val failure: UserFacingFailure? = null,
     val fromCache: Boolean = false,
     val warnings: List<String> = emptyList(),
+    val refreshedAtEpochMillis: Long? = null,
 )
 
 data class InboxUiState(
     val selected: InboxTab = InboxTab.ReviewRequests,
     val reviewRequests: TabState = TabState(),
     val authored: TabState = TabState(),
+    val query: String = "",
 ) {
     fun tab(tab: InboxTab) = if (tab == InboxTab.ReviewRequests) reviewRequests else authored
 }
