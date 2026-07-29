@@ -124,9 +124,16 @@ jobs:
         run: cargo test --locked --workspace
       - name: Test, lint, and assemble Android
         working-directory: android
-        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        run: >-
+          ./gradlew
+          :app:testDebugUnitTest
+          :app:lintDebug
+          :app:assembleDebug
+          :app:assembleDebugAndroidTest
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ramo-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error

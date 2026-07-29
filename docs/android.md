@@ -13,14 +13,15 @@ The token is AES-256-GCM encrypted with a non-exportable Android Keystore key. S
 ## Review flow
 
 - `Review requests` is the default inbox; `Your PRs` is separate.
-- Pull to refresh or use `Load more` for another page.
-- A PR opens as a unified diff, one file at a time. Code scrolls horizontally and file navigation is explicit.
-- Tap a commentable line-number gutter to draft a comment. `Include previous` and `Include next` extend a range within the same side and hunk. Enter inserts a newline; only `Save draft` finishes editing.
+- Pull to refresh or use `Load more` for another page. Search matches repository, title, author, or PR number.
+- A PR opens as a unified diff, one file at a time. Code scrolls horizontally; `current / total` opens the changed-file sheet; Previous and Next remain at the bottom.
+- Tap a commentable code line to select it. Tap another compatible line to extend a contiguous range, then use `Comment` to open the composer. Enter inserts a newline; only `Save draft` finishes editing.
 - Tap a collapsed unchanged-lines row to fetch and expand that source context. Expanded-only lines cannot receive GitHub comments.
 - Existing GitHub conversations are read-only.
-- Reaching the real end of a file marks it Viewed; the checkbox can undo that state.
-- `Finish review` offers Comment, Approve, and Request changes, an optional overall comment, and a final confirmation. Self-authored PRs offer Comment only.
+- Reaching the real end of a file marks it Viewed and offers an immediate Undo. The checkbox can also change Viewed state explicitly.
+- `Finish` offers Comment, Approve, and Request changes, an optional overall comment, and a final confirmation. Self-authored PRs offer Comment only.
 - If the PR head changes, publication is blocked and drafts remain encrypted until you explicitly repair or delete them.
+- Account identity, code size, notification permission, and sign-out live under Settings rather than competing with the review queue.
 
 ## Notifications
 
@@ -35,7 +36,7 @@ Requirements are JDK 17, Rust 1.97, Android SDK 36, build-tools 36.0.0, NDK 28.2
 ```bash
 scripts/bootstrap-android.sh
 cd android
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -51,3 +52,14 @@ cd android
 apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+## Mobile redesign acceptance
+
+1. Run `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest` from `android/`.
+2. Run `./gradlew :app:connectedDebugAndroidTest` with the unlocked ARM64 phone connected.
+3. Install with `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
+4. Open Ramo and confirm the queue starts below the status bar, uses seamless rows, and shows changed-file counts.
+5. Open an actual Mondrio PR and confirm the process remains alive, syntax text is readable, and the first file fills the review viewport.
+6. Open the file sheet from `current / total`, select another file, and use Previous/Next.
+7. Select a line range, save a multiline draft, reach the file end, undo Viewed, and reopen the draft.
+8. Open Finish, verify the exact draft count and verdict, cancel without publishing, and return to the cached queue.
