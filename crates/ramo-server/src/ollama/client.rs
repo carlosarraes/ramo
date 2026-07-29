@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use ramo_core::review_map::{
-    EnrichmentProposal, EnrichmentRequest, ReviewMap, ReviewMapFailureCode, ReviewMapFile,
-    ReviewMapStatus, ReviewMapTotals, validate_enrichment,
+    EnrichmentProposal, EnrichmentRequest, ReviewFileKind, ReviewMap, ReviewMapFailureCode,
+    ReviewMapFile, ReviewMapStatus, ReviewMapTotals, validate_enrichment,
 };
 use reqwest::{StatusCode, Url};
 
@@ -120,7 +120,7 @@ impl OllamaAnalyzer {
             "model": self.model,
             "messages": messages,
             "stream": false,
-            "format": enrichment_schema(),
+            "format": enrichment_schema(request),
             "options": {
                 "temperature": 0,
                 "seed": 42,
@@ -316,6 +316,7 @@ fn parse_and_validate(
         Ok(proposal) => proposal,
         Err(_) => return Err(("invalid JSON or schema".into(), metrics)),
     };
+    normalize_exact_assignments(request, &mut proposal);
     proposal.coverage = request.coverage.clone();
     if let Err(error) = validate_enrichment(&validation_map(request), &proposal) {
         return Err((validation_category(&error), metrics));
@@ -329,6 +330,91 @@ fn parse_and_validate(
         total_duration_ns: raw.total_duration_ns,
         repair_count: 0,
     })
+}
+
+fn normalize_exact_assignments(request: &EnrichmentRequest, proposal: &mut EnrichmentProposal) {
+    use std::collections::HashSet;
+
+    let flexible = request
+        .files
+        .iter()
+        .filter(|file| !matches!(file.kind, ReviewFileKind::Test | ReviewFileKind::Generated))
+        .map(|file| file.path.as_str())
+        .collect::<HashSet<_>>();
+    let mut grouped = HashSet::new();
+    for group in &mut proposal.groups {
+        group
+            .paths
+            .retain(|path| !flexible.contains(path.as_str()) || grouped.insert(path.clone()));
+    }
+    proposal.groups.retain(|group| !group.paths.is_empty());
+
+    let mut remaining = request
+        .files
+        .iter()
+        .filter(|file| flexible.contains(file.path.as_str()) && !grouped.contains(&file.path))
+        .map(|file| file.path.clone())
+        .collect::<HashSet<_>>();
+    let mut next_priority = proposal
+        .groups
+        .iter()
+        .map(|group| group.review_priority)
+        .max()
+        .unwrap_or_default()
+        .saturating_add(1);
+    for exact_group in &request.groups {
+        let paths = exact_group
+            .paths
+            .iter()
+            .filter(|path| remaining.remove(path.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        if paths.is_empty() {
+            continue;
+        }
+        proposal.groups.push(ramo_core::review_map::ProposedGroup {
+            label: exact_group.label.clone(),
+            summary: "Additional files from the deterministic diff structure.".into(),
+            risk: None,
+            review_priority: next_priority,
+            paths,
+        });
+        next_priority = next_priority.saturating_add(1);
+    }
+    if !remaining.is_empty() {
+        let paths = request
+            .files
+            .iter()
+            .filter(|file| remaining.contains(&file.path))
+            .map(|file| file.path.clone())
+            .collect();
+        proposal.groups.push(ramo_core::review_map::ProposedGroup {
+            label: "Other changes".into(),
+            summary: "Additional files from the deterministic diff structure.".into(),
+            risk: None,
+            review_priority: next_priority,
+            paths,
+        });
+    }
+
+    let mut ordered = HashSet::new();
+    proposal
+        .review_order
+        .retain(|path| !flexible.contains(path.as_str()) || ordered.insert(path.clone()));
+    proposal.review_order.extend(
+        request
+            .files
+            .iter()
+            .filter(|file| {
+                flexible.contains(file.path.as_str()) && ordered.insert(file.path.clone())
+            })
+            .map(|file| file.path.clone()),
+    );
+
+    let mut insights = HashSet::new();
+    proposal
+        .files
+        .retain(|insight| insights.insert(insight.path.clone()));
 }
 
 fn validation_map(request: &EnrichmentRequest) -> ReviewMap {
@@ -370,7 +456,8 @@ fn validation_category(error: &ramo_core::review_map::EnrichmentError) -> String
     use ramo_core::review_map::EnrichmentError;
     match error {
         EnrichmentError::UnknownFile(_) => "unknown path",
-        EnrichmentError::DuplicateFile(_) | EnrichmentError::DuplicateOrder(_) => "duplicate path",
+        EnrichmentError::DuplicateFile(_) => "duplicate group or file assignment",
+        EnrichmentError::DuplicateOrder(_) => "duplicate review order",
         EnrichmentError::FixedClassification(_) => "fixed classification changed",
         EnrichmentError::MissingFile(_) | EnrichmentError::MissingOrder(_) => "missing path",
         EnrichmentError::InvalidText { .. } => "invalid text bounds",

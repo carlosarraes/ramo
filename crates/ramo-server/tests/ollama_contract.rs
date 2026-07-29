@@ -84,14 +84,45 @@ async fn fake_tags() -> Json<Value> {
 async fn ollama_request_uses_local_structured_schema_and_no_streaming() {
     let fake = FakeOllama::responses(vec![(StatusCode::OK, response(valid_proposal()))]).await;
     let analyzer = OllamaAnalyzer::new(&fake.url, "qwen3:8b", Duration::from_secs(30));
+    let mut request = request_fixture();
+    request.files.push(input_file(
+        "tests/lib_test.rs",
+        ReviewFileKind::Test,
+        Some("+test"),
+        PatchCoverage::Full,
+    ));
+    request
+        .coverage
+        .analyzed_paths
+        .push("tests/lib_test.rs".into());
 
-    let result = analyzer.analyze(request_fixture()).await.unwrap();
+    let result = analyzer.analyze(request).await.unwrap();
 
     let requests = fake.requests.lock().unwrap();
     let sent = &requests[0];
     assert_eq!(sent["model"], "qwen3:8b");
     assert_eq!(sent["stream"], false);
     assert_eq!(sent["format"]["type"], "object");
+    assert_eq!(
+        sent["format"]["properties"]["groups"]["items"]["properties"]["paths"]["items"]["enum"],
+        json!(["src/lib.rs"])
+    );
+    assert_eq!(
+        sent["format"]["properties"]["files"]["items"]["properties"]["path"]["enum"],
+        json!(["src/lib.rs", "tests/lib_test.rs"])
+    );
+    assert_eq!(
+        sent["format"]["properties"]["review_order"]["items"]["enum"],
+        json!(["src/lib.rs"])
+    );
+    assert_eq!(
+        sent["format"]["properties"]["groups"]["items"]["properties"]["paths"]["uniqueItems"],
+        true
+    );
+    assert_eq!(
+        sent["format"]["properties"]["review_order"]["uniqueItems"],
+        true
+    );
     assert_eq!(sent["options"]["temperature"], 0);
     assert_eq!(result.model_digest, "sha256:fixture");
     assert_eq!(result.proposal.groups[0].label, "Core billing path");
@@ -128,6 +159,47 @@ async fn semantic_validation_rejects_invented_paths_and_repairs_once() {
 
     assert_eq!(fake.request_count(), 2);
     assert_eq!(result.proposal.review_order, ["src/lib.rs"]);
+}
+
+#[tokio::test]
+async fn omitted_and_duplicate_assignments_are_completed_from_exact_groups() {
+    let mut request = request_fixture();
+    request.files.push(input_file(
+        "src/billing.rs",
+        ReviewFileKind::Authored,
+        Some("+billing"),
+        PatchCoverage::Full,
+    ));
+    request.groups[0].paths.push("src/billing.rs".into());
+    request
+        .coverage
+        .analyzed_paths
+        .push("src/billing.rs".into());
+    let mut incomplete = proposal_for(&["src/lib.rs"]);
+    incomplete["groups"][0]["paths"] = json!(["src/lib.rs", "src/lib.rs"]);
+    incomplete["review_order"] = json!(["src/lib.rs", "src/lib.rs"]);
+    let fake = FakeOllama::responses(vec![(StatusCode::OK, response(incomplete))]).await;
+
+    let result = OllamaAnalyzer::new(&fake.url, "qwen3:8b", Duration::from_secs(30))
+        .analyze(request)
+        .await
+        .unwrap();
+
+    assert_eq!(fake.request_count(), 1);
+    assert_eq!(
+        result.proposal.review_order,
+        ["src/lib.rs", "src/billing.rs"]
+    );
+    let grouped = result
+        .proposal
+        .groups
+        .iter()
+        .flat_map(|group| group.paths.iter().map(String::as_str))
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        grouped,
+        ["src/lib.rs", "src/billing.rs"].into_iter().collect()
+    );
 }
 
 #[tokio::test]

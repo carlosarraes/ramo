@@ -1,6 +1,18 @@
+use ramo_core::review_map::{EnrichmentRequest, ReviewFileKind};
 use serde_json::{Value, json};
 
-pub fn enrichment_schema() -> Value {
+pub fn enrichment_schema(request: &EnrichmentRequest) -> Value {
+    let all_paths = request
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    let flexible_paths = request
+        .files
+        .iter()
+        .filter(|file| !matches!(file.kind, ReviewFileKind::Test | ReviewFileKind::Generated))
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
     json!({
         "type": "object",
         "additionalProperties": false,
@@ -17,7 +29,11 @@ pub fn enrichment_schema() -> Value {
                         "summary": { "type": "string", "maxLength": 400 },
                         "risk": { "type": ["string", "null"], "maxLength": 240 },
                         "review_priority": { "type": "integer", "minimum": 0 },
-                        "paths": { "type": "array", "items": { "type": "string" } }
+                        "paths": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": { "type": "string", "enum": flexible_paths }
+                        }
                     }
                 }
             },
@@ -28,22 +44,42 @@ pub fn enrichment_schema() -> Value {
                     "additionalProperties": false,
                     "required": ["path", "summary", "risk"],
                     "properties": {
-                        "path": { "type": "string" },
+                        "path": { "type": "string", "enum": all_paths },
                         "summary": { "type": "string", "maxLength": 400 },
                         "risk": { "type": ["string", "null"], "maxLength": 240 }
                     }
                 }
             },
-            "review_order": { "type": "array", "items": { "type": "string" } },
+            "review_order": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "enum": flexible_paths }
+            },
             "coverage": {
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["analyzed_paths", "truncated_paths", "metadata_only_paths", "binary_paths"],
                 "properties": {
-                    "analyzed_paths": { "type": "array", "items": { "type": "string" } },
-                    "truncated_paths": { "type": "array", "items": { "type": "string" } },
-                    "metadata_only_paths": { "type": "array", "items": { "type": "string" } },
-                    "binary_paths": { "type": "array", "items": { "type": "string" } }
+                    "analyzed_paths": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": { "type": "string", "enum": all_paths }
+                    },
+                    "truncated_paths": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": { "type": "string", "enum": all_paths }
+                    },
+                    "metadata_only_paths": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": { "type": "string", "enum": all_paths }
+                    },
+                    "binary_paths": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": { "type": "string", "enum": all_paths }
+                    }
                 }
             }
         }
