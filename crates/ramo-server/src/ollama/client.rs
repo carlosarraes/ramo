@@ -8,13 +8,15 @@ use ramo_core::review_map::{
 use reqwest::{StatusCode, Url};
 
 use crate::ReviewMapFailure;
-use crate::analysis::{AnalysisBudget, budget_batches};
+use crate::analysis::{AnalysisBudget, AnalyzerIdentity, budget_batches};
 
 use super::prompt::{repair_prompt, system_prompt, user_prompt};
 use super::schema::enrichment_schema;
 
 #[async_trait]
 pub trait Analyzer: Send + Sync {
+    async fn identity(&self) -> Result<AnalyzerIdentity, ReviewMapFailure>;
+
     async fn analyze(&self, request: EnrichmentRequest)
     -> Result<AnalysisResult, ReviewMapFailure>;
 }
@@ -207,6 +209,18 @@ impl OllamaAnalyzer {
 
 #[async_trait]
 impl Analyzer for OllamaAnalyzer {
+    async fn identity(&self) -> Result<AnalyzerIdentity, ReviewMapFailure> {
+        Ok(AnalyzerIdentity {
+            model: self.model.clone(),
+            model_digest: self.model_digest().await?,
+            prompt_version: super::PROMPT_VERSION,
+            generation_parameters: vec![
+                ("seed".into(), "42".into()),
+                ("temperature".into(), "0".into()),
+            ],
+        })
+    }
+
     async fn analyze(
         &self,
         request: EnrichmentRequest,

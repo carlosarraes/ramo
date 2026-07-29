@@ -6,7 +6,7 @@ mod model;
 mod planner;
 
 pub use cache_key::{ReviewMapCacheIdentity, review_map_cache_key};
-pub use classify::{ClassifierConfig, classify_path};
+pub use classify::{ClassifierConfig, REVIEW_MAP_CLASSIFIER_VERSION, classify_path};
 pub use codeowners::{CodeOwners, CodeOwnersError};
 pub use enrichment::{
     EnrichmentCoverage, EnrichmentError, EnrichmentExactGroup, EnrichmentInputFile,

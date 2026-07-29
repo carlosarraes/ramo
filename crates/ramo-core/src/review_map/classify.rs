@@ -2,6 +2,8 @@ use std::path::Path;
 
 use super::ReviewFileKind;
 
+pub const REVIEW_MAP_CLASSIFIER_VERSION: u32 = 1;
+
 const GENERATED_NAMES: &[&str] = &[
     "cargo.lock",
     "package-lock.json",
