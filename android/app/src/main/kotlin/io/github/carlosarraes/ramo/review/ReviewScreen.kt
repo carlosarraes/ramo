@@ -33,9 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.carlosarraes.ramo.ui.components.FailureBanner
 import io.github.carlosarraes.ramo.ui.theme.Green
 import io.github.carlosarraes.ramo.ui.theme.Red
-import io.github.carlosarraes.ramo.ui.components.FailureBanner
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -81,6 +81,9 @@ fun ReviewScreen(
     val listState = rememberLazyListState()
     val horizontal = rememberScrollState(state.horizontalOffsets[state.selectedFile] ?: 0)
     val snackbarHostState = remember { SnackbarHostState() }
+    val rowIndices = remember(screen.rows) {
+        screen.rows.mapIndexed { index, row -> row.key to index }.toMap()
+    }
     LaunchedEffect(state.notice?.id) {
         val notice = state.notice ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
@@ -98,10 +101,16 @@ fun ReviewScreen(
     LaunchedEffect(horizontal) {
         snapshotFlow { horizontal.value }.distinctUntilChanged().collect(onHorizontalOffset)
     }
-    LaunchedEffect(listState, screen.rows.size) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+    LaunchedEffect(listState, rowIndices) {
+        snapshotFlow {
+            lastVisibleDiffRowIndex(
+                visibleKeys = listState.layoutInfo.visibleItemsInfo.map { it.key },
+                rowIndices = rowIndices,
+            ) ?: -1
+        }
             .distinctUntilChanged()
             .collect { index ->
+                if (index < 0) return@collect
                 if (index >= screen.rows.size - 40) onLoadMore()
                 if (index >= screen.rows.size - 1) onLastRow()
             }
@@ -155,53 +164,53 @@ fun ReviewScreen(
                 modifier = Modifier.fillMaxWidth().weight(1f).testTag("diff-list"),
                 state = listState,
             ) {
-            item {
-                ReviewSummary(
-                    pull = pull,
-                    screen = screen,
-                    expanded = state.summaryExpanded,
-                    onExpanded = onSummaryExpanded,
-                )
-            }
-            state.success?.let { message ->
+                item {
+                    ReviewSummary(
+                        pull = pull,
+                        screen = screen,
+                        expanded = state.summaryExpanded,
+                        onExpanded = onSummaryExpanded,
+                    )
+                }
+                state.success?.let { message ->
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(message, Modifier.weight(1f), color = Green)
+                            TextButton(onClick = onDismissSuccess) { Text("Dismiss") }
+                        }
+                    }
+                }
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(message, Modifier.weight(1f), color = Green)
-                        TextButton(onClick = onDismissSuccess) { Text("Dismiss") }
+                        Text("Viewed", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Checkbox(checked = screen.file.viewed, onCheckedChange = onViewed)
                     }
                 }
-            }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Viewed", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Checkbox(checked = screen.file.viewed, onCheckedChange = onViewed)
+                items(screen.rows, key = DiffRowUi::key) { row ->
+                    DiffRow(
+                        row = row,
+                        horizontalScroll = horizontal,
+                        codeSize = codeSize,
+                        selected = row.isSelected(state.selection),
+                        onSelect = onSelectLine,
+                        onExpand = onExpand,
+                    )
+                    screen.threads.filter { thread ->
+                        !thread.outdated && thread.endLine != null &&
+                            (thread.endLine == row.newLine || thread.endLine == row.oldLine)
+                    }.forEach { ConversationCard(it) }
                 }
-            }
-            items(screen.rows, key = DiffRowUi::key) { row ->
-                DiffRow(
-                    row = row,
-                    horizontalScroll = horizontal,
-                    codeSize = codeSize,
-                    selected = row.isSelected(state.selection),
-                    onSelect = onSelectLine,
-                    onExpand = onExpand,
-                )
-                screen.threads.filter { thread ->
-                    !thread.outdated && thread.endLine != null &&
-                        (thread.endLine == row.newLine || thread.endLine == row.oldLine)
-                }.forEach { ConversationCard(it) }
-            }
-            val previous = screen.threads.filter { it.outdated || it.endLine == null }
-            if (previous.isNotEmpty()) {
-                item { Text("Previous conversations", Modifier.padding(12.dp), fontWeight = FontWeight.Bold) }
-                items(previous, key = ReviewThreadUi::id) { ConversationCard(it) }
-            }
+                val previous = screen.threads.filter { it.outdated || it.endLine == null }
+                if (previous.isNotEmpty()) {
+                    item { Text("Previous conversations", Modifier.padding(12.dp), fontWeight = FontWeight.Bold) }
+                    items(previous, key = ReviewThreadUi::id) { ConversationCard(it) }
+                }
             }
         }
     }
@@ -234,6 +243,11 @@ fun ReviewScreen(
     }
     if (state.confirmation) PublishConfirmation(state, onPublish, onDismiss = { onConfirmation(false) })
 }
+
+internal fun lastVisibleDiffRowIndex(
+    visibleKeys: List<Any>,
+    rowIndices: Map<String, Int>,
+): Int? = visibleKeys.mapNotNull { key -> (key as? String)?.let(rowIndices::get) }.maxOrNull()
 
 private fun DiffRowUi.isSelected(selection: LineSelectionUi?): Boolean {
     selection ?: return false

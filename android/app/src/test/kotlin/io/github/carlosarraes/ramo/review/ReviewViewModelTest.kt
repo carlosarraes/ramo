@@ -99,6 +99,14 @@ class ReviewViewModelTest {
         assertEquals(1, model.state.value.selectedFile)
     }
 
+    @Test fun selectingTheCurrentFileAlsoClosesTheFileSheet() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.setFileSheet(true)
+        model.selectFile(0)
+        assertFalse(model.state.value.fileSheetOpen)
+    }
+
     @Test fun summaryExpansionIsExplicit() = runTest(dispatcher) {
         val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
         advanceUntilIdle()

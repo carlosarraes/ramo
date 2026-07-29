@@ -18,6 +18,7 @@ class ReviewViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ReviewUiState())
     val state: StateFlow<ReviewUiState> = mutableState.asStateFlow()
+    private var openJob: Job? = null
     private var pageJob: Job? = null
     private val viewedJobs = mutableMapOf<Int, Job>()
     private val viewedMutations = mutableMapOf<Int, Long>()
@@ -27,6 +28,8 @@ class ReviewViewModel(
     init { open() }
 
     fun open() {
+        openJob?.cancel()
+        pageJob?.cancel()
         viewedJobs.values.forEach(Job::cancel)
         viewedJobs.clear()
         viewedMutations.clear()
@@ -38,7 +41,7 @@ class ReviewViewModel(
             selection = null,
             editor = null,
         )
-        viewModelScope.launch {
+        openJob = viewModelScope.launch {
             runCatching { repository.open(repositoryName, number) }
                 .onSuccess { pull ->
                     val stored = draftStore.load(repositoryName, number)
@@ -57,7 +60,11 @@ class ReviewViewModel(
 
     fun selectFile(index: Int) {
         val files = mutableState.value.pullRequest?.files.orEmpty()
-        if (index !in files.indices || index == mutableState.value.selectedFile) return
+        if (index !in files.indices) return
+        if (index == mutableState.value.selectedFile) {
+            setFileSheet(false)
+            return
+        }
         mutableState.value = mutableState.value.copy(
             selectedFile = index,
             fileSheetOpen = false,

@@ -19,11 +19,23 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ReviewScreenTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun chromeItemsDoNotCountAsVisibleDiffRows() {
+        assertEquals(
+            0,
+            lastVisibleDiffRowIndex(
+                visibleKeys = listOf(0, 1, "a"),
+                rowIndices = mapOf("a" to 0, "b" to 1),
+            ),
+        )
+    }
 
     @Test
     fun reviewIsOneFileAtATimeAndFileProgressOpensTheSheet() {
