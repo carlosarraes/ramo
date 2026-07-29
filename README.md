@@ -82,7 +82,7 @@ Without a token, server, or Ollama, the exact tree remains usable and the failur
 
 ### Android PR reviews
 
-Ramo also has a standalone, personal Android client for focused GitHub reviews: a two-tab inbox, one-file unified diffs, Tokyo Night syntax colors, encrypted drafts, Viewed synchronization, and Comment/Approve/Request changes publication. Its existing GitHub review path uses a narrow fine-grained token and does not require the desktop. Local-AI Review Maps are optional and pair to `ramo-server` over your tailnet; raw code is never sent to a cloud model.
+Ramo also has a standalone, personal Android client for focused GitHub reviews: a two-tab inbox, map-first PR navigation, one-file unified diffs, Tokyo Night syntax colors, encrypted drafts, Viewed synchronization, and Comment/Approve/Request changes publication. Its GitHub review path uses a narrow fine-grained token and works without the laptop. Optional AI summaries pair to `ramo-server` over tailnet HTTPS; the phone sends only PR identity and expected head SHA, while raw code stays between GitHub and the laptop's local Ollama model.
 
 See [Ramo for Android](docs/android.md) for token setup, build/install commands, notification behavior, security details, and v1 limitations.
 
