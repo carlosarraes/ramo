@@ -2,7 +2,7 @@ const CI_WORKFLOW: &str = include_str!("../.github/workflows/ci.yml");
 const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 
 #[test]
-fn workspace_gates_cover_every_crate_and_release_only_packages_ramo() {
+fn workspace_gates_cover_every_crate_and_release_only_native_packages() {
     for command in [
         "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
         "cargo test --locked --workspace --all-targets --all-features",
@@ -10,10 +10,13 @@ fn workspace_gates_cover_every_crate_and_release_only_packages_ramo() {
         assert!(CI_WORKFLOW.contains(command), "missing CI gate: {command}");
     }
     assert!(
-        RELEASE_WORKFLOW
-            .contains("cargo build --locked --release -p ramo --target ${{ matrix.target }}"),
-        "release builds must select only the terminal package"
+        RELEASE_WORKFLOW.contains(
+            "cargo build --locked --release -p ramo -p ramo-server --target ${{ matrix.target }}"
+        ),
+        "release builds must select the terminal and companion packages"
     );
+    assert!(!RELEASE_WORKFLOW.contains("-p ramo-mobile"));
+    assert!(!RELEASE_WORKFLOW.contains("-p uniffi-bindgen"));
     assert!(
         RELEASE_WORKFLOW.contains("rustup target add ${{ matrix.target }}"),
         "release targets must be installed into the repository-pinned toolchain"
