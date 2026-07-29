@@ -1,3 +1,4 @@
+mod blind;
 mod corpus;
 mod metrics;
 mod resources;
@@ -27,7 +28,101 @@ pub async fn run_command(command: BenchmarkCommand) -> Result<(), ReviewMapFailu
             yes,
         } => init(&repo_path, pull_requests, recent, yes),
         BenchmarkCommand::Run { manifest, yes } => run_benchmark(&manifest, yes).await,
+        BenchmarkCommand::Judge { manifest } => judge(&manifest),
+        BenchmarkCommand::Reveal { manifest } => reveal(&manifest),
     }
+}
+
+fn judge(manifest_path: &Path) -> Result<(), ReviewMapFailure> {
+    let run_directory = benchmark_run_directory(manifest_path)?;
+    let run = BenchmarkRun::load(&run_directory.join("run.json"))?;
+    let mut session = BlindSession::open(&run_directory, &run)?;
+    let judgments_path = run_directory.join("judgments.json");
+    while let Some(payload) = session.next() {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload)
+                .map_err(|error| benchmark_io("Could not render blind comparison", error))?
+        );
+        let Some(judgment) = read_judgment()? else {
+            session.save(&judgments_path)?;
+            println!(
+                "Saved {}/{} comparisons",
+                session.completed(),
+                session.total()
+            );
+            return Ok(());
+        };
+        session.submit(judgment)?;
+        session.save(&judgments_path)?;
+        println!(
+            "Recorded {}/{} comparisons",
+            session.completed(),
+            session.total()
+        );
+    }
+    println!("Blind judging complete. Run ramo server benchmark reveal.");
+    Ok(())
+}
+
+fn reveal(manifest_path: &Path) -> Result<(), ReviewMapFailure> {
+    let run_directory = benchmark_run_directory(manifest_path)?;
+    let run = BenchmarkRun::load(&run_directory.join("run.json"))?;
+    let session = BlindSession::open(&run_directory, &run)?;
+    println!("Explicit benchmark identity reveal:");
+    for (candidate, model) in session.reveal() {
+        println!("  {candidate}: {model}");
+    }
+    Ok(())
+}
+
+fn benchmark_run_directory(manifest_path: &Path) -> Result<std::path::PathBuf, ReviewMapFailure> {
+    manifest_path
+        .parent()
+        .map(|parent| parent.join("run"))
+        .ok_or_else(|| invalid("Benchmark manifest path has no parent directory"))
+}
+
+fn read_judgment() -> Result<Option<BlindJudgment>, ReviewMapFailure> {
+    println!(
+        "Enter A grouping accuracy order risks noise, then B's five scores, then A/B/tie; or q to save:"
+    );
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .map_err(|error| benchmark_io("Could not read blind judgment", error))?;
+    if line.trim().eq_ignore_ascii_case("q") {
+        return Ok(None);
+    }
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    if fields.len() != 11 {
+        return Err(invalid(
+            "A blind judgment requires ten scores and one overall choice",
+        ));
+    }
+    let scores = fields[..10]
+        .iter()
+        .map(|value| value.parse::<u8>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| benchmark_io("Blind scores must be integers from 1 to 5", error))?;
+    let dimensions = |offset: usize| DimensionScores {
+        grouping: scores[offset],
+        accuracy: scores[offset + 1],
+        order: scores[offset + 2],
+        risks: scores[offset + 3],
+        noise: scores[offset + 4],
+    };
+    let overall = match fields[10].to_ascii_lowercase().as_str() {
+        "a" => BlindChoice::CandidateA,
+        "b" => BlindChoice::CandidateB,
+        "tie" => BlindChoice::Tie,
+        _ => return Err(invalid("Overall blind choice must be A, B, or tie")),
+    };
+    Ok(Some(BlindJudgment {
+        candidate_a: dimensions(0),
+        candidate_b: dimensions(5),
+        overall,
+    }))
 }
 
 async fn run_benchmark(manifest_path: &Path, yes: bool) -> Result<(), ReviewMapFailure> {
@@ -260,3 +355,6 @@ pub(crate) fn benchmark_io(
         error,
     )
 }
+pub use blind::{
+    BlindCandidateOutput, BlindChoice, BlindJudgment, BlindPayload, BlindSession, DimensionScores,
+};

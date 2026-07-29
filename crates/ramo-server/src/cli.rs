@@ -55,4 +55,12 @@ pub enum BenchmarkCommand {
         #[arg(long)]
         yes: bool,
     },
+    Judge {
+        #[arg(long, default_value = ".ramo-benchmark/manifest.json")]
+        manifest: PathBuf,
+    },
+    Reveal {
+        #[arg(long, default_value = ".ramo-benchmark/manifest.json")]
+        manifest: PathBuf,
+    },
 }
