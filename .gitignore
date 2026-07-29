@@ -1,5 +1,6 @@
 /target
 /.worktrees/
+**/.ramo-benchmark/
 /android/local.properties
 /android/keystore.properties
 /android/.gradle/

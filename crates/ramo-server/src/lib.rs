@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod api;
+pub mod benchmark;
 pub mod cache;
 pub mod cli;
 pub mod config;
@@ -54,6 +55,7 @@ pub async fn run() -> Result<(), ReviewMapFailure> {
             }
             Ok(())
         }
+        cli::Command::Benchmark { command } => benchmark::run_command(command).await,
     }
 }
 
