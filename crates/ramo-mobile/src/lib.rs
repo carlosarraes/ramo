@@ -3,6 +3,7 @@ uniffi::setup_scaffolding!();
 #[cfg(target_os = "android")]
 mod android;
 mod models;
+mod review_map;
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -228,6 +229,26 @@ impl MobileSession {
             .map_err(|_| MobileError::Unexpected)?
             .insert(cache_key, threads);
         Ok(detail)
+    }
+
+    pub fn review_map(
+        &self,
+        repository: String,
+        number: u64,
+    ) -> Result<MobileReviewMap, MobileError> {
+        let key = PullRequestKey { repository, number };
+        let cache_key = pull_cache_key(&key);
+        if !self
+            .snapshots
+            .lock()
+            .map_err(|_| MobileError::Unexpected)?
+            .contains_key(&cache_key)
+        {
+            self.open_pull_request(key.repository.clone(), key.number)?;
+        }
+        let snapshots = self.snapshots.lock().map_err(|_| MobileError::Unexpected)?;
+        let snapshot = snapshots.get(&cache_key).ok_or(MobileError::Unexpected)?;
+        review_map::mobile_review_map(snapshot)
     }
 
     pub fn file_screen(

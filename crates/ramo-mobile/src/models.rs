@@ -89,6 +89,87 @@ pub struct MobileFileSummary {
     pub binary: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+pub enum MobileReviewMapStatus {
+    Ready,
+    Analyzing,
+    Enriched,
+    Stale,
+    Unavailable,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+pub enum MobileReviewFileKind {
+    Authored,
+    Test,
+    Generated,
+    Migration,
+    Documentation,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+pub enum MobilePatchCoverage {
+    Full,
+    Truncated,
+    MetadataOnly,
+    Binary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct MobileReviewMapFile {
+    pub id: String,
+    pub path: String,
+    pub previous_path: Option<String>,
+    pub status: String,
+    pub additions: u64,
+    pub deletions: u64,
+    pub kind: MobileReviewFileKind,
+    pub owner: Option<String>,
+    pub coverage: MobilePatchCoverage,
+    pub summary: Option<String>,
+    pub risk: Option<String>,
+    pub recommended_order: Option<u64>,
+    pub viewed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct MobileReviewMapGroup {
+    pub id: String,
+    pub label: String,
+    pub kind: MobileReviewFileKind,
+    pub file_ids: Vec<String>,
+    pub additions: u64,
+    pub deletions: u64,
+    pub collapsed_by_default: bool,
+    pub summary: Option<String>,
+    pub risk: Option<String>,
+    pub review_priority: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct MobileReviewMap {
+    pub schema_version: u64,
+    pub repository: String,
+    pub number: u64,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub status: MobileReviewMapStatus,
+    pub file_count: u64,
+    pub additions: u64,
+    pub deletions: u64,
+    pub authored_count: u64,
+    pub test_count: u64,
+    pub generated_count: u64,
+    pub migration_count: u64,
+    pub documentation_count: u64,
+    pub groups: Vec<MobileReviewMapGroup>,
+    pub files: Vec<MobileReviewMapFile>,
+    pub analysis_model: Option<String>,
+    pub analysis_completed_at: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum MobileLineKind {
     Context,
