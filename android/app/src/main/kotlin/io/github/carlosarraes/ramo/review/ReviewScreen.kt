@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -46,10 +47,11 @@ fun ReviewScreen(
     onLastRow: () -> Unit,
     onViewed: (Boolean) -> Unit,
     onHorizontalOffset: (Int) -> Unit,
-    onComment: (DiffRowUi) -> Unit,
+    onSelectLine: (DiffRowUi) -> Unit,
+    onOpenComment: () -> Unit,
+    onClearSelection: () -> Unit,
     onExpand: (DiffRowUi) -> Unit,
     onFinish: (Boolean) -> Unit,
-    onExtendSelection: (Boolean) -> Unit,
     onCancelEditor: () -> Unit,
     onSaveDraft: (String) -> Unit,
     onOverallBody: (String) -> Unit,
@@ -105,6 +107,19 @@ fun ReviewScreen(
                 onNext = onNext,
             )
         },
+        floatingActionButton = {
+            if (state.selection != null && state.editor == null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onClearSelection) { Text("Clear") }
+                    ExtendedFloatingActionButton(
+                        onClick = onOpenComment,
+                        modifier = Modifier.testTag("comment-selection"),
+                    ) {
+                        Text("Comment")
+                    }
+                }
+            }
+        },
     ) { contentPadding ->
         LazyColumn(
             modifier = Modifier
@@ -142,7 +157,14 @@ fun ReviewScreen(
                 }
             }
             items(screen.rows, key = DiffRowUi::key) { row ->
-                DiffRow(row, horizontal, codeSize, onComment, onExpand)
+                DiffRow(
+                    row = row,
+                    horizontalScroll = horizontal,
+                    codeSize = codeSize,
+                    selected = row.isSelected(state.selection),
+                    onSelect = onSelectLine,
+                    onExpand = onExpand,
+                )
                 screen.threads.filter { thread ->
                     !thread.outdated && thread.endLine != null &&
                         (thread.endLine == row.newLine || thread.endLine == row.oldLine)
@@ -171,8 +193,6 @@ fun ReviewScreen(
     state.editor?.let { editor ->
         DraftEditor(
             editor,
-            onExtendPrevious = { onExtendSelection(false) },
-            onExtendNext = { onExtendSelection(true) },
             onSave = onSaveDraft,
             onCancel = onCancelEditor,
         )
@@ -188,6 +208,14 @@ fun ReviewScreen(
         )
     }
     if (state.confirmation) PublishConfirmation(state, onPublish, onDismiss = { onConfirmation(false) })
+}
+
+private fun DiffRowUi.isSelected(selection: LineSelectionUi?): Boolean {
+    selection ?: return false
+    val side = if (kind == LineKindUi.Deletion) CommentSideUi.Left else CommentSideUi.Right
+    val line = if (side == CommentSideUi.Left) oldLine else newLine
+    return side == selection.side && hunkIndex == selection.hunk &&
+        line != null && line in selection.startLine..selection.endLine
 }
 
 @Composable

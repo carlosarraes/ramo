@@ -7,13 +7,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -29,7 +29,8 @@ fun DiffRow(
     row: DiffRowUi,
     horizontalScroll: ScrollState,
     codeSize: Int,
-    onComment: (DiffRowUi) -> Unit,
+    selected: Boolean,
+    onSelect: (DiffRowUi) -> Unit,
     onExpand: (DiffRowUi) -> Unit,
 ) {
     val background = when (row.kind) {
@@ -38,14 +39,21 @@ fun DiffRow(
         LineKindUi.Hunk -> Color(0x332E3C64)
         LineKindUi.Context -> Color.Transparent
     }
-    Row(Modifier.fillMaxWidth().background(background)) {
+    val selection = if (selected) Color(0x553B82F6) else Color.Transparent
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(background)
+            .background(selection)
+            .testTag("diff-row-${row.key}")
+            .clickable(enabled = row.commentable || row.key.contains(":gap:")) {
+                if (row.commentable) onSelect(row) else onExpand(row)
+            },
+    ) {
         Text(
             text = "${row.oldLine ?: ""} ${row.newLine ?: ""}",
             modifier = Modifier
                 .width(72.dp)
-                .clickable(enabled = row.commentable || row.key.contains(":gap:")) {
-                    if (row.commentable) onComment(row) else onExpand(row)
-                }
                 .padding(horizontal = 6.dp, vertical = 2.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontFamily = FontFamily.Monospace,

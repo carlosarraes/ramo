@@ -44,11 +44,24 @@ class ReviewScreenTest {
         compose.onNodeWithTag("diff-list").assertIsDisplayed()
     }
 
+    @Test
+    fun selectingCodeDoesNotOpenKeyboardUntilCommentIsPressed() {
+        setReviewContent()
+
+        compose.onNodeWithTag("diff-row-a").performClick()
+        compose.onNodeWithTag("comment-selection").assertIsDisplayed()
+        compose.onNodeWithText("Draft comment").assertDoesNotExist()
+        compose.onNodeWithText("Comment").performClick()
+        compose.onNodeWithText("Draft comment").assertIsDisplayed()
+    }
+
     private fun setReviewContent() {
         compose.setContent {
             RamoAppSurface {
                 var selectedFile by remember { mutableIntStateOf(0) }
                 var fileSheetOpen by remember { mutableStateOf(false) }
+                var selection by remember { mutableStateOf<LineSelectionUi?>(null) }
+                var editor by remember { mutableStateOf<DraftEditorUi?>(null) }
                 val pull = pullRequest()
                 val screen = fileScreen(selectedFile)
                 ReviewScreen(
@@ -58,6 +71,8 @@ class ReviewScreenTest {
                         selectedFile = selectedFile,
                         screen = screen,
                         fileSheetOpen = fileSheetOpen,
+                        selection = selection,
+                        editor = editor,
                     ),
                     codeSize = 13,
                     onBack = {},
@@ -70,11 +85,16 @@ class ReviewScreenTest {
                     onLastRow = {},
                     onViewed = {},
                     onHorizontalOffset = {},
-                    onComment = {},
+                    onSelectLine = { row ->
+                        val side = if (row.kind == LineKindUi.Deletion) CommentSideUi.Left else CommentSideUi.Right
+                        val line = if (side == CommentSideUi.Left) row.oldLine else row.newLine
+                        selection = line?.let { LineSelectionUi(side, row.hunkIndex, it, it) }
+                    },
+                    onOpenComment = { selection?.let { editor = DraftEditorUi(it) } },
+                    onClearSelection = { selection = null },
                     onExpand = {},
                     onFinish = {},
-                    onExtendSelection = {},
-                    onCancelEditor = {},
+                    onCancelEditor = { editor = null },
                     onSaveDraft = {},
                     onOverallBody = {},
                     onVerdict = {},
@@ -117,7 +137,7 @@ private fun fileScreen(index: Int) = FileScreenUi(
     file = fileSummary(if (index == 0) "a.rs" else "b.rs"),
     rows = listOf(
         DiffRowUi(
-            key = "row-$index",
+            key = "a",
             hunkIndex = 0,
             oldLine = 1,
             newLine = 1,

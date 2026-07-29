@@ -90,12 +90,46 @@ class ReviewViewModelTest {
         val store = MemoryReviewDraftStore()
         val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7, store)
         advanceUntilIdle()
-        model.beginComment(model.state.value.screen!!.rows.first())
+        model.selectLine(model.state.value.screen!!.rows.first())
+        model.openComment()
         assertTrue(model.state.value.drafts.isEmpty())
         model.saveDraft("first\nsecond")
         advanceUntilIdle()
         assertEquals("first\nsecond", model.state.value.drafts.single().body)
         assertEquals("first\nsecond", store.value!!.comments.single().body)
+    }
+
+    @Test fun tapsSelectThenExtendAContiguousCompatibleRange() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(rows = selectableRows()), "ramo/ramo", 7)
+        advanceUntilIdle()
+        val rows = model.state.value.screen!!.rows
+        model.selectLine(rows[0])
+        model.selectLine(rows[2])
+        assertEquals(LineSelectionUi(CommentSideUi.Right, 0, 1, 3), model.state.value.selection)
+        assertEquals(null, model.state.value.editor)
+    }
+
+    @Test fun incompatibleTapStartsANewSingleLineSelection() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(rows = mixedSideRows()), "ramo/ramo", 7)
+        advanceUntilIdle()
+        val rows = model.state.value.screen!!.rows
+        model.selectLine(rows[0])
+        model.selectLine(rows[1])
+        assertEquals(CommentSideUi.Left, model.state.value.selection!!.side)
+        assertEquals(model.state.value.selection!!.startLine, model.state.value.selection!!.endLine)
+    }
+
+    @Test fun saveClearsSelectionButCancelKeepsIt() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.selectLine(model.state.value.screen!!.rows.first())
+        model.openComment()
+        model.cancelEditor()
+        assertTrue(model.state.value.selection != null)
+        model.openComment()
+        model.saveDraft("Please simplify")
+        advanceUntilIdle()
+        assertEquals(null, model.state.value.selection)
     }
 
     @Test fun successfulPublishClearsOnlyThisReview() = runTest(dispatcher) {
@@ -129,6 +163,8 @@ class ReviewViewModelTest {
 private class FakeReviewRepository(
     private val failViewed: Boolean = false,
     private val openFailure: Throwable? = null,
+    private val rows: List<DiffRowUi>? = null,
+    private val firstPageComplete: Boolean = false,
 ) : ReviewRepository {
     val viewedCalls = mutableListOf<Boolean>()
     var publishCalls = 0
@@ -137,8 +173,12 @@ private class FakeReviewRepository(
         return pull()
     }
     override suspend fun file(repository: String, number: Long, index: Int, startRow: Long, limit: Long): FileScreenUi {
-        val rows = if (startRow == 0L) listOf(row("a")) else listOf(row("a"), row("b"))
-        return screen(index, rows, if (startRow == 0L) 1 else null)
+        val pageRows = rows ?: if (startRow == 0L) listOf(row("a")) else listOf(row("a"), row("b"))
+        val nextRow = when {
+            rows != null || firstPageComplete || startRow != 0L -> null
+            else -> 1L
+        }
+        return screen(index, pageRows, nextRow)
     }
     override suspend fun setViewed(pullRequestId: String, path: String, viewed: Boolean) {
         viewedCalls += viewed
@@ -163,4 +203,27 @@ private class MemoryReviewDraftStore(var value: DraftReviewUi? = null) : ReviewD
 private fun pull() = PullRequestUi("node", "ramo/ramo", 7, "Title", "a", "v", "main", "head", "sha", 2, 1, listOf(file("a.rs"), file("b.rs")))
 private fun file(path: String) = FileSummaryUi(path, null, "modified", 1, 1, false, false)
 private fun row(key: String) = DiffRowUi(key, 0, 1, 1, LineKindUi.Context, listOf(SyntaxSpanUi(key, 0xffc0caf5, false, false, false)), true)
+private fun selectableRows() = (1..3).map { line ->
+    DiffRowUi(
+        key = "right-$line",
+        hunkIndex = 0,
+        oldLine = null,
+        newLine = line,
+        kind = LineKindUi.Addition,
+        spans = listOf(SyntaxSpanUi("line $line", 0xffc0caf5, false, false, false)),
+        commentable = true,
+    )
+}
+private fun mixedSideRows() = listOf(
+    selectableRows().first(),
+    DiffRowUi(
+        key = "left-9",
+        hunkIndex = 0,
+        oldLine = 9,
+        newLine = null,
+        kind = LineKindUi.Deletion,
+        spans = listOf(SyntaxSpanUi("removed", 0xffc0caf5, false, false, false)),
+        commentable = true,
+    ),
+)
 private fun screen(index: Int, rows: List<DiffRowUi>, next: Long?) = FileScreenUi("ramo/ramo", 7, "Title", "node", 2, 1, index, 2, 0, file(if (index == 0) "a.rs" else "b.rs"), rows, next, emptyList())

@@ -86,6 +86,7 @@ data class ReviewUiState(
     val horizontalOffsets: Map<Int, Int> = emptyMap(),
     val finishing: Boolean = false,
     val drafts: List<DraftCommentUi> = emptyList(),
+    val selection: LineSelectionUi? = null,
     val editor: DraftEditorUi? = null,
     val overallBody: String = "",
     val verdict: ReviewVerdictUi = ReviewVerdictUi.Comment,
@@ -137,12 +138,18 @@ data class DraftReviewUi(
     val comments: List<DraftCommentUi>,
 )
 
-data class DraftEditorUi(
-    val rowKey: String,
+data class LineSelectionUi(
     val side: CommentSideUi,
     val hunk: Long,
     val startLine: Int,
     val endLine: Int,
 ) {
+    init { require(startLine <= endLine) }
+
     val label: String get() = "${if (side == CommentSideUi.Left) "L" else "R"}${if (startLine == endLine) endLine else "$startLine–$endLine"}"
+}
+
+data class DraftEditorUi(val selection: LineSelectionUi) {
+    val rowKey: String get() = "${selection.side}:${selection.hunk}:${selection.startLine}:${selection.endLine}"
+    val label: String get() = selection.label
 }

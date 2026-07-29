@@ -44,7 +44,12 @@ class ReviewViewModel(
     fun selectFile(index: Int) {
         val files = mutableState.value.pullRequest?.files.orEmpty()
         if (index !in files.indices || index == mutableState.value.selectedFile) return
-        mutableState.value = mutableState.value.copy(selectedFile = index, fileSheetOpen = false)
+        mutableState.value = mutableState.value.copy(
+            selectedFile = index,
+            fileSheetOpen = false,
+            selection = null,
+            editor = null,
+        )
         loadFile(index)
     }
 
@@ -56,30 +61,40 @@ class ReviewViewModel(
     }
     fun setFinishing(open: Boolean) { mutableState.value = mutableState.value.copy(finishing = open) }
 
-    fun beginComment(row: DiffRowUi) {
+    fun selectLine(row: DiffRowUi) {
         if (!row.commentable) return
         val side = if (row.kind == LineKindUi.Deletion) CommentSideUi.Left else CommentSideUi.Right
         val line = if (side == CommentSideUi.Left) row.oldLine else row.newLine
-        if (line != null) {
-            mutableState.value = mutableState.value.copy(
-                editor = DraftEditorUi(row.key, side, row.hunkIndex, line, line),
-            )
+        if (line == null) return
+
+        val state = mutableState.value
+        val current = state.selection
+        val compatible = current?.takeIf { it.side == side && it.hunk == row.hunkIndex }
+        val candidate = compatible?.let {
+            LineSelectionUi(side, row.hunkIndex, minOf(it.startLine, line), maxOf(it.endLine, line))
+        }
+        val availableLines = state.screen?.rows.orEmpty()
+            .asSequence()
+            .filter { it.commentable && it.hunkIndex == row.hunkIndex && it.side() == side }
+            .mapNotNull { it.lineFor(side) }
+            .toSet()
+        val contiguous = candidate?.let { selection ->
+            (selection.startLine..selection.endLine).all(availableLines::contains)
+        } == true
+        mutableState.value = state.copy(
+            selection = if (contiguous) candidate else LineSelectionUi(side, row.hunkIndex, line, line),
+            editor = null,
+        )
+    }
+
+    fun openComment() {
+        mutableState.value.selection?.let { selection ->
+            mutableState.value = mutableState.value.copy(editor = DraftEditorUi(selection))
         }
     }
 
-    fun extendSelection(forward: Boolean) {
-        val state = mutableState.value
-        val editor = state.editor ?: return
-        val rows = state.screen?.rows.orEmpty()
-        val selected = rows.filter { row ->
-            row.hunkIndex == editor.hunk && row.commentable && row.side() == editor.side
-        }
-        val target = if (forward) editor.endLine + 1 else editor.startLine - 1
-        if (selected.any { it.lineFor(editor.side) == target }) {
-            mutableState.value = state.copy(
-                editor = if (forward) editor.copy(endLine = target) else editor.copy(startLine = target),
-            )
-        }
+    fun clearSelection() {
+        mutableState.value = mutableState.value.copy(selection = null, editor = null)
     }
 
     fun cancelEditor() { mutableState.value = mutableState.value.copy(editor = null) }
@@ -89,14 +104,17 @@ class ReviewViewModel(
         val editor = state.editor ?: return
         val screen = state.screen ?: return
         val pull = state.pullRequest ?: return
-        val hunkRows = screen.rows.filter { it.hunkIndex == editor.hunk && it.side() == editor.side }
-        val selected = hunkRows.filter { (it.lineFor(editor.side) ?: -1) in editor.startLine..editor.endLine }
+        val selection = editor.selection
+        val hunkRows = screen.rows.filter { it.hunkIndex == selection.hunk && it.side() == selection.side }
+        val selected = hunkRows.filter {
+            (it.lineFor(selection.side) ?: -1) in selection.startLine..selection.endLine
+        }
         if (selected.isEmpty()) return
         val firstIndex = hunkRows.indexOf(selected.first())
         val lastIndex = hunkRows.indexOf(selected.last())
         val input = DraftInputUi(
-            pull.repository, pull.number, pull.revision, screen.file.path, editor.side,
-            editor.startLine, editor.endLine, editor.hunk,
+            pull.repository, pull.number, pull.revision, screen.file.path, selection.side,
+            selection.startLine, selection.endLine, selection.hunk,
             hunkRows.subList((firstIndex - 2).coerceAtLeast(0), firstIndex).map(DiffRowUi::sourceText),
             selected.map(DiffRowUi::sourceText),
             hunkRows.subList(lastIndex + 1, (lastIndex + 3).coerceAtMost(hunkRows.size)).map(DiffRowUi::sourceText),
@@ -106,7 +124,12 @@ class ReviewViewModel(
             runCatching { repository.createDraft(input) }
                 .onSuccess { draft ->
                     val drafts = (mutableState.value.drafts.filterNot { it.id == draft.id } + draft)
-                    mutableState.value = mutableState.value.copy(drafts = drafts, editor = null, error = null)
+                    mutableState.value = mutableState.value.copy(
+                        drafts = drafts,
+                        selection = null,
+                        editor = null,
+                        error = null,
+                    )
                     persistDrafts()
                 }
                 .onFailure { mutableState.value = mutableState.value.copy(error = "Comment cannot be saved on that range") }
