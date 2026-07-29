@@ -263,3 +263,49 @@ fn invalid_test_file_pattern_names_the_config_and_pattern() {
     assert!(error.contains("test_file_patterns"));
     assert!(error.contains('['));
 }
+
+#[test]
+fn review_map_configuration_is_local_optional_and_validated() {
+    let defaults = ConfigResolver::new(ConfigPaths::default())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert_eq!(defaults.review_map_server, "http://127.0.0.1:47831");
+    assert!(defaults.review_map_token_file.is_none());
+    assert!(defaults.ai_summaries);
+
+    let temp = tempfile::tempdir().unwrap();
+    let valid = temp.path().join("valid.toml");
+    let token = temp.path().join("client.json");
+    std::fs::write(
+        &valid,
+        format!(
+            "review_map_server = \"http://[::1]:47831\"\nreview_map_token_file = {:?}\nai_summaries = false\n",
+            token.display().to_string()
+        ),
+    )
+    .unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(valid),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+    assert_eq!(resolved.review_map_token_file, Some(token));
+    assert!(!resolved.ai_summaries);
+
+    for source in [
+        "review_map_server = \"https://example.com\"\n",
+        "review_map_token_file = \"relative/client.json\"\n",
+    ] {
+        let invalid = temp.path().join(format!("invalid-{}.toml", source.len()));
+        std::fs::write(&invalid, source).unwrap();
+        let error = ConfigResolver::new(ConfigPaths {
+            user: Some(invalid),
+            repo: None,
+        })
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("review_map") || message.contains("Review Map"));
+    }
+}

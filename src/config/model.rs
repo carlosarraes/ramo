@@ -1,5 +1,6 @@
 use crate::core::input::{LayoutMode, VcsId};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct CustomThemeConfig {
@@ -51,6 +52,9 @@ pub struct ConfigLayer {
     pub transparent_background_camel: Option<bool>,
     pub color_moved: Option<bool>,
     pub test_file_patterns: Option<Vec<String>>,
+    pub review_map_server: Option<String>,
+    pub review_map_token_file: Option<PathBuf>,
+    pub ai_summaries: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -91,6 +95,9 @@ pub struct ResolvedConfig {
     pub transparent_background: bool,
     pub color_moved: bool,
     pub test_file_patterns: Vec<String>,
+    pub review_map_server: String,
+    pub review_map_token_file: Option<PathBuf>,
+    pub ai_summaries: bool,
     pub custom_theme: Option<CustomThemeConfig>,
     pub startup_notices: Vec<String>,
 }
@@ -113,6 +120,9 @@ impl Default for ResolvedConfig {
             transparent_background: false,
             color_moved: true,
             test_file_patterns: Vec::new(),
+            review_map_server: "http://127.0.0.1:47831".into(),
+            review_map_token_file: None,
+            ai_summaries: true,
             custom_theme: None,
             startup_notices: Vec::new(),
         }
@@ -152,6 +162,13 @@ impl ResolvedConfig {
         if let Some(patterns) = &layer.test_file_patterns {
             self.test_file_patterns.extend(patterns.iter().cloned());
         }
+        if let Some(server) = &layer.review_map_server {
+            self.review_map_server.clone_from(server);
+        }
+        if let Some(token_file) = &layer.review_map_token_file {
+            self.review_map_token_file = Some(token_file.clone());
+        }
+        apply(&mut self.ai_summaries, layer.ai_summaries);
     }
 }
 

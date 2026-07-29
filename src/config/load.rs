@@ -24,6 +24,9 @@ const PREFERENCE_KEYS: &[&str] = &[
     "transparentBackground",
     "color_moved",
     "test_file_patterns",
+    "review_map_server",
+    "review_map_token_file",
+    "ai_summaries",
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
@@ -211,7 +214,38 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
         custom.legacy_syntax.clear();
     }
     validate_test_file_patterns(path, &config)?;
+    validate_review_map_config(path, &config)?;
     Ok(Some(config))
+}
+
+fn validate_review_map_config(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
+    for layer in [
+        &config.global,
+        &config.diff,
+        &config.show,
+        &config.stash_show,
+        &config.patch,
+        &config.pager,
+        &config.difftool,
+    ] {
+        if let Some(endpoint) = &layer.review_map_server {
+            crate::review_map::validate_loopback_endpoint(endpoint).map_err(|error| {
+                ConfigError::Parse {
+                    path: path.to_path_buf(),
+                    source: error.to_string(),
+                }
+            })?;
+        }
+        if let Some(token_file) = &layer.review_map_token_file
+            && !token_file.is_absolute()
+        {
+            return Err(ConfigError::Parse {
+                path: path.to_path_buf(),
+                source: "review_map_token_file must be an absolute path".into(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_test_file_patterns(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
