@@ -304,6 +304,28 @@ fn write_navigation_patch(path: &Path) {
     .unwrap();
 }
 
+#[test]
+fn local_diff_toggles_to_an_exact_review_map_and_back() {
+    let temp = tempfile::tempdir().unwrap();
+    disable_save_prompt(temp.path());
+    let fixture = fixture();
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &["patch", &fixture],
+        &[("XDG_CONFIG_HOME", temp.path().to_str().unwrap())],
+    );
+
+    process.read_screen_until("fn main() {}");
+    process.send("M");
+    let map = process.read_screen_until("Review Map");
+    assert!(map.contains("src/main.rs"), "{map}");
+    process.send("M");
+    process.read_screen_until("fn main() {}");
+    process.send("q");
+
+    assert_eq!(process.wait(), 0);
+}
+
 fn selected_hunk_color() -> vt100::Color {
     let color = ramo::ui::themes::ThemeRegistry::default()
         .resolve(ramo::ui::themes::DEFAULT_DARK_THEME_ID, None, false)

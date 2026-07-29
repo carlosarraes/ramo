@@ -1,9 +1,25 @@
 use ramo::cli::Action;
-use ramo::core::input::{CommonOptions, ReviewInput};
+use ramo::core::input::{CommonOptions, InputKind, ReviewInput};
 use ramo::runtime::{
     StartupAction, companion_path, resolve_action, should_finish_local_annotations,
     stdin_needs_tty_replacement,
 };
+
+#[test]
+fn pull_requests_start_on_map_but_local_diffs_and_pagers_start_on_review() {
+    assert_eq!(
+        ramo::runtime::initial_screen(InputKind::PullRequest, false),
+        ramo::app::AppScreen::ReviewMap
+    );
+    assert_eq!(
+        ramo::runtime::initial_screen(InputKind::Diff, false),
+        ramo::app::AppScreen::Review
+    );
+    assert_eq!(
+        ramo::runtime::initial_screen(InputKind::PullRequest, true),
+        ramo::app::AppScreen::Review
+    );
+}
 
 #[test]
 fn integrations_do_not_initialize_the_review_ui() {

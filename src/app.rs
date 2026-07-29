@@ -457,6 +457,16 @@ impl App {
         self.review_map_restart = Some((client, request));
     }
 
+    pub fn set_review_map_failure(
+        &mut self,
+        code: ramo_core::review_map::ReviewMapFailureCode,
+        message: impl Into<String>,
+    ) {
+        if let Some(controller) = self.review_map.as_mut() {
+            controller.set_failure(code, message);
+        }
+    }
+
     pub fn screen(&self) -> AppScreen {
         self.screen
     }

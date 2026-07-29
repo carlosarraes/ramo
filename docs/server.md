@@ -11,7 +11,7 @@
 - Cache files contain validated maps and version identities only. Raw patches, prompts, model responses, GitHub tokens, pairing codes, and bearer tokens are not cached or logged.
 - Paired-client files store SHA-256 token digests, labels, IDs, and creation times with user-only permissions. Pairing-code files store only digests and expiry times.
 
-AI structure is untrusted until validated. Unknown or omitted paths, duplicates, attempts to regroup fixed test/generated files, invalid coverage, and oversized text reject the whole response. Ramo makes one repair attempt and otherwise keeps the deterministic map usable.
+AI structure is untrusted until validated. The generated schema limits references to exact changed paths; Rust removes duplicate assignments and restores omitted paths from the deterministic diff groups before validation. Unknown paths, attempts to regroup fixed test/generated files, invalid coverage, and oversized text still reject the response. Ramo makes one repair attempt and otherwise keeps the deterministic map usable.
 
 ## Requirements
 
@@ -53,6 +53,20 @@ ramo server pair
 ```
 
 Ramo prints a QR deep link plus copyable endpoint and code. The code expires after five minutes and is single-use. A successful exchange returns one individually revocable long-lived client credential; only its digest persists on the laptop. Re-running `pair` creates a new code without invalidating existing clients.
+
+## Pair the terminal
+
+The terminal talks only to loopback and reads its bearer credential from an absolute file path. With the service running, call `ramo server pair`, then exchange the printed code against `http://127.0.0.1:47831/v1/pair/exchange` and save the returned JSON with user-only permissions. Configure:
+
+```toml
+review_map_server = "http://127.0.0.1:47831"
+review_map_token_file = "/home/you/.config/ramo/review-map-client.json"
+ai_summaries = true
+```
+
+The file may contain the full pairing JSON or only its `token` value. The client caps it at 16 KiB, redacts the token from diagnostics, accepts only `127.0.0.0/8` or `::1`, bounds HTTP headers and bodies, and rejects chunked or incompatible responses. Set `ai_summaries = false` to keep the exact map without starting a background request.
+
+`ramo pr N` renders the exact tree before contacting the companion. Local diffs remain code-first and expose a deterministic map through `M`; pager mode never creates an analysis worker. Enrichment failures are dismissible and do not discard review comments.
 
 ## Cache and lifecycle
 

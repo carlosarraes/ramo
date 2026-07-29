@@ -55,6 +55,31 @@ ramo server pair
 
 Setup is explicit and currently automated on Linux. It checks `gh`, a running Ollama service, Tailscale/MagicDNS, and `systemd --user` before writing anything. See [Private local Review Maps](docs/server.md) for the privacy boundary, pairing, cache commands, troubleshooting, and typed failures.
 
+`ramo pr N` opens the exact Review Map first. Use `j`/`k` or arrows to move, `h`/`l` to fold or expand, Enter to open one file, `/` to filter, and `M` to switch between map and code without rebuilding the review. Lowercase `m` keeps its existing hunk-header binding. Local diffs remain code-first; press `M` for their deterministic map. Pager mode never starts background analysis.
+
+The terminal enrichment client accepts only loopback HTTP and a paired-client token file. Exchange a five-minute pairing code locally, then point Ramo at the saved credential:
+
+```bash
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ramo"
+ramo server pair
+# Replace PAIRING_CODE below with the printed code.
+curl -fsS http://127.0.0.1:47831/v1/pair/exchange \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"PAIRING_CODE","label":"Ramo terminal"}' \
+  > "${XDG_CONFIG_HOME:-$HOME/.config}/ramo/review-map-client.json"
+chmod 600 "${XDG_CONFIG_HOME:-$HOME/.config}/ramo/review-map-client.json"
+```
+
+Add this to `~/.config/ramo/config.toml` using the resulting absolute path:
+
+```toml
+review_map_server = "http://127.0.0.1:47831"
+review_map_token_file = "/home/you/.config/ramo/review-map-client.json"
+ai_summaries = true
+```
+
+Without a token, server, or Ollama, the exact tree remains usable and the failure notice can be dismissed. Existing comments and publication state survive every map/code transition.
+
 ### Android PR reviews
 
 Ramo also has a standalone, personal Android client for focused GitHub reviews: a two-tab inbox, one-file unified diffs, Tokyo Night syntax colors, encrypted drafts, Viewed synchronization, and Comment/Approve/Request changes publication. Its existing GitHub review path uses a narrow fine-grained token and does not require the desktop. Local-AI Review Maps are optional and pair to `ramo-server` over your tailnet; raw code is never sent to a cloud model.
@@ -109,7 +134,8 @@ ramo pr 123 --with-comments
 ```
 
 Ramo loads a frozen PR snapshot without checking out the branch or changing
-the working tree. New inline notes are kept local while you review. Press `q`
+the working tree. It starts on the Review Map; Enter opens the selected file
+and `M` returns to the same map position. New inline notes are kept local while you review. Press `q`
 to open the publication confirmation, then choose Comment only, Approve, or
 Request changes. Press `o` before choosing a verdict to edit the generated
 overall comment. At the first prompt, `n` or Escape returns to the review with

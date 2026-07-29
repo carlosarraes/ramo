@@ -211,7 +211,10 @@ fn public_pr_command_creates_and_publishes_one_github_review() {
     let (path, payload, source_log, call_log) = fake_gh(temp.path());
     let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log, &call_log, &[]);
 
-    let screen = process.read_until("GitHub PR #123");
+    let screen = process.read_until("Review Map");
+    assert!(screen.contains("src/"), "{screen}");
+    process.send("j\r");
+    let screen = process.read_until("FIRST_PR_LINE");
     assert!(screen.contains("FIRST_PR_LINE"), "{screen}");
     process.send("cInline feedback\r");
     process.read_until("Your note");
@@ -243,7 +246,9 @@ fn public_pr_context_is_fetched_lazily_on_expansion() {
     let (path, payload, source_log, call_log) = fake_gh(temp.path());
     let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log, &call_log, &[]);
 
-    process.read_until("GitHub PR #123");
+    process.read_until("Review Map");
+    process.send("j\r");
+    process.read_until("FIRST_PR_LINE");
     assert!(
         !source_log.exists(),
         "opening a pull request must not fetch unchanged source"
@@ -282,6 +287,8 @@ fn with_comments_shows_existing_feedback_but_publishes_only_new_comments() {
         &["--with-comments"],
     );
 
+    process.read_until("Review Map");
+    process.send("j\r");
     process.read_until("existing github feedback");
     process.send("j");
     process.send("c");

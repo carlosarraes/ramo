@@ -6,10 +6,11 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use crate::annotations::{model::Annotation, output};
-use crate::app::{App, RemoteReviewOutcome};
+use crate::app::{App, AppScreen, RemoteReviewOutcome};
 use crate::cli::{Action, Invocation};
 use crate::config::{ConfigPaths, ConfigResolver};
 use crate::core::input::{ReviewInput, ReviewOutput};
+use crate::diff::model::{DiffFile, FileChangeKind};
 use crate::error::AppError;
 use crate::input::{LoadContext, LoadOutcome, ReviewLoader};
 use crate::pager::{page_plain_text, resolve_text_pager};
@@ -17,6 +18,7 @@ use crate::pi_extension;
 use crate::process::command::SystemCommandExecutor;
 use crate::remote_review::RemoteReviewPublisher;
 use crate::review::{ContextSourceLoader, NativeContextSourceLoader};
+use crate::review_map::{ReviewMapClient, ReviewMapResolveRequest, ReviewMapRuntime};
 use crate::terminal::TerminalSession;
 use crate::ui::review::ReviewHeading;
 use crate::vcs::SystemCommandRunner;
@@ -51,6 +53,14 @@ pub fn resolve_action(action: &Action) -> StartupAction {
 
 pub fn stdin_needs_tty_replacement(stdin_is_terminal: bool) -> bool {
     !stdin_is_terminal
+}
+
+pub fn initial_screen(kind: crate::core::input::InputKind, pager_mode: bool) -> AppScreen {
+    if kind == crate::core::input::InputKind::PullRequest && !pager_mode {
+        AppScreen::ReviewMap
+    } else {
+        AppScreen::Review
+    }
 }
 
 pub fn run(invocation: Invocation) -> Result<ExitCode, AppError> {
@@ -252,6 +262,14 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         }
     };
 
+    let review_map_startup = prepare_review_map(
+        &loaded.changeset.files,
+        pull_request.as_ref().map(|(context, _)| context),
+        &resolved_config,
+        pager_mode,
+        &cwd,
+    );
+
     replace_stdin_with_tty()?;
     let mut app = App::new_with_services(
         loaded.changeset.files,
@@ -261,6 +279,21 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         config_paths.user,
     );
     app.set_review_heading(review_heading);
+    match review_map_startup {
+        Ok(startup) => {
+            let start_on_map = initial_screen(input.kind(), pager_mode) == AppScreen::ReviewMap;
+            app.attach_review_map(startup.map, startup.runtime, start_on_map);
+            if let Some((client, request)) = startup.restart {
+                app.configure_review_map_retry(client, request);
+            }
+            if let Some((code, message)) = startup.failure {
+                app.set_review_map_failure(code, message);
+            }
+        }
+        Err(message) => {
+            eprintln!("ramo: Review Map disabled: {message}");
+        }
+    }
     if let Some((context, publisher)) = pull_request {
         app.attach_pull_request(context, publisher);
     }
@@ -310,6 +343,162 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         finish_annotations(result.annotations, review_output)?;
     }
     Ok(ExitCode::SUCCESS)
+}
+
+struct ReviewMapStartup {
+    map: ramo_core::review_map::ReviewMap,
+    runtime: Option<ReviewMapRuntime>,
+    restart: Option<(ReviewMapClient, ReviewMapResolveRequest)>,
+    failure: Option<(ramo_core::review_map::ReviewMapFailureCode, String)>,
+}
+
+fn prepare_review_map(
+    files: &[DiffFile],
+    pull_request: Option<&crate::remote_review::PullRequestReviewContext>,
+    config: &crate::config::ResolvedConfig,
+    pager_mode: bool,
+    cwd: &std::path::Path,
+) -> Result<ReviewMapStartup, String> {
+    let identity = pull_request.map_or_else(
+        || ramo_core::review_map::ReviewMapIdentity {
+            repository: format!("local/{}", cwd.display()),
+            pull_request: 0,
+            base_sha: "local-base".into(),
+            head_sha: local_revision(files),
+        },
+        |context| ramo_core::review_map::ReviewMapIdentity {
+            repository: context.repository.clone(),
+            pull_request: context.number,
+            base_sha: context.base_revision.clone(),
+            head_sha: context.captured_revision.clone(),
+        },
+    );
+    let input = ramo_core::review_map::ReviewMapInput {
+        identity: identity.clone(),
+        files: files.iter().map(review_map_input_file).collect(),
+        codeowners: None,
+    };
+    let classifier = ramo_core::review_map::ClassifierConfig::with_patterns(
+        config.test_file_patterns.clone(),
+        Vec::new(),
+    );
+    let map = ramo_core::review_map::build_review_map(&input, &classifier)
+        .map_err(|error| error.to_string())?;
+    let Some(context) = pull_request else {
+        return Ok(ReviewMapStartup {
+            map,
+            runtime: None,
+            restart: None,
+            failure: None,
+        });
+    };
+    if pager_mode || !config.ai_summaries {
+        return Ok(ReviewMapStartup {
+            map,
+            runtime: None,
+            restart: None,
+            failure: None,
+        });
+    }
+    let unavailable = |message: String| ReviewMapStartup {
+        map: map.clone(),
+        runtime: None,
+        restart: None,
+        failure: Some((
+            ramo_core::review_map::ReviewMapFailureCode::ServerUnreachable,
+            message,
+        )),
+    };
+    let Some(token_file) = config.review_map_token_file.as_deref() else {
+        return Ok(unavailable(
+            "Laptop analysis unavailable · configure review_map_token_file".into(),
+        ));
+    };
+    let token = match read_review_map_token(token_file) {
+        Ok(token) => token,
+        Err(error) => {
+            return Ok(unavailable(format!(
+                "Laptop analysis unavailable · could not read {}: {error}",
+                token_file.display()
+            )));
+        }
+    };
+    let client = match ReviewMapClient::new(&config.review_map_server, token) {
+        Ok(client) => client,
+        Err(error) => return Ok(unavailable(error.to_string())),
+    };
+    let request = ReviewMapResolveRequest::new(
+        context.repository.clone(),
+        context.number,
+        context.captured_revision.clone(),
+    );
+    let runtime = ReviewMapRuntime::start(client.clone(), request.clone());
+    Ok(ReviewMapStartup {
+        map,
+        runtime: Some(runtime),
+        restart: Some((client, request)),
+        failure: None,
+    })
+}
+
+fn review_map_input_file(file: &DiffFile) -> ramo_core::review_map::ReviewMapInputFile {
+    ramo_core::review_map::ReviewMapInputFile {
+        path: file.path.clone(),
+        previous_path: file.previous_path.clone(),
+        status: match file.change_kind {
+            FileChangeKind::Modified => "modified",
+            FileChangeKind::Added => "added",
+            FileChangeKind::Deleted => "deleted",
+            FileChangeKind::Renamed => "renamed",
+            FileChangeKind::Copied => "copied",
+        }
+        .into(),
+        additions: file.stats.additions,
+        deletions: file.stats.deletions,
+        patch: (!file.patch.is_empty()).then(|| file.patch.clone()),
+        binary: file.is_binary,
+    }
+}
+
+fn local_revision(files: &[DiffFile]) -> String {
+    let mut revision = String::from("local");
+    for file in files {
+        revision.push(':');
+        revision.push_str(&file.id);
+        revision.push(':');
+        revision.push_str(&file.stats.additions.to_string());
+        revision.push(':');
+        revision.push_str(&file.stats.deletions.to_string());
+    }
+    revision
+}
+
+fn read_review_map_token(path: &std::path::Path) -> io::Result<String> {
+    const MAX_TOKEN_FILE: u64 = 16 * 1024;
+    let file = fs::File::open(path)?;
+    if file.metadata()?.len() > MAX_TOKEN_FILE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "client token file exceeds 16 KiB",
+        ));
+    }
+    let source = fs::read_to_string(path)?;
+    let token = serde_json::from_str::<serde_json::Value>(&source)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("token")
+                .and_then(|token| token.as_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| source.trim().to_owned());
+    if token.is_empty() || token.contains(['\r', '\n']) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "client token file is malformed",
+        ));
+    }
+    Ok(token)
 }
 
 pub fn should_finish_local_annotations(
