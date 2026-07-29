@@ -283,6 +283,37 @@ impl BlindSession {
             .collect()
     }
 
+    pub fn category_labels(&self) -> Vec<String> {
+        let mut labels = Vec::new();
+        let maps = self
+            .outputs
+            .values()
+            .map(|output| &output.exact_map)
+            .collect::<Vec<_>>();
+        if maps.iter().any(|map| map.totals.migrations > 0) {
+            labels.push("migration_present".into());
+        }
+        if maps
+            .iter()
+            .any(|map| map.totals.generated.saturating_mul(2) >= map.totals.files.max(1))
+        {
+            labels.push("generated_heavy".into());
+        }
+        if maps
+            .iter()
+            .any(|map| map.totals.additions.saturating_add(map.totals.deletions) >= 1_000)
+        {
+            labels.push("large_change".into());
+        }
+        if maps.iter().any(|map| map.totals.tests > 0) {
+            labels.push("tests_present".into());
+        }
+        if labels.is_empty() {
+            labels.push("authored_changes".into());
+        }
+        labels
+    }
+
     pub fn save(&self, path: &Path) -> Result<(), ReviewMapFailure> {
         let bytes = serde_json::to_vec_pretty(&SavedBlindSession {
             seed: self.seed,

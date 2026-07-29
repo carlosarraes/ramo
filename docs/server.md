@@ -66,6 +66,8 @@ Cache filenames are SHA-256 identities, so directory listings do not reveal repo
 
 The server performs one GPU-heavy analysis at a time. Identical requests share a job, a newer head SHA removes older queued work, and clients can review the exact deterministic map while enrichment runs.
 
+The default local model can be selected through Ramo's private, resumable A/B benchmark. See [Local Review Map model benchmark](model-benchmark.md).
+
 ## API failures
 
 Every API failure returns a stable code and a safe message:

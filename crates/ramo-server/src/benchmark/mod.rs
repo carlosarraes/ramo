@@ -1,6 +1,7 @@
 mod blind;
 mod corpus;
 mod metrics;
+mod report;
 mod resources;
 mod runner;
 
@@ -17,6 +18,9 @@ use crate::ollama::PROMPT_VERSION;
 
 pub use corpus::{BenchmarkCase, BenchmarkManifest, CANDIDATE_MODELS};
 pub use metrics::{BenchmarkRun, CandidateMeasurement, CompletionState};
+pub use report::{
+    BenchmarkDecision, CandidateAggregate, aggregate_candidates, sanitized_report, select_default,
+};
 pub use runner::{BenchmarkAnalyzerFactory, BenchmarkRunner, OllamaBenchmarkAnalyzerFactory};
 
 pub async fn run_command(command: BenchmarkCommand) -> Result<(), ReviewMapFailure> {
@@ -30,7 +34,97 @@ pub async fn run_command(command: BenchmarkCommand) -> Result<(), ReviewMapFailu
         BenchmarkCommand::Run { manifest, yes } => run_benchmark(&manifest, yes).await,
         BenchmarkCommand::Judge { manifest } => judge(&manifest),
         BenchmarkCommand::Reveal { manifest } => reveal(&manifest),
+        BenchmarkCommand::Select { manifest, yes } => select(&manifest, yes),
+        BenchmarkCommand::Report {
+            manifest,
+            sanitized,
+        } => report(&manifest, &sanitized),
     }
+}
+
+fn select(manifest_path: &Path, yes: bool) -> Result<(), ReviewMapFailure> {
+    let (run, session, aggregates, decision) = benchmark_decision(manifest_path)?;
+    println!("Selected {} ({})", decision.model, decision.rationale);
+    if !yes
+        && !confirm(&format!(
+            "Use {} as ramo-server's default? [y/N] ",
+            decision.model
+        ))?
+    {
+        return Ok(());
+    }
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| invalid("Could not resolve the user configuration directory"))?
+        .join("ramo-server");
+    crate::config::save_selected_model(
+        &config_dir,
+        &crate::config::SelectedModelConfig {
+            selected_model: decision.model.clone(),
+            model_digest: decision.model_digest.clone(),
+            prompt_version: run.prompt_version,
+            benchmark_run_id: run.run_id.clone(),
+        },
+    )?;
+    println!(
+        "Activated {} from benchmark run {} ({} candidates passed into selection)",
+        decision.model,
+        run.run_id,
+        aggregates.len()
+    );
+    let _ = session;
+    Ok(())
+}
+
+fn report(manifest_path: &Path, output: &Path) -> Result<(), ReviewMapFailure> {
+    let (run, session, aggregates, decision) = benchmark_decision(manifest_path)?;
+    let hardware = format!(
+        "{} {}; {} logical CPUs",
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    );
+    let contents = sanitized_report(
+        &run.run_id,
+        &decision,
+        &aggregates,
+        &session.category_labels(),
+        &hardware,
+    );
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| benchmark_io("Could not create report directory", error))?;
+    }
+    std::fs::write(output, contents)
+        .map_err(|error| benchmark_io("Could not write sanitized benchmark report", error))?;
+    println!("Wrote sanitized benchmark report to {}", output.display());
+    Ok(())
+}
+
+fn benchmark_decision(
+    manifest_path: &Path,
+) -> Result<
+    (
+        BenchmarkRun,
+        BlindSession,
+        Vec<CandidateAggregate>,
+        BenchmarkDecision,
+    ),
+    ReviewMapFailure,
+> {
+    let run_directory = benchmark_run_directory(manifest_path)?;
+    let run = BenchmarkRun::load(&run_directory.join("run.json"))?;
+    let session = BlindSession::open(&run_directory, &run)?;
+    if session.completed() != session.total() {
+        return Err(invalid(
+            "Complete blind judging before selecting or reporting a model",
+        ));
+    }
+    let aggregates = aggregate_candidates(&run, &session);
+    let decision = select_default(&aggregates)?;
+    Ok((run, session, aggregates, decision))
 }
 
 fn judge(manifest_path: &Path) -> Result<(), ReviewMapFailure> {
