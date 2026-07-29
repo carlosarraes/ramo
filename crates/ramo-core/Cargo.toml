@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+globset = "0.4"
 serde = { version = "1", features = ["derive"] }
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 thiserror = "2"

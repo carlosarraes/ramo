@@ -1954,6 +1954,7 @@ dependencies = [
 name = "ramo-core"
 version = "0.0.17"
 dependencies = [
+ "globset",
  "serde",
  "serde_json",
  "syntect",
