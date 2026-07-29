@@ -226,7 +226,6 @@ fn read_bounded(mut reader: impl Read, limit: usize) -> Vec<u8> {
 }
 
 fn update_timeout() -> Duration {
-    #[cfg(debug_assertions)]
     if let Ok(value) = std::env::var("RAMO_TEST_UPDATE_NOTICE_TIMEOUT_MS")
         && let Ok(milliseconds) = value.parse::<u64>()
     {
@@ -236,7 +235,6 @@ fn update_timeout() -> Duration {
 }
 
 fn update_delay() -> Duration {
-    #[cfg(debug_assertions)]
     if let Ok(value) = std::env::var("RAMO_TEST_UPDATE_NOTICE_DELAY_MS")
         && let Ok(milliseconds) = value.parse::<u64>()
     {

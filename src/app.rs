@@ -148,7 +148,6 @@ enum ReviewMouseDrag {
 const STARTUP_NOTICE_DURATION: Duration = Duration::from_secs(7);
 
 fn startup_notice_duration() -> Duration {
-    #[cfg(debug_assertions)]
     if let Ok(value) = std::env::var("RAMO_TEST_STARTUP_NOTICE_DURATION_MS")
         && let Ok(milliseconds) = value.parse::<u64>()
     {
