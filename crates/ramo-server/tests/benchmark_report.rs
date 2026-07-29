@@ -1,5 +1,6 @@
 use ramo_server::benchmark::{
-    BenchmarkDecision, CandidateAggregate, sanitized_report, select_default,
+    BenchmarkDecision, CandidateAggregate, eligible_candidate_count, sanitized_report,
+    select_default,
 };
 use ramo_server::config::{SelectedModelConfig, load_selected_model, save_selected_model};
 
@@ -29,6 +30,17 @@ fn quality_wins_after_hard_gates_then_latency_breaks_a_tie() {
 
     assert_eq!(quality.model, "useful");
     assert_eq!(latency.model, "fast");
+}
+
+#[test]
+fn hard_gate_count_allows_selection_without_blind_scores_for_a_sole_survivor() {
+    let candidates = [
+        candidate("reliable", 0.0, 1.0, 20_000),
+        candidate("timed-out", 0.0, 0.9, 10_000),
+    ];
+
+    assert_eq!(eligible_candidate_count(&candidates), 1);
+    assert_eq!(select_default(&candidates).unwrap().model, "reliable");
 }
 
 #[test]

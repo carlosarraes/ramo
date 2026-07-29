@@ -31,30 +31,47 @@ pub struct BenchmarkDecision {
     pub rationale: String,
 }
 
+pub fn eligible_candidate_count(candidates: &[CandidateAggregate]) -> usize {
+    candidates
+        .iter()
+        .filter(|candidate| passes_hard_gates(candidate))
+        .count()
+}
+
 pub fn select_default(
     candidates: &[CandidateAggregate],
 ) -> Result<BenchmarkDecision, ReviewMapFailure> {
     let mut eligible = candidates
         .iter()
-        .filter(|candidate| {
-            candidate.completion_ratio == 1.0
-                && candidate.schema_validity_ratio == 1.0
-                && candidate.semantic_validity_ratio == 1.0
-                && candidate.unknown_reference_count == 0
-        })
+        .filter(|candidate| passes_hard_gates(candidate))
         .collect::<Vec<_>>();
     eligible.sort_by(|left, right| compare_candidates(left, right));
     let winner = eligible
         .first()
         .ok_or_else(|| invalid("No benchmark candidate passed every hard gate"))?;
+    let rationale = if winner.pairwise_wins + winner.pairwise_losses + winner.pairwise_ties == 0 {
+        format!(
+            "Passed every validity gate; median wall time {} ms",
+            winner.median_wall_time_ms
+        )
+    } else {
+        format!(
+            "Passed every validity gate; mean blind usefulness {:.2}, median wall time {} ms",
+            winner.mean_blind_usefulness, winner.median_wall_time_ms
+        )
+    };
     Ok(BenchmarkDecision {
         model: winner.model.clone(),
         model_digest: winner.model_digest.clone(),
-        rationale: format!(
-            "Passed every validity gate; mean blind usefulness {:.2}, median wall time {} ms",
-            winner.mean_blind_usefulness, winner.median_wall_time_ms
-        ),
+        rationale,
     })
+}
+
+fn passes_hard_gates(candidate: &CandidateAggregate) -> bool {
+    candidate.completion_ratio == 1.0
+        && candidate.schema_validity_ratio == 1.0
+        && candidate.semantic_validity_ratio == 1.0
+        && candidate.unknown_reference_count == 0
 }
 
 pub fn aggregate_candidates(run: &BenchmarkRun, session: &BlindSession) -> Vec<CandidateAggregate> {
@@ -182,15 +199,21 @@ pub fn sanitized_report(
         decision.rationale
     );
     for candidate in candidates {
+        let blind_usefulness =
+            if candidate.pairwise_wins + candidate.pairwise_losses + candidate.pairwise_ties == 0 {
+                "n/a".into()
+            } else {
+                format!("{:.2}", candidate.mean_blind_usefulness)
+            };
         report.push_str(&format!(
-            "| {} | {} | {:.0}% | {:.0}% | {:.0}% | {} | {:.2} | {} | {} | {}/{}/{} |\n",
+            "| {} | {} | {:.0}% | {:.0}% | {:.0}% | {} | {} | {} | {} | {}/{}/{} |\n",
             candidate.model,
             candidate.model_digest,
             candidate.completion_ratio * 100.0,
             candidate.schema_validity_ratio * 100.0,
             candidate.semantic_validity_ratio * 100.0,
             candidate.unknown_reference_count,
-            candidate.mean_blind_usefulness,
+            blind_usefulness,
             candidate.median_wall_time_ms,
             candidate
                 .peak_rss_bytes

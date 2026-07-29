@@ -19,7 +19,8 @@ use crate::ollama::PROMPT_VERSION;
 pub use corpus::{BenchmarkCase, BenchmarkManifest, CANDIDATE_MODELS};
 pub use metrics::{BenchmarkRun, CandidateMeasurement, CompletionState};
 pub use report::{
-    BenchmarkDecision, CandidateAggregate, aggregate_candidates, sanitized_report, select_default,
+    BenchmarkDecision, CandidateAggregate, aggregate_candidates, eligible_candidate_count,
+    sanitized_report, select_default,
 };
 pub use runner::{BenchmarkAnalyzerFactory, BenchmarkRunner, OllamaBenchmarkAnalyzerFactory};
 
@@ -66,7 +67,7 @@ fn select(manifest_path: &Path, yes: bool) -> Result<(), ReviewMapFailure> {
         },
     )?;
     println!(
-        "Activated {} from benchmark run {} ({} candidates passed into selection)",
+        "Activated {} from benchmark run {} ({} candidates evaluated)",
         decision.model,
         run.run_id,
         aggregates.len()
@@ -117,12 +118,12 @@ fn benchmark_decision(
     let run_directory = benchmark_run_directory(manifest_path)?;
     let run = BenchmarkRun::load(&run_directory.join("run.json"))?;
     let session = BlindSession::open(&run_directory, &run)?;
-    if session.completed() != session.total() {
+    let aggregates = aggregate_candidates(&run, &session);
+    if eligible_candidate_count(&aggregates) > 1 && session.completed() != session.total() {
         return Err(invalid(
             "Complete blind judging before selecting or reporting a model",
         ));
     }
-    let aggregates = aggregate_candidates(&run, &session);
     let decision = select_default(&aggregates)?;
     Ok((run, session, aggregates, decision))
 }
