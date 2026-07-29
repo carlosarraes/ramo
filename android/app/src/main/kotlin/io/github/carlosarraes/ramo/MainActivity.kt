@@ -117,6 +117,8 @@ class MainActivity : ComponentActivity() {
                                 onPublish = review::publish,
                                 onDismissSuccess = review::dismissSuccess,
                                 onRefreshAfterAttention = review::refreshAfterAttention,
+                                onUndoViewed = review::undoViewed,
+                                onDismissNotice = review::dismissNotice,
                             )
                             }
                             AppDestination.Inbox -> InboxScreen(

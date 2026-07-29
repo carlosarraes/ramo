@@ -94,6 +94,13 @@ data class ReviewUiState(
     val publishing: Boolean = false,
     val success: String? = null,
     val needsAttention: Boolean = false,
+    val notice: ReviewNoticeUi? = null,
+)
+
+data class ReviewNoticeUi(
+    val id: Long,
+    val message: String,
+    val undoViewedFile: Int? = null,
 )
 
 enum class ReviewVerdictUi { Comment, Approve, RequestChanges }

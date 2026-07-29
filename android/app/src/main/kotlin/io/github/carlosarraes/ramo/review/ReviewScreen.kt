@@ -19,10 +19,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +65,8 @@ fun ReviewScreen(
     onPublish: () -> Unit,
     onDismissSuccess: () -> Unit,
     onRefreshAfterAttention: () -> Unit,
+    onUndoViewed: () -> Unit,
+    onDismissNotice: () -> Unit,
 ) {
     val pull = state.pullRequest
     val screen = state.screen
@@ -71,6 +77,17 @@ fun ReviewScreen(
 
     val listState = rememberLazyListState()
     val horizontal = rememberScrollState(state.horizontalOffsets[state.selectedFile] ?: 0)
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.notice?.id) {
+        val notice = state.notice ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = notice.message,
+            actionLabel = if (notice.undoViewedFile != null) "Undo" else null,
+            withDismissAction = true,
+        )
+        if (result == SnackbarResult.ActionPerformed) onUndoViewed()
+        onDismissNotice()
+    }
     LaunchedEffect(state.selectedFile) {
         horizontal.scrollTo(state.horizontalOffsets[state.selectedFile] ?: 0)
         listState.scrollToItem(0)
@@ -89,6 +106,7 @@ fun ReviewScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             ReviewTopBar(
                 fileName = screen.file.path,

@@ -48,6 +48,26 @@ class ReviewViewModelTest {
         assertEquals(listOf(true), repository.viewedCalls)
     }
 
+    @Test fun autoViewedAtEndOffersUndoAndUndoWins() = runTest(dispatcher) {
+        val repository = FakeReviewRepository(firstPageComplete = true)
+        val model = ReviewViewModel(repository, "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.lastRowVisible()
+        assertEquals(0, model.state.value.notice!!.undoViewedFile)
+        model.undoViewed()
+        advanceUntilIdle()
+        assertFalse(model.state.value.pullRequest!!.files[0].viewed)
+        assertEquals(listOf(false), repository.viewedCalls.takeLast(1))
+    }
+
+    @Test fun navigatingBeforeTheRealEndNeverOffersUndo() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.nextFile()
+        advanceUntilIdle()
+        assertEquals(null, model.state.value.notice)
+    }
+
     @Test fun failedViewedMutationRollsBack() = runTest(dispatcher) {
         val repository = FakeReviewRepository(failViewed = true)
         val model = ReviewViewModel(repository, "ramo/ramo", 7)

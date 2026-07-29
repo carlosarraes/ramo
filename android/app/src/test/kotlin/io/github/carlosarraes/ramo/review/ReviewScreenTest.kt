@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -55,7 +56,15 @@ class ReviewScreenTest {
         compose.onNodeWithText("Draft comment").assertIsDisplayed()
     }
 
-    private fun setReviewContent() {
+    @Test
+    fun viewedNoticeOffersUndo() {
+        setReviewContent(notice = ReviewNoticeUi(1, "Marked viewed", 0))
+
+        compose.onNodeWithText("Marked viewed").assertIsDisplayed()
+        compose.onNodeWithText("Undo").assertHasClickAction()
+    }
+
+    private fun setReviewContent(notice: ReviewNoticeUi? = null) {
         compose.setContent {
             RamoAppSurface {
                 var selectedFile by remember { mutableIntStateOf(0) }
@@ -73,6 +82,7 @@ class ReviewScreenTest {
                         fileSheetOpen = fileSheetOpen,
                         selection = selection,
                         editor = editor,
+                        notice = notice,
                     ),
                     codeSize = 13,
                     onBack = {},
@@ -103,6 +113,8 @@ class ReviewScreenTest {
                     onPublish = {},
                     onDismissSuccess = {},
                     onRefreshAfterAttention = {},
+                    onUndoViewed = {},
+                    onDismissNotice = {},
                 )
             }
         }

@@ -19,10 +19,17 @@ class ReviewViewModel(
     private val mutableState = MutableStateFlow(ReviewUiState())
     val state: StateFlow<ReviewUiState> = mutableState.asStateFlow()
     private var pageJob: Job? = null
+    private val viewedJobs = mutableMapOf<Int, Job>()
+    private val viewedMutations = mutableMapOf<Int, Long>()
+    private var viewedMutationId = 0L
+    private var noticeId = 0L
 
     init { open() }
 
     fun open() {
+        viewedJobs.values.forEach(Job::cancel)
+        viewedJobs.clear()
+        viewedMutations.clear()
         mutableState.value = ReviewUiState(loading = true)
         viewModelScope.launch {
             runCatching { repository.open(repositoryName, number) }
@@ -232,21 +239,22 @@ class ReviewViewModel(
 
     fun lastRowVisible() {
         val screen = mutableState.value.screen ?: return
-        if (screen.nextRow == null && !screen.file.viewed) setViewed(true)
+        if (screen.nextRow == null && !screen.file.viewed) {
+            mutateViewed(mutableState.value.selectedFile, viewed = true, offerUndo = true)
+        }
     }
 
     fun setViewed(viewed: Boolean) {
-        val before = mutableState.value
-        val screen = before.screen ?: return
-        if (screen.file.viewed == viewed) return
-        applyViewed(viewed)
-        viewModelScope.launch {
-            runCatching { repository.setViewed(screen.pullRequestId, screen.file.path, viewed) }
-                .onFailure {
-                    mutableState.value = before.copy(error = "Could not sync viewed state")
-                }
-        }
+        mutateViewed(mutableState.value.selectedFile, viewed, offerUndo = false)
     }
+
+    fun undoViewed() {
+        val fileIndex = mutableState.value.notice?.undoViewedFile ?: return
+        mutableState.value = mutableState.value.copy(notice = null)
+        mutateViewed(fileIndex, viewed = false, offerUndo = false)
+    }
+
+    fun dismissNotice() { mutableState.value = mutableState.value.copy(notice = null) }
 
     fun expand(row: DiffRowUi) {
         if (!row.key.contains(":gap:")) return
@@ -267,21 +275,61 @@ class ReviewViewModel(
         }
     }
 
-    private fun applyViewed(viewed: Boolean) {
+    private fun mutateViewed(index: Int, viewed: Boolean, offerUndo: Boolean) {
         val state = mutableState.value
-        val screen = state.screen ?: return
+        val pull = state.pullRequest ?: return
+        val file = pull.files.getOrNull(index) ?: return
+        if (file.viewed == viewed && viewedJobs[index]?.isActive != true) return
+        val beforeViewed = file.viewed
+        val pullRequestId = state.screen?.pullRequestId ?: pull.nodeId
+        viewedJobs.remove(index)?.cancel()
+        val mutationId = ++viewedMutationId
+        viewedMutations[index] = mutationId
+        applyViewed(index, viewed)
+        if (offerUndo) {
+            mutableState.value = mutableState.value.copy(
+                notice = ReviewNoticeUi(++noticeId, "Marked viewed", index),
+            )
+        }
+        val job = viewModelScope.launch {
+            runCatching { repository.setViewed(pullRequestId, file.path, viewed) }
+                .onFailure {
+                    if (viewedMutations[index] == mutationId) {
+                        applyViewed(index, beforeViewed)
+                        mutableState.value = mutableState.value.copy(
+                            notice = null,
+                            error = "Could not sync viewed state",
+                        )
+                    }
+                }
+        }
+        viewedJobs[index] = job
+        job.invokeOnCompletion {
+            if (viewedMutations[index] == mutationId) {
+                viewedJobs.remove(index, job)
+                viewedMutations.remove(index)
+            }
+        }
+    }
+
+    private fun applyViewed(index: Int, viewed: Boolean) {
+        val state = mutableState.value
+        val pullRequest = state.pullRequest ?: return
+        val before = pullRequest.files.getOrNull(index) ?: return
+        if (before.viewed == viewed) return
         val delta = if (viewed) 1 else -1
-        val pull = state.pullRequest?.let { pull ->
-            pull.copy(files = pull.files.mapIndexed { index, file ->
-                if (index == state.selectedFile) file.copy(viewed = viewed) else file
-            })
+        val pull = pullRequest.copy(files = pullRequest.files.mapIndexed { fileIndex, file ->
+            if (fileIndex == index) file.copy(viewed = viewed) else file
+        })
+        val screen = state.screen?.let { screen ->
+            screen.copy(
+                file = if (state.selectedFile == index) screen.file.copy(viewed = viewed) else screen.file,
+                viewedCount = (screen.viewedCount + delta).coerceIn(0, screen.fileCount),
+            )
         }
         mutableState.value = state.copy(
             pullRequest = pull,
-            screen = screen.copy(
-                file = screen.file.copy(viewed = viewed),
-                viewedCount = (screen.viewedCount + delta).coerceIn(0, screen.fileCount),
-            ),
+            screen = screen,
         )
     }
 
