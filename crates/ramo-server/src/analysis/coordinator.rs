@@ -44,6 +44,7 @@ pub struct JobSnapshot {
 #[derive(Debug, Clone)]
 pub struct ResolveRequest {
     pub key: PullRequestKey,
+    pub expected_head_sha: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +139,13 @@ impl AnalysisCoordinator {
                     error,
                 )
             })?;
+        if request
+            .expected_head_sha
+            .as_deref()
+            .is_some_and(|expected| expected != exact_map.identity.head_sha)
+        {
+            return Err(stale_failure());
+        }
         let enrichment_request = enrichment_request(&input, &exact_map);
         let analyzer_identity = match self.inner.analyzer.identity().await {
             Ok(identity) => identity,
@@ -201,6 +209,36 @@ impl AnalysisCoordinator {
             .jobs
             .get(id)
             .map(|record| record.snapshot.clone())
+    }
+
+    pub async fn retry(&self, id: &AnalysisJobId) -> Result<ResolveResult, ReviewMapFailure> {
+        let key = {
+            let state = self.inner.state.lock().await;
+            let record = state.jobs.get(id).ok_or_else(|| {
+                ReviewMapFailure::new(
+                    ReviewMapFailureCode::PullRequestUnavailable,
+                    "The Review Map job was not found",
+                )
+            })?;
+            if !matches!(
+                record.snapshot.state,
+                JobState::Unavailable(_) | JobState::Failed(_)
+            ) {
+                return Err(ReviewMapFailure::new(
+                    ReviewMapFailureCode::AnalysisFailed,
+                    "Only unavailable or failed Review Map jobs can be retried",
+                ));
+            }
+            PullRequestKey {
+                repository: record.repository.clone(),
+                number: record.pull_request,
+            }
+        };
+        self.resolve(ResolveRequest {
+            key,
+            expected_head_sha: None,
+        })
+        .await
     }
 
     async fn record_terminal(

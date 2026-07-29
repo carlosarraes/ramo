@@ -289,6 +289,7 @@ fn request() -> ResolveRequest {
             repository: "owner/repo".into(),
             number: 7,
         },
+        expected_head_sha: None,
     }
 }
 
