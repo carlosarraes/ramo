@@ -69,6 +69,23 @@ class ReviewViewModelTest {
         assertEquals(mapOf(0 to 88, 1 to 12), model.state.value.horizontalOffsets)
     }
 
+    @Test fun selectingAFileClosesTheFileSheet() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.setFileSheet(true)
+        model.selectFile(1)
+        advanceUntilIdle()
+        assertFalse(model.state.value.fileSheetOpen)
+        assertEquals(1, model.state.value.selectedFile)
+    }
+
+    @Test fun summaryExpansionIsExplicit() = runTest(dispatcher) {
+        val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7)
+        advanceUntilIdle()
+        model.setSummaryExpanded(true)
+        assertTrue(model.state.value.summaryExpanded)
+    }
+
     @Test fun savesMultilineDraftOnlyOnExplicitSave() = runTest(dispatcher) {
         val store = MemoryReviewDraftStore()
         val model = ReviewViewModel(FakeReviewRepository(), "ramo/ramo", 7, store)

@@ -44,13 +44,16 @@ class ReviewViewModel(
     fun selectFile(index: Int) {
         val files = mutableState.value.pullRequest?.files.orEmpty()
         if (index !in files.indices || index == mutableState.value.selectedFile) return
-        mutableState.value = mutableState.value.copy(selectedFile = index, drawerOpen = false)
+        mutableState.value = mutableState.value.copy(selectedFile = index, fileSheetOpen = false)
         loadFile(index)
     }
 
     fun previousFile() = selectFile(mutableState.value.selectedFile - 1)
     fun nextFile() = selectFile(mutableState.value.selectedFile + 1)
-    fun setDrawer(open: Boolean) { mutableState.value = mutableState.value.copy(drawerOpen = open) }
+    fun setFileSheet(open: Boolean) { mutableState.value = mutableState.value.copy(fileSheetOpen = open) }
+    fun setSummaryExpanded(expanded: Boolean) {
+        mutableState.value = mutableState.value.copy(summaryExpanded = expanded)
+    }
     fun setFinishing(open: Boolean) { mutableState.value = mutableState.value.copy(finishing = open) }
 
     fun beginComment(row: DiffRowUi) {

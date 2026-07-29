@@ -1,44 +1,44 @@
 package io.github.carlosarraes.ramo.review
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.carlosarraes.ramo.ui.theme.Green
 import io.github.carlosarraes.ramo.ui.theme.Red
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewScreen(
     state: ReviewUiState,
     codeSize: Int,
     onBack: () -> Unit,
-    onDrawer: (Boolean) -> Unit,
+    onFileSheet: (Boolean) -> Unit,
+    onSummaryExpanded: (Boolean) -> Unit,
     onSelectFile: (Int) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -63,74 +63,111 @@ fun ReviewScreen(
     val pull = state.pullRequest
     val screen = state.screen
     if (pull == null || screen == null) {
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            if (state.loading) CircularProgressIndicator() else Text(state.error ?: "Pull request unavailable")
-            TextButton(onClick = onBack) { Text("Back") }
-        }
+        ReviewUnavailable(state, onBack)
         return
     }
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    LaunchedEffect(state.drawerOpen) {
-        if (state.drawerOpen) drawerState.open() else drawerState.close()
+
+    val listState = rememberLazyListState()
+    val horizontal = rememberScrollState(state.horizontalOffsets[state.selectedFile] ?: 0)
+    LaunchedEffect(state.selectedFile) {
+        horizontal.scrollTo(state.horizontalOffsets[state.selectedFile] ?: 0)
+        listState.scrollToItem(0)
     }
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = false,
-        drawerContent = { ModalDrawerSheet { FileDrawer(pull.files, state.selectedFile, onSelectFile) } },
-    ) {
-        Column(Modifier.fillMaxSize()) {
-            ReviewSummary(pull, screen, onBack)
+    LaunchedEffect(horizontal) {
+        snapshotFlow { horizontal.value }.distinctUntilChanged().collect(onHorizontalOffset)
+    }
+    LaunchedEffect(listState, screen.rows.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+            .distinctUntilChanged()
+            .collect { index ->
+                if (index >= screen.rows.size - 40) onLoadMore()
+                if (index >= screen.rows.size - 1) onLastRow()
+            }
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            ReviewTopBar(
+                fileName = screen.file.path,
+                currentFile = state.selectedFile + 1,
+                fileCount = pull.files.size,
+                onBack = onBack,
+                onFiles = { onFileSheet(true) },
+            )
+        },
+        bottomBar = {
+            ReviewBottomNavigation(
+                canPrevious = state.selectedFile > 0,
+                canNext = state.selectedFile < pull.files.lastIndex,
+                onPrevious = onPrevious,
+                onFinish = { onFinish(true) },
+                onNext = onNext,
+            )
+        },
+    ) { contentPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .testTag("diff-list"),
+            state = listState,
+        ) {
+            item {
+                ReviewSummary(
+                    pull = pull,
+                    screen = screen,
+                    expanded = state.summaryExpanded,
+                    onExpanded = onSummaryExpanded,
+                )
+            }
             state.success?.let { message ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(message, Modifier.weight(1f), color = io.github.carlosarraes.ramo.ui.theme.Green)
-                    TextButton(onClick = onDismissSuccess) { Text("Dismiss") }
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { onDrawer(true) }) { Text("Files") }
-                Text(screen.file.path, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                Text("Viewed")
-                Checkbox(checked = screen.file.viewed, onCheckedChange = onViewed)
-            }
-            val listState = rememberLazyListState()
-            val horizontal = rememberScrollState(state.horizontalOffsets[state.selectedFile] ?: 0)
-            LaunchedEffect(state.selectedFile) {
-                horizontal.scrollTo(state.horizontalOffsets[state.selectedFile] ?: 0)
-            }
-            LaunchedEffect(horizontal) {
-                snapshotFlow { horizontal.value }.distinctUntilChanged().collect(onHorizontalOffset)
-            }
-            LaunchedEffect(listState, screen.rows.size) {
-                snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-                    .distinctUntilChanged()
-                    .collect { index ->
-                        if (index >= screen.rows.size - 40) onLoadMore()
-                        if (index >= screen.rows.size - 1) onLastRow()
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(message, Modifier.weight(1f), color = Green)
+                        TextButton(onClick = onDismissSuccess) { Text("Dismiss") }
                     }
-            }
-            LazyColumn(Modifier.weight(1f), state = listState) {
-                items(screen.rows, key = DiffRowUi::key) { row ->
-                    DiffRow(row, horizontal, codeSize, onComment, onExpand)
-                    screen.threads.filter { thread ->
-                        !thread.outdated && thread.endLine != null &&
-                            (thread.endLine == row.newLine || thread.endLine == row.oldLine)
-                    }.forEach { ConversationCard(it) }
-                }
-                val previous = screen.threads.filter { it.outdated || it.endLine == null }
-                if (previous.isNotEmpty()) {
-                    item { Text("Previous conversations", Modifier.padding(12.dp), fontWeight = FontWeight.Bold) }
-                    items(previous, key = ReviewThreadUi::id) { ConversationCard(it) }
                 }
             }
-            state.error?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error) }
-            if (state.needsAttention) NeedsAttentionSheet(state, onDeleteDraft, onRefreshAfterAttention)
-            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onPrevious, enabled = state.selectedFile > 0) { Text("Previous file") }
-                Button(onClick = { onFinish(true) }) { Text("Finish review") }
-                TextButton(onClick = onNext, enabled = state.selectedFile + 1 < pull.files.size) { Text("Next file") }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Viewed", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Checkbox(checked = screen.file.viewed, onCheckedChange = onViewed)
+                }
+            }
+            items(screen.rows, key = DiffRowUi::key) { row ->
+                DiffRow(row, horizontal, codeSize, onComment, onExpand)
+                screen.threads.filter { thread ->
+                    !thread.outdated && thread.endLine != null &&
+                        (thread.endLine == row.newLine || thread.endLine == row.oldLine)
+                }.forEach { ConversationCard(it) }
+            }
+            val previous = screen.threads.filter { it.outdated || it.endLine == null }
+            if (previous.isNotEmpty()) {
+                item { Text("Previous conversations", Modifier.padding(12.dp), fontWeight = FontWeight.Bold) }
+                items(previous, key = ReviewThreadUi::id) { ConversationCard(it) }
+            }
+            state.error?.let { error ->
+                item { Text(error, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
             }
         }
     }
+
+    if (state.fileSheetOpen) {
+        FileSheet(
+            files = pull.files,
+            selected = state.selectedFile,
+            onSelect = onSelectFile,
+            onDismiss = { onFileSheet(false) },
+        )
+    }
+    if (state.needsAttention) NeedsAttentionSheet(state, onDeleteDraft, onRefreshAfterAttention)
     state.editor?.let { editor ->
         DraftEditor(
             editor,
@@ -150,24 +187,46 @@ fun ReviewScreen(
             onContinue = { onConfirmation(true) },
         )
     }
-    if (state.confirmation) {
-        PublishConfirmation(state, onPublish, onDismiss = { onConfirmation(false) })
+    if (state.confirmation) PublishConfirmation(state, onPublish, onDismiss = { onConfirmation(false) })
+}
+
+@Composable
+private fun ReviewUnavailable(state: ReviewUiState, onBack: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (state.loading) CircularProgressIndicator() else Text(state.error ?: "Pull request unavailable")
+            TextButton(onClick = onBack) { Text("Back") }
+        }
     }
 }
 
 @Composable
-private fun ReviewSummary(pull: PullRequestUi, screen: FileScreenUi, onBack: () -> Unit) {
+private fun ReviewSummary(
+    pull: PullRequestUi,
+    screen: FileScreenUi,
+    expanded: Boolean,
+    onExpanded: (Boolean) -> Unit,
+) {
     val percent = if (screen.fileCount == 0) 100 else screen.viewedCount * 100 / screen.fileCount
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("Back") }
-            Text("${pull.repository} #${pull.number}", fontWeight = FontWeight.Bold)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onExpanded(!expanded) }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("${pull.repository} #${pull.number}", fontWeight = FontWeight.SemiBold)
+            Text(if (expanded) "Hide details" else "Details", color = MaterialTheme.colorScheme.primary)
         }
-        Text(pull.title, style = MaterialTheme.typography.titleMedium)
-        Row {
+        if (expanded) {
+            Text(pull.title, style = MaterialTheme.typography.titleMedium)
+            Text("${pull.headRef} → ${pull.baseRef}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("+${pull.additions}", color = Green)
-            Text("  −${pull.deletions}", color = Red)
-            Text("   ${screen.fileIndex + 1} / ${screen.fileCount} files · $percent%")
+            Text("−${pull.deletions}", color = Red)
+            Text("$percent% viewed", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
