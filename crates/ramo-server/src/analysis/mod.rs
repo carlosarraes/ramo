@@ -1,5 +1,5 @@
 mod budget;
-mod coordinator;
+pub(crate) mod coordinator;
 
 pub use budget::{AnalysisBudget, budget_batches};
 pub use coordinator::{

@@ -49,4 +49,10 @@ pub enum BenchmarkCommand {
         #[arg(long)]
         yes: bool,
     },
+    Run {
+        #[arg(long, default_value = ".ramo-benchmark/manifest.json")]
+        manifest: PathBuf,
+        #[arg(long)]
+        yes: bool,
+    },
 }

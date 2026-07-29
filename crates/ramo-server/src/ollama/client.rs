@@ -29,6 +29,7 @@ pub struct AnalysisResult {
     pub prompt_eval_count: u64,
     pub eval_count: u64,
     pub total_duration_ns: u64,
+    pub repair_count: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +81,7 @@ impl OllamaAnalyzer {
                         result.prompt_eval_count += first_metrics.prompt_eval_count;
                         result.eval_count += first_metrics.eval_count;
                         result.total_duration_ns += first_metrics.total_duration_ns;
+                        result.repair_count = 1;
                         result
                     })
                     .map_err(|(category, _)| invalid_failure(&category))
@@ -325,6 +327,7 @@ fn parse_and_validate(
         prompt_eval_count: raw.prompt_eval_count,
         eval_count: raw.eval_count,
         total_duration_ns: raw.total_duration_ns,
+        repair_count: 0,
     })
 }
 

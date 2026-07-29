@@ -83,6 +83,7 @@ impl Analyzer for ImmediateAnalyzer {
             prompt_eval_count: 10,
             eval_count: 5,
             total_duration_ns: 100,
+            repair_count: 0,
         })
     }
 }

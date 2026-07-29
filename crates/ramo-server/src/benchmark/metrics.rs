@@ -81,6 +81,19 @@ impl BenchmarkRun {
         write_private(path, &bytes)
     }
 
+    pub fn load(path: &Path) -> Result<Self, ReviewMapFailure> {
+        let bytes = std::fs::read(path)
+            .map_err(|error| benchmark_io("Could not read benchmark run", error))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|error| benchmark_io("Could not parse benchmark run", error))
+    }
+
+    pub fn is_compatible_with(&self, manifest: &BenchmarkManifest) -> bool {
+        self.repository == manifest.repository
+            && self.candidates == manifest.candidates
+            && self.prompt_version == manifest.prompt_version
+    }
+
     pub fn append_measurement(
         path: &Path,
         measurement: &CandidateMeasurement,

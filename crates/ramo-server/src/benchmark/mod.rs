@@ -1,8 +1,12 @@
 mod corpus;
 mod metrics;
+mod resources;
+mod runner;
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ramo_core::review_map::{REVIEW_MAP_CLASSIFIER_VERSION, REVIEW_MAP_SCHEMA_VERSION};
 
@@ -12,6 +16,7 @@ use crate::ollama::PROMPT_VERSION;
 
 pub use corpus::{BenchmarkCase, BenchmarkManifest, CANDIDATE_MODELS};
 pub use metrics::{BenchmarkRun, CandidateMeasurement, CompletionState};
+pub use runner::{BenchmarkAnalyzerFactory, BenchmarkRunner, OllamaBenchmarkAnalyzerFactory};
 
 pub async fn run_command(command: BenchmarkCommand) -> Result<(), ReviewMapFailure> {
     match command {
@@ -21,6 +26,108 @@ pub async fn run_command(command: BenchmarkCommand) -> Result<(), ReviewMapFailu
             recent,
             yes,
         } => init(&repo_path, pull_requests, recent, yes),
+        BenchmarkCommand::Run { manifest, yes } => run_benchmark(&manifest, yes).await,
+    }
+}
+
+async fn run_benchmark(manifest_path: &Path, yes: bool) -> Result<(), ReviewMapFailure> {
+    let manifest = BenchmarkManifest::load(manifest_path)?;
+    ensure_models(&manifest.candidates, yes)?;
+    let benchmark_root = manifest_path
+        .parent()
+        .ok_or_else(|| invalid("Benchmark manifest path has no parent directory"))?;
+    let run_directory = benchmark_root.join("run");
+    let run_path = run_directory.join("run.json");
+    let mut run = if run_path.is_file() {
+        let run = BenchmarkRun::load(&run_path)?;
+        if !run.is_compatible_with(&manifest) {
+            return Err(invalid(
+                "Existing benchmark run does not match this manifest; archive it before starting a new run",
+            ));
+        }
+        run
+    } else {
+        BenchmarkRun::new(
+            format!(
+                "run-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            ),
+            &manifest,
+            42,
+        )
+    };
+    let factory = Arc::new(OllamaBenchmarkAnalyzerFactory::new(
+        "http://127.0.0.1:11434",
+        Duration::from_secs(120),
+    ));
+    let runner = BenchmarkRunner::new(
+        Arc::new(crate::github::GithubPullRequestProvider::new()),
+        factory,
+        run_directory.clone(),
+    );
+    runner.run(&manifest, &mut run).await?;
+    println!(
+        "Benchmark run {} contains {} measurements at {}",
+        run.run_id,
+        run.measurements.len(),
+        run_directory.display()
+    );
+    Ok(())
+}
+
+fn ensure_models(candidates: &[String], yes: bool) -> Result<(), ReviewMapFailure> {
+    let output = std::process::Command::new("ollama")
+        .arg("list")
+        .output()
+        .map_err(|error| benchmark_io("Ollama is unavailable", error))?;
+    if !output.status.success() {
+        return Err(invalid("Ollama could not list installed models"));
+    }
+    let installed = String::from_utf8(output.stdout)
+        .map_err(|error| benchmark_io("Ollama returned an invalid model list", error))?
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::to_owned)
+        .collect::<std::collections::HashSet<_>>();
+    let missing = candidates
+        .iter()
+        .filter(|candidate| {
+            !installed.contains(candidate.as_str())
+                && !installed.contains(format!("{candidate}:latest").as_str())
+        })
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    println!("Missing benchmark models:");
+    for model in &missing {
+        println!("  {model} ({})", expected_download_size(model));
+    }
+    if !yes && !confirm("Pull these models sequentially? [y/N] ")? {
+        return Err(invalid("Benchmark model download was not approved"));
+    }
+    for model in missing {
+        let status = std::process::Command::new("ollama")
+            .args(["pull", model])
+            .status()
+            .map_err(|error| benchmark_io("Could not start Ollama model download", error))?;
+        if !status.success() {
+            return Err(invalid(format!("Ollama could not pull model '{model}'")));
+        }
+    }
+    Ok(())
+}
+
+fn expected_download_size(model: &str) -> &'static str {
+    match model {
+        "qwen3:8b" => "about 5.2 GB",
+        "qwen3-coder:30b" => "about 18 GB",
+        "qwen2.5-coder:7b" => "about 4.7 GB",
+        _ => "size reported by Ollama",
     }
 }
 

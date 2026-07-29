@@ -346,7 +346,7 @@ fn failure_outcome(failure: ReviewMapFailure) -> Result<ReviewMap, (JobState, Re
     }
 }
 
-fn enrichment_request(input: &ReviewMapInput, map: &ReviewMap) -> EnrichmentRequest {
+pub(crate) fn enrichment_request(input: &ReviewMapInput, map: &ReviewMap) -> EnrichmentRequest {
     let input_by_path = input
         .files
         .iter()
