@@ -79,6 +79,11 @@ class ReviewViewModel(
         loadFile(index)
     }
 
+    fun selectFilePath(path: String) {
+        val index = mutableState.value.pullRequest?.files?.indexOfFirst { it.path == path } ?: return
+        if (index >= 0) selectFile(index)
+    }
+
     fun previousFile() = selectFile(mutableState.value.selectedFile - 1)
     fun nextFile() = selectFile(mutableState.value.selectedFile + 1)
     fun setFileSheet(open: Boolean) { mutableState.value = mutableState.value.copy(fileSheetOpen = open) }

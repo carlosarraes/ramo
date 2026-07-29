@@ -128,12 +128,14 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 val mapState by map.state.collectAsState()
+                                LaunchedEffect(currentDestination.repository, currentDestination.number) { map.open() }
                                 ReviewMapScreen(
                                     mapState,
                                     ReviewMapCallbacks(
                                         onBack = { destination = AppDestination.Inbox },
                                         onOpenFile = { path ->
                                             map.select(mapState.map?.files?.firstOrNull { it.path == path }?.id ?: path)
+                                            map.pause()
                                             destination = AppDestination.ReviewFile(
                                                 currentDestination.repository,
                                                 currentDestination.number,
@@ -168,11 +170,16 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 val reviewState by review.state.collectAsState()
+                                LaunchedEffect(currentDestination.path, reviewState.pullRequest?.revision) {
+                                    review.selectFilePath(currentDestination.path)
+                                }
                                 ReviewScreen(
                                     state = reviewState,
                                     codeSize = codeSize,
                                     onBack = {
-                                        map.markReviewed(currentDestination.path)
+                                        if (reviewState.screen?.file?.viewed == true) {
+                                            map.markReviewed(currentDestination.path)
+                                        }
                                         destination = AppDestination.ReviewMap(
                                             currentDestination.repository,
                                             currentDestination.number,

@@ -23,6 +23,7 @@ class ReviewMapViewModelTest {
     fun exactMapAppearsBeforeEnrichmentAndKeepsExpansion() = runTest(dispatcher) {
         val repository = FakeRepository()
         val model = ReviewMapViewModel(repository, "owner/repo", 7)
+        model.open()
         advanceUntilIdle()
         assertEquals(ReviewMapPhase.Enriched, model.state.value.phase)
         model.toggleGroup("tests")

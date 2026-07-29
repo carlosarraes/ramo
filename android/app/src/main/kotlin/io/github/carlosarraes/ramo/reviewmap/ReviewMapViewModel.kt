@@ -30,8 +30,6 @@ class ReviewMapViewModel(
     val state: StateFlow<ReviewMapUiState> = mutableState.asStateFlow()
     private var job: Job? = null
 
-    init { open() }
-
     fun open() {
         job?.cancel()
         job = viewModelScope.launch {
@@ -76,6 +74,7 @@ class ReviewMapViewModel(
     fun dismissFailure() { mutableState.value = mutableState.value.copy(failure = null) }
     fun hideAi() { job?.cancel(); mutableState.value = mutableState.value.copy(aiHidden = true, phase = ReviewMapPhase.Exact, failure = null) }
     fun retry() { open() }
+    fun pause() { job?.cancel(); job = null }
     fun markReviewed(path: String) {
         mutableState.value = mutableState.value.copy(reviewedPaths = mutableState.value.reviewedPaths + path)
     }

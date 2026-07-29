@@ -42,6 +42,9 @@ class ReviewViewModelTest {
 
         assertEquals(1, model.state.value.selectedFile)
         assertEquals("b.rs", model.state.value.screen!!.file.path)
+        model.selectFilePath("a.rs")
+        advanceUntilIdle()
+        assertEquals("a.rs", model.state.value.screen!!.file.path)
     }
 
     @Test fun rowPagesDeduplicateAndAutoViewedOnlyAtTheRealEnd() = runTest(dispatcher) {
