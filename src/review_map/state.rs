@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use ramo_core::review_map::{ReviewFileKind, ReviewMap, ReviewMapFailureCode, ReviewMapStatus};
+use ramo_core::review_map::{
+    ReviewFileKind, ReviewMap, ReviewMapFailureCode, ReviewMapStatus, ReviewMapTotals,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewMapAction {
@@ -66,11 +68,13 @@ impl ReviewMapRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewMapSnapshot {
     pub status: ReviewMapStatus,
+    pub totals: ReviewMapTotals,
     pub rows: Vec<ReviewMapRow>,
     pub selected_id: Option<String>,
     pub filter: String,
     pub reviewed_percent: u8,
     pub failure: Option<ReviewMapFailureNotice>,
+    pub analysis_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,11 +200,17 @@ impl ReviewMapController {
     pub fn snapshot(&self) -> ReviewMapSnapshot {
         ReviewMapSnapshot {
             status: self.map.status,
+            totals: self.map.totals.clone(),
             rows: self.visible_rows(),
             selected_id: self.selected_id.clone(),
             filter: self.filter.clone(),
             reviewed_percent: self.reviewed_percent(),
             failure: self.failure.clone(),
+            analysis_model: self
+                .map
+                .analysis
+                .as_ref()
+                .map(|analysis| analysis.model.clone()),
         }
     }
 

@@ -22,7 +22,7 @@ pub enum ReviewHeading {
 }
 
 impl ReviewHeading {
-    fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
             Self::Local(label) => label.clone(),
             Self::PullRequest { number, title } => {
