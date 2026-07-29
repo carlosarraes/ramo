@@ -27,6 +27,12 @@ pub struct ReviewMapCache {
     access: Arc<Mutex<()>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheEntryInfo {
+    pub file_name: String,
+    pub size: u64,
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CacheEntry {
     cache_identity: ReviewMapCacheIdentity,
@@ -105,6 +111,51 @@ impl ReviewMapCache {
             &serde_json::to_vec(&entry).map_err(cache_encode)?,
         )?;
         self.evict_locked(now)
+    }
+
+    pub fn list(&self) -> Result<Vec<CacheEntryInfo>, ReviewMapFailure> {
+        let _guard = self.lock()?;
+        let mut entries = Vec::new();
+        for item in std::fs::read_dir(&self.directory)
+            .map_err(|error| cache_io("Could not inspect the Review Map cache", error))?
+        {
+            let item = item.map_err(|error| cache_io("Could not inspect a cache entry", error))?;
+            let path = item.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                entries.push(CacheEntryInfo {
+                    file_name: item.file_name().to_string_lossy().into_owned(),
+                    size: item
+                        .metadata()
+                        .map_err(|error| cache_io("Could not inspect a cache entry", error))?
+                        .len(),
+                });
+            }
+        }
+        entries.sort_by(|left, right| left.file_name.cmp(&right.file_name));
+        Ok(entries)
+    }
+
+    pub fn clear(&self) -> Result<usize, ReviewMapFailure> {
+        let _guard = self.lock()?;
+        let mut removed = 0;
+        for item in std::fs::read_dir(&self.directory)
+            .map_err(|error| cache_io("Could not inspect the Review Map cache", error))?
+        {
+            let path = item
+                .map_err(|error| cache_io("Could not inspect a cache entry", error))?
+                .path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                remove_if_present(&path)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, ReviewMapFailure> {

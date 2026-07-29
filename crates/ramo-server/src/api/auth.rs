@@ -146,6 +146,7 @@ impl std::fmt::Debug for ReviewMapClientTokenStore {
 pub struct PairingState {
     tokens: ReviewMapClientTokenStore,
     codes: Arc<Mutex<Vec<PairingRecord>>>,
+    path: Option<Arc<std::path::PathBuf>>,
 }
 
 struct PairingRecord {
@@ -158,10 +159,31 @@ impl PairingState {
         Self {
             tokens,
             codes: Arc::new(Mutex::new(Vec::new())),
+            path: None,
+        }
+    }
+
+    pub fn open(tokens: ReviewMapClientTokenStore, path: impl AsRef<Path>) -> Self {
+        Self {
+            tokens,
+            codes: Arc::new(Mutex::new(Vec::new())),
+            path: Some(Arc::new(path.as_ref().to_owned())),
         }
     }
 
     pub fn issue(&self, lifetime: Duration) -> Result<String, ReviewMapFailure> {
+        if let Some(path) = &self.path {
+            let code = random_url_token(6);
+            let now = unix_seconds();
+            let mut records = read_pairing_records(path)?;
+            records.retain(|record| record.expires_at > now);
+            records.push(PersistedPairingRecord {
+                digest: digest(&code),
+                expires_at: now.saturating_add(lifetime.as_secs()),
+            });
+            persist_pairing_records(path, &records)?;
+            return Ok(code);
+        }
         self.issue_at(Instant::now(), lifetime)
     }
 
@@ -181,6 +203,21 @@ impl PairingState {
         code: &str,
         label: impl Into<String>,
     ) -> Result<ClientCredential, ReviewMapFailure> {
+        if let Some(path) = &self.path {
+            let candidate = digest(code);
+            let now = unix_seconds();
+            let mut records = read_pairing_records(path)?;
+            records.retain(|record| record.expires_at > now);
+            let position =
+                constant_time_position(records.iter().map(|record| &record.digest), &candidate);
+            let Some(position) = position else {
+                persist_pairing_records(path, &records)?;
+                return Err(pairing_rejected());
+            };
+            records.swap_remove(position);
+            persist_pairing_records(path, &records)?;
+            return self.tokens.issue(label);
+        }
         self.exchange_at(code, label, Instant::now())
     }
 
@@ -193,26 +230,21 @@ impl PairingState {
         let candidate = digest(code);
         let mut records = self.codes.lock().map_err(|_| auth_state_failure())?;
         records.retain(|record| record.expires_at > now);
-        let position = records
-            .iter()
-            .enumerate()
-            .fold(None, |found, (index, record)| {
-                if bool::from(record.digest.ct_eq(&candidate)) {
-                    Some(index)
-                } else {
-                    found
-                }
-            });
+        let position =
+            constant_time_position(records.iter().map(|record| &record.digest), &candidate);
         let Some(position) = position else {
-            return Err(ReviewMapFailure::new(
-                PairingRejected,
-                "The pairing code is invalid, expired, or already used",
-            ));
+            return Err(pairing_rejected());
         };
         records.swap_remove(position);
         drop(records);
         self.tokens.issue(label)
     }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PersistedPairingRecord {
+    digest: [u8; 32],
+    expires_at: u64,
 }
 
 impl std::fmt::Debug for PairingState {
@@ -252,7 +284,59 @@ fn auth_state_failure() -> ReviewMapFailure {
     )
 }
 
+fn constant_time_position<'a>(
+    digests: impl IntoIterator<Item = &'a [u8; 32]>,
+    candidate: &[u8; 32],
+) -> Option<usize> {
+    digests
+        .into_iter()
+        .enumerate()
+        .fold(None, |found, (index, digest)| {
+            if bool::from(digest.ct_eq(candidate)) {
+                Some(index)
+            } else {
+                found
+            }
+        })
+}
+
+fn pairing_rejected() -> ReviewMapFailure {
+    ReviewMapFailure::new(
+        PairingRejected,
+        "The pairing code is invalid, expired, or already used",
+    )
+}
+
+fn read_pairing_records(path: &Path) -> Result<Vec<PersistedPairingRecord>, ReviewMapFailure> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
+            ReviewMapFailure::with_source(
+                PairingRejected,
+                "The pairing-code store is malformed",
+                error,
+            )
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(token_io("Could not read the pairing-code store", error)),
+    }
+}
+
+fn persist_pairing_records(
+    path: &Path,
+    records: &[PersistedPairingRecord],
+) -> Result<(), ReviewMapFailure> {
+    persist_json(path, records, "pairing-code")
+}
+
 fn persist_records(path: &Path, records: &[ClientRecord]) -> Result<(), ReviewMapFailure> {
+    persist_json(path, records, "paired-client")
+}
+
+fn persist_json<T: serde::Serialize>(
+    path: &Path,
+    records: &[T],
+    kind: &'static str,
+) -> Result<(), ReviewMapFailure> {
     let parent = path.parent().ok_or_else(|| {
         ReviewMapFailure::new(
             ReviewMapFailureCode::ClientUnauthorized,
@@ -271,7 +355,7 @@ fn persist_records(path: &Path, records: &[ClientRecord]) -> Result<(), ReviewMa
     let bytes = serde_json::to_vec(records).map_err(|error| {
         ReviewMapFailure::with_source(
             ReviewMapFailureCode::ClientUnauthorized,
-            "Could not encode the paired-client store",
+            format!("Could not encode the {kind} store"),
             error,
         )
     })?;

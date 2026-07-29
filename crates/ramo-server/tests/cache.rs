@@ -65,6 +65,25 @@ fn corrupt_and_oversized_entries_are_removed() {
     assert_eq!(tiny.get(&identity).unwrap(), None);
 }
 
+#[test]
+fn cache_lifecycle_commands_only_touch_review_map_entries() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = ReviewMapCache::new(
+        directory.path(),
+        CacheLimits {
+            max_bytes: 1024 * 1024,
+            max_age: Duration::from_secs(3600),
+        },
+    )
+    .unwrap();
+    cache.put(&identity(), &exact_map("head")).unwrap();
+    std::fs::write(directory.path().join("keep.txt"), "user data").unwrap();
+
+    assert_eq!(cache.list().unwrap().len(), 1);
+    assert_eq!(cache.clear().unwrap(), 1);
+    assert!(directory.path().join("keep.txt").exists());
+}
+
 fn identity() -> ReviewMapCacheIdentity {
     ReviewMapCacheIdentity {
         repository: "owner/repo".into(),

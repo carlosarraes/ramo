@@ -6,24 +6,54 @@ pub mod config;
 pub mod error;
 pub mod github;
 pub mod ollama;
+pub mod setup;
 
 pub use error::ReviewMapFailure;
 
 /// Parses and runs the standalone server command.
 pub async fn run() -> Result<(), ReviewMapFailure> {
     use clap::Parser;
-    use ramo_core::review_map::{REVIEW_MAP_SCHEMA_VERSION, ReviewMapFailureCode};
 
     match cli::Cli::parse().command {
         cli::Command::Serve => serve(config::ServerConfig::discover()?).await,
-        _ => Err(ReviewMapFailure::new(
-            ReviewMapFailureCode::ServerIncompatible,
-            format!(
-                "This ramo-server {} command is not available yet (schema {})",
-                env!("CARGO_PKG_VERSION"),
-                REVIEW_MAP_SCHEMA_VERSION
-            ),
-        )),
+        cli::Command::Setup { dry_run } => {
+            let plan = setup::current_plan()?;
+            println!(
+                "{}",
+                setup::apply_setup(&setup::SystemEnvironment, &plan, dry_run)?
+            );
+            Ok(())
+        }
+        cli::Command::Status => {
+            println!("{}", setup::current_status()?);
+            Ok(())
+        }
+        cli::Command::Pair => {
+            println!("{}", setup::issue_pairing_code()?);
+            Ok(())
+        }
+        cli::Command::Cache { command } => {
+            let config = config::ServerConfig::discover()?;
+            let cache = cache::ReviewMapCache::new(
+                config.cache_dir,
+                cache::CacheLimits {
+                    max_bytes: u64::MAX,
+                    max_age: std::time::Duration::MAX,
+                },
+            )?;
+            match command {
+                cli::CacheCommand::List => {
+                    let count = cache.list()?.len();
+                    let noun = if count == 1 { "entry" } else { "entries" };
+                    println!("{count} cached Review Map {noun}");
+                }
+                cli::CacheCommand::Clear => {
+                    let removed = cache.clear()?;
+                    println!("Removed {removed} cached Review Map entries");
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -57,7 +87,7 @@ pub async fn serve(config: config::ServerConfig) -> Result<(), ReviewMapFailure>
     );
     let state = ServerState {
         coordinator,
-        pairing: PairingState::new(tokens.clone()),
+        pairing: PairingState::open(tokens.clone(), config.state_dir.join("pairing.json")),
         tokens,
         health: HealthStatus::healthy(&config.model),
     };
