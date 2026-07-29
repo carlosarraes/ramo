@@ -41,7 +41,12 @@ private fun InboxItem.updatedLabel(nowMillis: Long): String = runCatching {
 }.getOrElse { updatedAt.take(10) }
 
 @Composable
-fun InboxRow(item: InboxItem, nowMillis: Long, onOpen: (InboxItem) -> Unit) {
+fun InboxRow(
+    item: InboxItem,
+    nowMillis: Long,
+    reviewRequested: Boolean,
+    onOpen: (InboxItem) -> Unit,
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -72,6 +77,12 @@ fun InboxRow(item: InboxItem, nowMillis: Long, onOpen: (InboxItem) -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
         )
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(
+                if (item.draft) "Draft" else if (reviewRequested) "Review requested" else "Open",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Spacer(Modifier.width(12.dp))
             Text(item.author, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.width(12.dp))
             Text("${item.changedFiles} files", style = MaterialTheme.typography.labelMedium)

@@ -38,6 +38,10 @@ class InboxScreenTest {
         }
 
         compose.onNodeWithText("20 files").assertIsDisplayed()
+        compose.onNodeWithText("Review requests 1").assertIsDisplayed()
+        compose.onNodeWithText("Your PRs 0").assertIsDisplayed()
+        compose.onNodeWithText("Updated 16m ago").assertIsDisplayed()
+        compose.onNodeWithText("Review requested").assertIsDisplayed()
         compose.onNodeWithText("@carlosarraes · Sign out").assertDoesNotExist()
         compose.onNodeWithTag("inbox-row-reviews").assertHasClickAction()
     }
@@ -45,6 +49,7 @@ class InboxScreenTest {
 
 private fun inboxState(changedFiles: Long) = InboxUiState(
     reviewRequests = TabState(
+        refreshedAtEpochMillis = 1_000_000L,
         items = listOf(
             InboxItem(
                 nodeId = "reviews",

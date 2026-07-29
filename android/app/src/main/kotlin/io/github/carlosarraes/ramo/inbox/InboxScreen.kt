@@ -124,12 +124,21 @@ fun InboxScreen(
                 FilterChip(
                     selected = state.selected == InboxTab.ReviewRequests,
                     onClick = { onSelect(InboxTab.ReviewRequests) },
-                    label = { Text("Review requests") },
+                    label = { Text("Review requests ${state.reviewRequests.items.size}") },
                 )
                 FilterChip(
                     selected = state.selected == InboxTab.Authored,
                     onClick = { onSelect(InboxTab.Authored) },
-                    label = { Text("Your PRs") },
+                    label = { Text("Your PRs ${state.authored.items.size}") },
+                )
+            }
+            tab.refreshedAtEpochMillis?.let { refreshedAt ->
+                val age = relativeAge(nowMillis, refreshedAt)
+                Text(
+                    text = if (age == "now") "Updated now" else "Updated $age ago",
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
             tab.failure?.takeIf { tab.items.isNotEmpty() }?.let { failure ->
@@ -172,7 +181,12 @@ fun InboxScreen(
                             item { Text(warning, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.tertiary) }
                         }
                         items(visibleItems, key = InboxItem::nodeId) { item ->
-                            InboxRow(item, nowMillis, onOpen)
+                            InboxRow(
+                                item = item,
+                                nowMillis = nowMillis,
+                                reviewRequested = state.selected == InboxTab.ReviewRequests,
+                                onOpen = onOpen,
+                            )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
                         if (tab.hasNextPage && state.query.isBlank()) {
