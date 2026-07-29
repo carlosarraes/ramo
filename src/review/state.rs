@@ -355,6 +355,10 @@ pub(crate) struct ReviewRenderView<'a> {
 }
 
 impl ReviewController {
+    pub fn is_file_reviewed(&self, file_id: &str) -> bool {
+        self.progress.is_file_reviewed(file_id)
+    }
+
     pub fn new(files: Vec<DiffFile>, options: ReviewOptions) -> Self {
         let selected_file_id = files.first().map(|file| file.id.clone());
         let test_file_matcher = TestFileMatcher::new(&options.test_file_patterns)

@@ -8,6 +8,7 @@ use crossterm::event::{
     MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
+use ratatui::layout::Rect;
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::annotations::model::Annotation;
@@ -25,6 +26,10 @@ use crate::review::{
     ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
     ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, SourceFailure, Viewport,
 };
+use crate::review_map::{
+    ReviewMapAction, ReviewMapClient, ReviewMapController, ReviewMapEffect,
+    ReviewMapResolveRequest, ReviewMapRuntime, ReviewMapUpdate,
+};
 use crate::session::{
     SessionDescriptor, SessionRegistrationClient, SessionSnapshotState, build_registration,
     build_snapshot, session_timestamp,
@@ -35,6 +40,7 @@ use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, map_key_event, map_mouse_event};
 use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
+use crate::ui::review_map::{ReviewMapHitTarget, ReviewMapWidget, review_map_hits};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 use crate::watch::{WatchRuntime, WatchUpdate};
@@ -118,6 +124,12 @@ pub struct FlatLine {
 pub enum ViewLayout {
     SideBySide,
     Unified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppScreen {
+    ReviewMap,
+    Review,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -277,6 +289,10 @@ pub struct App {
     last_session_state: Option<SessionSnapshotState>,
     remote_review: Option<RemoteReviewSession>,
     review_heading: ReviewHeading,
+    screen: AppScreen,
+    review_map: Option<ReviewMapController>,
+    review_map_runtime: Option<ReviewMapRuntime>,
+    review_map_restart: Option<(ReviewMapClient, ReviewMapResolveRequest)>,
 }
 
 impl App {
@@ -413,7 +429,37 @@ impl App {
             last_session_state: None,
             remote_review: None,
             review_heading: ReviewHeading::Local("Working tree".into()),
+            screen: AppScreen::Review,
+            review_map: None,
+            review_map_runtime: None,
+            review_map_restart: None,
         }
+    }
+
+    pub fn attach_review_map(
+        &mut self,
+        map: ramo_core::review_map::ReviewMap,
+        runtime: Option<ReviewMapRuntime>,
+        start_on_map: bool,
+    ) {
+        self.review_map = Some(ReviewMapController::new(map));
+        self.review_map_runtime = runtime;
+        if start_on_map && !self.pager_mode {
+            self.screen = AppScreen::ReviewMap;
+            self.input_mode = InputMode::ReviewMap;
+        }
+    }
+
+    pub fn configure_review_map_retry(
+        &mut self,
+        client: ReviewMapClient,
+        request: ReviewMapResolveRequest,
+    ) {
+        self.review_map_restart = Some((client, request));
+    }
+
+    pub fn screen(&self) -> AppScreen {
+        self.screen
     }
 
     pub fn attach_pull_request(
@@ -593,11 +639,14 @@ impl App {
                 self.publish_session_snapshot(viewport);
                 needs_redraw |= self.apply_session_requests(viewport, watch.as_deref_mut());
                 needs_redraw |= self.poll_startup_notices(Instant::now());
+                needs_redraw |= self.poll_review_map();
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
                         Event::Mouse(mouse) => {
-                            if let Some(mouse) = translate_review_mouse(mouse, size.height) {
+                            if self.screen == AppScreen::ReviewMap {
+                                self.handle_review_map_mouse(mouse, size.width, size.height);
+                            } else if let Some(mouse) = translate_review_mouse(mouse, size.height) {
                                 self.handle_mouse(mouse, viewport);
                             }
                         }
@@ -736,6 +785,42 @@ impl App {
                 changed
             }
         }
+    }
+
+    fn poll_review_map(&mut self) -> bool {
+        let mut changed = false;
+        for _ in 0..8 {
+            let update = self
+                .review_map_runtime
+                .as_ref()
+                .and_then(ReviewMapRuntime::try_recv);
+            let Some(update) = update else {
+                break;
+            };
+            let Some(controller) = self.review_map.as_mut() else {
+                continue;
+            };
+            match update {
+                ReviewMapUpdate::Analyzing => {
+                    controller.set_status(ramo_core::review_map::ReviewMapStatus::Analyzing);
+                }
+                ReviewMapUpdate::Enriched(map) => {
+                    if controller.replace_map(*map).is_err() {
+                        controller.set_failure(
+                            ramo_core::review_map::ReviewMapFailureCode::ResultStale,
+                            "The pull request changed while it was being analyzed",
+                        );
+                    }
+                }
+                ReviewMapUpdate::Failed(failure)
+                | ReviewMapUpdate::Unavailable(failure)
+                | ReviewMapUpdate::Stale(failure) => {
+                    controller.set_failure(failure.code, failure.message);
+                }
+            }
+            changed = true;
+        }
+        changed
     }
 
     fn apply_watch_update(&mut self, update: WatchUpdate, viewport: Viewport) -> bool {
@@ -886,6 +971,19 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        if self.screen == AppScreen::ReviewMap {
+            if let Some(controller) = &self.review_map {
+                let snapshot = controller.snapshot();
+                frame.render_widget(
+                    ReviewMapWidget::new(&self.review_heading, &snapshot, &self.review_theme),
+                    area,
+                );
+                if self.input_mode == InputMode::Help {
+                    frame.render_widget(DialogOverlay::help(&self.review_theme, true), area);
+                }
+            }
+            return;
+        }
         let areas = review_areas(area);
         let viewport = Viewport {
             width: areas.content.width,
@@ -990,7 +1088,7 @@ impl App {
                     );
                 }
             }
-            InputMode::Normal | InputMode::Filter => {}
+            InputMode::Normal | InputMode::Filter | InputMode::ReviewMap => {}
         }
         if matches!(self.mode, Mode::TmuxPanePick) {
             frame.render_widget(
@@ -1024,6 +1122,46 @@ impl App {
     pub fn handle_ui_key(&mut self, key: KeyEvent, viewport: Viewport) {
         if let Some(action) = map_key_event(key, self.input_mode, self.pager_mode) {
             self.apply_app_action(action, viewport);
+        }
+    }
+
+    fn handle_review_map_mouse(&mut self, event: MouseEvent, width: u16, height: u16) {
+        if !matches!(self.input_mode, InputMode::ReviewMap | InputMode::Filter) {
+            return;
+        }
+        let Some(controller) = self.review_map.as_mut() else {
+            return;
+        };
+        match event.kind {
+            MouseEventKind::ScrollUp => {
+                controller.apply(ReviewMapAction::Move(-3));
+            }
+            MouseEventKind::ScrollDown => {
+                controller.apply(ReviewMapAction::Move(3));
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let snapshot = controller.snapshot();
+                let target = review_map_hits(Rect::new(0, 0, width, height), &snapshot)
+                    .into_iter()
+                    .find(|hit| {
+                        hit.area
+                            .contains(ratatui::layout::Position::new(event.column, event.row))
+                    })
+                    .map(|hit| hit.target);
+                match target {
+                    Some(ReviewMapHitTarget::ToggleGroup { group_id }) => {
+                        controller.apply(ReviewMapAction::Select(group_id));
+                        controller.apply(ReviewMapAction::ToggleExpanded);
+                    }
+                    Some(ReviewMapHitTarget::OpenFile { file_id }) => {
+                        controller.apply(ReviewMapAction::Select(file_id));
+                        let effect = controller.apply(ReviewMapAction::OpenSelected);
+                        self.apply_review_map_effect(effect, Viewport { width, height });
+                    }
+                    None => {}
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1154,13 +1292,40 @@ impl App {
                     self.review_selection = Some((anchor, focus));
                 }
             }
+            AppAction::ReviewMap(action) => {
+                let dismissing = action == ReviewMapAction::DismissFailure;
+                let had_failure = self
+                    .review_map
+                    .as_ref()
+                    .is_some_and(|controller| controller.snapshot().failure.is_some());
+                let effect = self
+                    .review_map
+                    .as_mut()
+                    .map(|controller| controller.apply(action))
+                    .unwrap_or(ReviewMapEffect::None);
+                self.apply_review_map_effect(effect, viewport);
+                if dismissing && !had_failure {
+                    self.show_review_screen();
+                }
+            }
+            AppAction::ToggleReviewMap => self.toggle_review_map(viewport),
+            AppAction::FocusReviewMapFilter => {
+                self.input_mode = InputMode::Filter;
+            }
             AppAction::Insert(character) => match self.input_mode {
                 InputMode::Filter => {
                     self.filter_buffer.push(character);
-                    self.review_controller.apply(
-                        ReviewAction::SetFilter(self.filter_buffer.clone()),
-                        viewport,
-                    );
+                    if self.screen == AppScreen::ReviewMap {
+                        if let Some(controller) = self.review_map.as_mut() {
+                            controller
+                                .apply(ReviewMapAction::SetFilter(self.filter_buffer.clone()));
+                        }
+                    } else {
+                        self.review_controller.apply(
+                            ReviewAction::SetFilter(self.filter_buffer.clone()),
+                            viewport,
+                        );
+                    }
                 }
                 InputMode::Note => {
                     self.comment_buf.push(character);
@@ -1173,10 +1338,17 @@ impl App {
             AppAction::Backspace => match self.input_mode {
                 InputMode::Filter => {
                     self.filter_buffer.pop();
-                    self.review_controller.apply(
-                        ReviewAction::SetFilter(self.filter_buffer.clone()),
-                        viewport,
-                    );
+                    if self.screen == AppScreen::ReviewMap {
+                        if let Some(controller) = self.review_map.as_mut() {
+                            controller
+                                .apply(ReviewMapAction::SetFilter(self.filter_buffer.clone()));
+                        }
+                    } else {
+                        self.review_controller.apply(
+                            ReviewAction::SetFilter(self.filter_buffer.clone()),
+                            viewport,
+                        );
+                    }
                 }
                 InputMode::Note => {
                     self.comment_buf.pop();
@@ -1306,6 +1478,84 @@ impl App {
             }
             AppAction::DismissMessage => self.dismiss_remote_message(),
         }
+    }
+
+    fn apply_review_map_effect(&mut self, effect: ReviewMapEffect, viewport: Viewport) {
+        match effect {
+            ReviewMapEffect::OpenFile { file_id } => {
+                let path = self.review_map.as_ref().and_then(|controller| {
+                    controller
+                        .map()
+                        .files
+                        .iter()
+                        .find(|file| file.id == file_id)
+                        .map(|file| file.path.clone())
+                });
+                let review_file_id = path.as_deref().and_then(|path| {
+                    self.review_controller
+                        .files()
+                        .iter()
+                        .find(|file| file.path == path)
+                        .map(|file| file.id.clone())
+                });
+                if let Some(review_file_id) = review_file_id {
+                    self.review_controller
+                        .apply(ReviewAction::SelectFile(review_file_id), viewport);
+                    self.show_review_screen();
+                } else {
+                    self.toast = Some("The selected map file is not in this diff snapshot".into());
+                }
+            }
+            ReviewMapEffect::Retry => {
+                if let Some((client, request)) = self.review_map_restart.clone() {
+                    self.review_map_runtime = Some(ReviewMapRuntime::start(client, request));
+                    if let Some(controller) = self.review_map.as_mut() {
+                        controller.set_status(ramo_core::review_map::ReviewMapStatus::Analyzing);
+                    }
+                } else {
+                    self.toast = Some("Local Review Map retry is not configured".into());
+                }
+            }
+            ReviewMapEffect::OpenHelp => self.input_mode = InputMode::Help,
+            ReviewMapEffect::None | ReviewMapEffect::Redraw => {}
+        }
+    }
+
+    fn toggle_review_map(&mut self, viewport: Viewport) {
+        if self.screen == AppScreen::ReviewMap {
+            self.show_review_screen();
+            return;
+        }
+        let Some(controller) = self.review_map.as_mut() else {
+            self.toast = Some("Review Map is unavailable for this input".into());
+            return;
+        };
+        let selected = self
+            .review_controller
+            .snapshot(viewport)
+            .selected_file_id
+            .clone();
+        if let Some(file_id) = selected
+            && self.review_controller.is_file_reviewed(&file_id)
+            && let Some(path) = self
+                .review_controller
+                .files()
+                .iter()
+                .find(|file| file.id == file_id)
+                .map(|file| file.path.clone())
+        {
+            controller.mark_reviewed(&path);
+        }
+        self.filter_buffer.clear();
+        self.screen = AppScreen::ReviewMap;
+        self.input_mode = InputMode::ReviewMap;
+        self.clear_review_selection();
+    }
+
+    fn show_review_screen(&mut self) {
+        self.filter_buffer.clear();
+        self.screen = AppScreen::Review;
+        self.input_mode = InputMode::Normal;
     }
 
     fn apply_review_effect(&mut self, effect: ReviewEffect, viewport: Viewport) {
@@ -1572,9 +1822,15 @@ impl App {
         match self.input_mode {
             InputMode::Filter if !self.filter_buffer.is_empty() => {
                 self.filter_buffer.clear();
-                self.review_controller
-                    .apply(ReviewAction::SetFilter(String::new()), viewport);
-                self.input_mode = InputMode::Normal;
+                if self.screen == AppScreen::ReviewMap {
+                    if let Some(controller) = self.review_map.as_mut() {
+                        controller.apply(ReviewMapAction::SetFilter(String::new()));
+                    }
+                } else {
+                    self.review_controller
+                        .apply(ReviewAction::SetFilter(String::new()), viewport);
+                }
+                self.input_mode = self.base_input_mode();
             }
             InputMode::Theme => {
                 if let Some(selection) = &self.theme_selection {
@@ -1585,7 +1841,7 @@ impl App {
                     );
                 }
                 self.theme_selection = None;
-                self.input_mode = InputMode::Normal;
+                self.input_mode = self.base_input_mode();
             }
             InputMode::Note => {
                 self.review_controller.cancel_human_note_draft(viewport);
@@ -1594,7 +1850,7 @@ impl App {
                 self.clear_review_selection();
             }
             InputMode::Help | InputMode::AgentSkill | InputMode::Filter | InputMode::SavePrompt => {
-                self.input_mode = InputMode::Normal;
+                self.input_mode = self.base_input_mode();
             }
             InputMode::PublishPrompt | InputMode::VerdictPrompt => {
                 self.input_mode = InputMode::Normal;
@@ -1613,6 +1869,15 @@ impl App {
                 self.review_keyboard_anchor = None;
                 self.review_selection = None;
             }
+            InputMode::ReviewMap => self.show_review_screen(),
+        }
+    }
+
+    fn base_input_mode(&self) -> InputMode {
+        if self.screen == AppScreen::ReviewMap {
+            InputMode::ReviewMap
+        } else {
+            InputMode::Normal
         }
     }
 

@@ -82,6 +82,13 @@ impl ReviewProgress {
         self.reviewed.len() != before
     }
 
+    pub(crate) fn is_file_reviewed(&self, file_id: &str) -> bool {
+        self.ordered
+            .iter()
+            .filter(|key| key.file_id == file_id)
+            .all(|key| self.reviewed.contains(key))
+    }
+
     pub(crate) fn replace_files(&mut self, files: &[DiffFile]) {
         self.rebuild_order(files);
         self.reviewed.retain(|key| self.ordinal.contains_key(key));

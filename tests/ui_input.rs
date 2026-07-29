@@ -1,12 +1,16 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ramo::app::App;
+use ramo::app::{App, AppScreen};
 use ramo::config::ResolvedConfig;
 use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
 use ramo::review::{ReviewAction, ReviewSide, ScrollUnit, Viewport};
+use ramo::review_map::ReviewMapAction;
 use ramo::ui::input::{AppAction, InputMode, map_key_event};
+use ramo_core::review_map::{
+    ClassifierConfig, ReviewMapIdentity, ReviewMapInput, ReviewMapInputFile, build_review_map,
+};
 use std::path::PathBuf;
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -150,8 +154,57 @@ fn direct_hunk_keymap_has_no_menu_binding() {
     );
     assert_eq!(
         map_key_event(key(KeyCode::Char('M')), InputMode::Normal, false),
-        None
+        Some(AppAction::ToggleReviewMap)
     );
+}
+
+#[test]
+fn uppercase_m_toggles_map_without_stealing_lowercase_m() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('M')), InputMode::Normal, false),
+        Some(AppAction::ToggleReviewMap)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('m')), InputMode::Normal, false),
+        Some(AppAction::Review(ReviewAction::ToggleHunkHeaders))
+    );
+}
+
+#[test]
+fn map_mode_owns_navigation_open_filter_and_retry() {
+    for (event, expected) in [
+        (
+            key(KeyCode::Char('j')),
+            AppAction::ReviewMap(ReviewMapAction::Move(1)),
+        ),
+        (
+            key(KeyCode::Char('k')),
+            AppAction::ReviewMap(ReviewMapAction::Move(-1)),
+        ),
+        (
+            key(KeyCode::Char('h')),
+            AppAction::ReviewMap(ReviewMapAction::Collapse),
+        ),
+        (
+            key(KeyCode::Char('l')),
+            AppAction::ReviewMap(ReviewMapAction::Expand),
+        ),
+        (
+            key(KeyCode::Enter),
+            AppAction::ReviewMap(ReviewMapAction::OpenSelected),
+        ),
+        (key(KeyCode::Char('/')), AppAction::FocusReviewMapFilter),
+        (
+            key(KeyCode::Char('r')),
+            AppAction::ReviewMap(ReviewMapAction::Retry),
+        ),
+        (key(KeyCode::Char('M')), AppAction::ToggleReviewMap),
+    ] {
+        assert_eq!(
+            map_key_event(event, InputMode::ReviewMap, false),
+            Some(expected)
+        );
+    }
 }
 
 #[test]
@@ -495,6 +548,59 @@ fn app_keys_mutate_the_rendering_controller_and_dialog_modes_own_closing_keys() 
     app.handle_ui_key(key(KeyCode::Esc), view);
     assert_eq!(app.review_controller.snapshot(view).filter, "");
     assert_eq!(app.input_mode(), InputMode::Normal);
+}
+
+#[test]
+fn map_and_review_screens_share_the_existing_review_controller() {
+    let mut app = App::new_with_config(vec![review_file()], &ResolvedConfig::default(), false);
+    let exact = build_review_map(
+        &ReviewMapInput {
+            identity: ReviewMapIdentity {
+                repository: "owner/repository".into(),
+                pull_request: 7,
+                base_sha: "base".into(),
+                head_sha: "head".into(),
+            },
+            files: vec![ReviewMapInputFile {
+                path: "src/lib.rs".into(),
+                previous_path: None,
+                status: "modified".into(),
+                additions: 0,
+                deletions: 0,
+                patch: Some("@@ -1 +1 @@".into()),
+                binary: false,
+            }],
+            codeowners: None,
+        },
+        &ClassifierConfig::default(),
+    )
+    .unwrap();
+    app.attach_review_map(exact, None, true);
+    let view = Viewport {
+        width: 100,
+        height: 20,
+    };
+
+    assert_eq!(app.screen(), AppScreen::ReviewMap);
+    app.handle_ui_key(key(KeyCode::Char('j')), view);
+    app.handle_ui_key(key(KeyCode::Enter), view);
+    assert_eq!(app.screen(), AppScreen::Review);
+    assert_eq!(
+        app.review_controller
+            .snapshot(view)
+            .selected_file_id
+            .as_deref(),
+        Some("file:src/lib.rs")
+    );
+
+    app.handle_ui_key(key(KeyCode::Char('M')), view);
+    assert_eq!(app.screen(), AppScreen::ReviewMap);
+    assert_eq!(app.input_mode(), InputMode::ReviewMap);
+    app.handle_ui_key(key(KeyCode::Char('/')), view);
+    app.handle_ui_key(key(KeyCode::Char('l')), view);
+    assert_eq!(app.input_mode(), InputMode::Filter);
+    app.handle_ui_key(key(KeyCode::Esc), view);
+    assert_eq!(app.input_mode(), InputMode::ReviewMap);
 }
 
 #[test]

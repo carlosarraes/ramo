@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 use crate::core::input::LayoutMode;
 use crate::remote_review::ReviewVerdict;
 use crate::review::{ReviewAction, ReviewSide, ScrollUnit};
+use crate::review_map::ReviewMapAction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
@@ -17,11 +18,15 @@ pub enum InputMode {
     VerdictPrompt,
     OverallComment,
     Message,
+    ReviewMap,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
     Review(ReviewAction),
+    ReviewMap(ReviewMapAction),
+    ToggleReviewMap,
+    FocusReviewMapFilter,
     Insert(char),
     Backspace,
     Cancel,
@@ -50,6 +55,7 @@ pub enum AppAction {
 pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Option<AppAction> {
     let action = match mode {
         InputMode::Normal => map_normal(event),
+        InputMode::ReviewMap => map_review_map(event),
         InputMode::Filter | InputMode::Note => map_text(event, mode),
         InputMode::Theme => map_theme(event),
         InputMode::Help => match event.code {
@@ -235,6 +241,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('n') => review(ReviewAction::ToggleLineNumbers),
         KeyCode::Char('w') => review(ReviewAction::ToggleWrap),
         KeyCode::Char('m') => review(ReviewAction::ToggleHunkHeaders),
+        KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
         KeyCode::Char('e') => review(ReviewAction::EditSelectedFile),
         KeyCode::Char('r') => review(ReviewAction::Reload),
         KeyCode::Char('/') => review(ReviewAction::FocusFilter),
@@ -244,6 +251,29 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('?') => review(ReviewAction::OpenHelp),
         KeyCode::Char('q') => review(ReviewAction::Quit),
         KeyCode::Esc => Some(AppAction::Cancel),
+        _ => None,
+    }
+}
+
+fn map_review_map(event: KeyEvent) -> Option<AppAction> {
+    if event
+        .modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
+    let map = |action| Some(AppAction::ReviewMap(action));
+    match event.code {
+        KeyCode::Down | KeyCode::Char('j') => map(ReviewMapAction::Move(1)),
+        KeyCode::Up | KeyCode::Char('k') => map(ReviewMapAction::Move(-1)),
+        KeyCode::Left | KeyCode::Char('h') => map(ReviewMapAction::Collapse),
+        KeyCode::Right | KeyCode::Char('l') => map(ReviewMapAction::Expand),
+        KeyCode::Enter => map(ReviewMapAction::OpenSelected),
+        KeyCode::Char('/') => Some(AppAction::FocusReviewMapFilter),
+        KeyCode::Char('r') => map(ReviewMapAction::Retry),
+        KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
+        KeyCode::Char('?') => map(ReviewMapAction::OpenHelp),
+        KeyCode::Esc => map(ReviewMapAction::DismissFailure),
         _ => None,
     }
 }

@@ -7,6 +7,7 @@ use ramo_core::review_map::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewMapAction {
     Move(i32),
+    Select(String),
     Collapse,
     Expand,
     ToggleExpanded,
@@ -120,6 +121,12 @@ impl ReviewMapController {
                 self.move_selection(delta);
                 ReviewMapEffect::Redraw
             }
+            ReviewMapAction::Select(id) => {
+                if self.visible_rows().iter().any(|row| row.id() == id) {
+                    self.selected_id = Some(id);
+                }
+                ReviewMapEffect::Redraw
+            }
             ReviewMapAction::Collapse => self.set_selected_expanded(false),
             ReviewMapAction::Expand => self.set_selected_expanded(true),
             ReviewMapAction::ToggleExpanded => self.toggle_selected_expanded(),
@@ -181,6 +188,10 @@ impl ReviewMapController {
             code,
             message: message.into(),
         });
+    }
+
+    pub fn set_status(&mut self, status: ReviewMapStatus) {
+        self.map.status = status;
     }
 
     pub fn reviewed_percent(&self) -> u8 {
