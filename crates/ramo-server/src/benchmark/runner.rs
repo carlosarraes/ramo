@@ -169,16 +169,26 @@ impl BenchmarkRunner {
                             } else {
                                 CompletionState::Failed
                             },
+                            failure_code: (!semantic_valid).then_some(
+                                ramo_core::review_map::ReviewMapFailureCode::AnalysisInvalid,
+                            ),
                         }
                     }
-                    Err(_) => failed_measurement(
-                        manifest,
-                        *pull_request,
-                        candidate,
-                        identity,
-                        &request_digest,
-                        wall_time_ms,
-                    ),
+                    Err(error) => {
+                        eprintln!(
+                            "Benchmark PR #{} with {} failed ({:?}): {}",
+                            pull_request, candidate.model, error.code, error.message
+                        );
+                        failed_measurement(
+                            manifest,
+                            *pull_request,
+                            candidate,
+                            identity,
+                            &request_digest,
+                            wall_time_ms,
+                            error.code,
+                        )
+                    }
                 };
                 record(run, &run_path, &measurements_path, measurement)?;
             }
@@ -233,6 +243,7 @@ impl BenchmarkRunner {
             unknown_reference_count: 0,
             peak_rss_bytes: resources::peak_rss_bytes(),
             completion: CompletionState::Failed,
+            failure_code: candidate.identity.as_ref().err().map(|error| error.code),
         };
         record(
             run,
@@ -289,6 +300,7 @@ fn failed_measurement(
     identity: &AnalyzerIdentity,
     request_digest: &str,
     wall_time_ms: u64,
+    failure_code: ramo_core::review_map::ReviewMapFailureCode,
 ) -> CandidateMeasurement {
     CandidateMeasurement {
         case: BenchmarkCase::new(pull_request),
@@ -307,6 +319,7 @@ fn failed_measurement(
         unknown_reference_count: 0,
         peak_rss_bytes: resources::peak_rss_bytes(),
         completion: CompletionState::Failed,
+        failure_code: Some(failure_code),
     }
 }
 

@@ -72,6 +72,7 @@ fn completed_resume_keys_skip_only_the_exact_candidate_revision() {
         unknown_reference_count: 0,
         peak_rss_bytes: None,
         completion: CompletionState::Completed,
+        failure_code: None,
     });
 
     assert!(run.is_completed(1, "qwen3:8b", "digest-a", manifest.prompt_version));

@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use ramo_core::github::PullRequestKey;
 use ramo_core::review_map::{
-    EnrichmentCoverage, EnrichmentProposal, ProposedGroup, ReviewFileKind, ReviewMapIdentity,
-    ReviewMapInput, ReviewMapInputFile,
+    EnrichmentCoverage, EnrichmentProposal, ProposedGroup, ReviewFileKind, ReviewMapFailureCode,
+    ReviewMapIdentity, ReviewMapInput, ReviewMapInputFile,
 };
 use ramo_server::ReviewMapFailure;
 use ramo_server::analysis::{AnalysisBudget, AnalyzerIdentity};
@@ -85,6 +85,14 @@ async fn failed_candidate_is_recorded_without_stopping_later_candidates() {
         6
     );
     assert_eq!(fixture.factory.calls_for("qwen2.5-coder:7b", 6), 1);
+    assert!(
+        run.measurements
+            .iter()
+            .filter(|measurement| measurement.model == "qwen3-coder:30b")
+            .all(|measurement| {
+                measurement.failure_code == Some(ReviewMapFailureCode::AnalysisFailed)
+            })
+    );
 }
 
 #[tokio::test]
@@ -301,5 +309,6 @@ fn completed(manifest: &BenchmarkManifest, pull_request: u64, model: &str) -> Ca
         unknown_reference_count: 0,
         peak_rss_bytes: None,
         completion: CompletionState::Completed,
+        failure_code: None,
     }
 }

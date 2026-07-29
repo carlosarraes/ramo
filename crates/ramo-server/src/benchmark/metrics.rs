@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use ramo_core::review_map::ReviewMapFailureCode;
+
 use crate::ReviewMapFailure;
 
 use super::corpus::write_private;
@@ -30,6 +32,8 @@ pub struct CandidateMeasurement {
     pub unknown_reference_count: usize,
     pub peak_rss_bytes: Option<u64>,
     pub completion: CompletionState,
+    #[serde(default)]
+    pub failure_code: Option<ReviewMapFailureCode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
