@@ -4,7 +4,15 @@ use std::sync::Mutex;
 
 use ramo_server::setup::{
     CommandOutput, SetupEnvironment, SetupPaths, apply_setup, build_setup_plan,
+    tailscale_serve_active,
 };
+
+#[test]
+fn empty_tailscale_serve_configuration_is_not_reported_as_active() {
+    assert!(!tailscale_serve_active("{}"));
+    assert!(!tailscale_serve_active("No serve config"));
+    assert!(tailscale_serve_active(r#"{"Web":{"443":{"Handlers":{}}}}"#));
+}
 
 #[test]
 fn setup_binds_loopback_and_publishes_only_through_tailscale() {

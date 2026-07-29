@@ -221,12 +221,19 @@ pub fn current_status() -> Result<String, ReviewMapFailure> {
         "Service: {}\nEndpoint: {}\nTailscale Serve: {}",
         service.stdout.trim(),
         plan.public_endpoint,
-        if tailscale.stdout.trim().is_empty() {
-            "configured"
-        } else {
+        if tailscale_serve_active(&tailscale.stdout) {
             "active"
+        } else {
+            "not configured"
         }
     ))
+}
+
+pub fn tailscale_serve_active(status_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(status_json)
+        .ok()
+        .and_then(|value| value.as_object().map(|object| !object.is_empty()))
+        .unwrap_or(false)
 }
 
 pub fn issue_pairing_code() -> Result<String, ReviewMapFailure> {
