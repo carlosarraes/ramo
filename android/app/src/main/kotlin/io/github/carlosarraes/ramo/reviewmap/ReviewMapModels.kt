@@ -21,6 +21,7 @@ class PairingLink private constructor(val endpoint: String, val code: String) {
             val code = values["code"] ?: return null
             if (endpoint.scheme != "https" || endpoint.host?.endsWith(".ts.net") != true ||
                 endpoint.userInfo != null || endpoint.fragment != null || endpoint.query != null ||
+                endpoint.rawPath !in listOf("", "/") ||
                 code.isBlank() || code.length > 256
             ) return null
             PairingLink(endpoint.toString().trimEnd('/'), code)

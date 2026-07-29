@@ -120,6 +120,8 @@ class ReviewMapServerClient internal constructor(
             val body = JSONObject().put("code", link.code).put("label", "Ramo Android").toString()
             val response = try {
                 engine.request(link.endpoint, "/v1/pair/exchange", "POST", null, body)
+            } catch (error: ReviewMapServerException) {
+                throw error
             } catch (_: Exception) {
                 throw ReviewMapServerException(ReviewMapFailureCode.ServerUnreachable, "Could not reach laptop analysis")
             }
@@ -139,9 +141,7 @@ class ReviewMapServerClient internal constructor(
                 ?: if (response.status == HttpURLConnection.HTTP_UNAUTHORIZED) {
                     ReviewMapFailureCode.ClientUnauthorized
                 } else ReviewMapFailureCode.ServerIncompatible
-            val message = failure?.optString("message")?.takeIf(String::isNotBlank)
-                ?: "Laptop analysis returned an incompatible response"
-            throw ReviewMapServerException(code, message)
+            throw ReviewMapServerException(code, failureMessage(code))
         }
 
         private fun parseResult(source: String): ReviewMapServerResult {
@@ -151,7 +151,8 @@ class ReviewMapServerClient internal constructor(
             }
             val map = parseMap(root.getJSONObject("map"))
             val failure = root.optJSONObject("failure")?.let {
-                ReviewMapFailure(failureCode(it.optString("code")), it.optString("message"))
+                val code = failureCode(it.optString("code"))
+                ReviewMapFailure(code, failureMessage(code))
             }
             return ReviewMapServerResult(
                 root.getString("job_id"),
@@ -220,6 +221,18 @@ class ReviewMapServerClient internal constructor(
         private fun failureCode(value: String) = ReviewMapFailureCode.entries.firstOrNull {
             it.name.replace(Regex("([a-z])([A-Z])"), "$1_$2").lowercase() == value
         } ?: ReviewMapFailureCode.ServerIncompatible
+
+        private fun failureMessage(code: ReviewMapFailureCode) = when (code) {
+            ReviewMapFailureCode.ServerUnreachable -> "Could not reach laptop analysis"
+            ReviewMapFailureCode.PairingRejected -> "The pairing code expired or was already used"
+            ReviewMapFailureCode.ClientUnauthorized -> "This phone is no longer paired"
+            ReviewMapFailureCode.OllamaUnavailable -> "Ollama is not available on the laptop"
+            ReviewMapFailureCode.ModelMissing -> "The selected local model is not installed"
+            ReviewMapFailureCode.AnalysisTimedOut -> "Local analysis timed out"
+            ReviewMapFailureCode.ResultStale -> "The pull request changed; refresh the map"
+            ReviewMapFailureCode.ServerIncompatible -> "Ramo and the laptop server are incompatible"
+            else -> "Laptop analysis is unavailable; the exact map is still ready"
+        }
 
         private fun segment(value: String): String {
             require(value.isNotBlank() && value.all { it.isLetterOrDigit() || it in "-_" })

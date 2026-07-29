@@ -10,6 +10,7 @@ class PairingLinkTest {
         assertNull(PairingLink.parse("ramo://pair?endpoint=http%3A%2F%2Flaptop.ts.net&code=x"))
         assertNull(PairingLink.parse("ramo://pair?endpoint=https%3A%2F%2Fexample.com&code=x"))
         assertNotNull(PairingLink.parse("ramo://pair?endpoint=https%3A%2F%2Flaptop.tail123.ts.net&code=x"))
+        assertNull(PairingLink.parse("ramo://pair?endpoint=https%3A%2F%2Flaptop.tail123.ts.net%2Fevil&code=x"))
     }
 
     @Test

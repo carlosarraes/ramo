@@ -40,4 +40,19 @@ class ReviewMapServerClientTest {
         assertEquals("phone", pairing.clientId)
         assertFalse(pairing.toString().contains("ramo_secret"))
     }
+
+    @Test
+    fun serverFailureTextCannotReachTheUiOrException() = runTest {
+        val engine = ReviewMapHttpEngine { _, _, _, _, _ ->
+            HttpResult(401, """{"failure":{"code":"client_unauthorized","message":"secret reflected text"}}""")
+        }
+        val client = ReviewMapServerClient(ServerPairing("https://laptop.tail.ts.net", "id", "token", 0), engine)
+
+        val error = assertFailsWith<ReviewMapServerException> {
+            client.resolve(ReviewMapResolveRequest("owner/repo", 7, "head"))
+        }
+
+        assertEquals("This phone is no longer paired", error.message)
+        assertFalse(error.toString().contains("reflected"))
+    }
 }
