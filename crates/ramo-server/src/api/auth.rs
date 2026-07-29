@@ -374,11 +374,19 @@ fn persist_json<T: serde::Serialize>(
             .map_err(|error| token_io("Could not write the paired-client store", error))?;
         file.sync_all()
             .map_err(|error| token_io("Could not sync the paired-client store", error))?;
+        #[cfg(windows)]
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(token_io("Could not replace the paired-client store", error)),
+        }
         std::fs::rename(&temporary, path)
             .map_err(|error| token_io("Could not replace the paired-client store", error))?;
+        #[cfg(unix)]
         std::fs::File::open(parent)
             .and_then(|directory| directory.sync_all())
-            .map_err(|error| token_io("Could not sync the paired-client directory", error))
+            .map_err(|error| token_io("Could not sync the paired-client directory", error))?;
+        Ok(())
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);

@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -255,9 +255,12 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ReviewMapFailure> {
             .map_err(|error| cache_io("Could not write a cache entry", error))?;
         file.sync_all()
             .map_err(|error| cache_io("Could not sync a cache entry", error))?;
+        #[cfg(windows)]
+        remove_if_present(path)?;
         std::fs::rename(&temporary, path)
             .map_err(|error| cache_io("Could not replace a cache entry", error))?;
-        File::open(parent)
+        #[cfg(unix)]
+        std::fs::File::open(parent)
             .and_then(|directory| directory.sync_all())
             .map_err(|error| cache_io("Could not sync the cache directory", error))?;
         Ok(())
