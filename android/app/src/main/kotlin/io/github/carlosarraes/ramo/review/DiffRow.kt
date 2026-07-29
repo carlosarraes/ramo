@@ -57,7 +57,7 @@ fun DiffRow(
                 row.spans.forEach { span ->
                     withStyle(
                         SpanStyle(
-                            color = Color(span.color.toULong()),
+                            color = syntaxColor(span.color),
                             fontWeight = if (span.bold) FontWeight.Bold else FontWeight.Normal,
                             fontStyle = if (span.italic) FontStyle.Italic else FontStyle.Normal,
                             textDecoration = if (span.underline) TextDecoration.Underline else null,

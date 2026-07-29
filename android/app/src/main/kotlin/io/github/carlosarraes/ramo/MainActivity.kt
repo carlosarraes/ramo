@@ -5,6 +5,7 @@ import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
@@ -34,7 +35,7 @@ import io.github.carlosarraes.ramo.review.ReviewScreen
 import io.github.carlosarraes.ramo.review.ReviewViewModel
 import io.github.carlosarraes.ramo.review.SecureDraftStore
 import io.github.carlosarraes.ramo.security.SecureTokenStore
-import io.github.carlosarraes.ramo.ui.theme.RamoTheme
+import io.github.carlosarraes.ramo.ui.theme.RamoAppSurface
 
 class MainActivity : ComponentActivity() {
     private val authenticator = NativeAuthenticator()
@@ -43,15 +44,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         requestedPull = intent.pullRequest()
         setContent {
-            RamoTheme {
+            RamoAppSurface {
                 if (NativeNetworkBootstrap.status != BootstrapStatus.Ready) {
                     Text(
                         "Ramo couldn't initialize secure networking. Restart the app and try again.",
                         modifier = Modifier.padding(24.dp),
                     )
-                    return@RamoTheme
+                    return@RamoAppSurface
                 }
                 val auth: AuthViewModel = viewModel {
                     AuthViewModel(SecureTokenStore(applicationContext), authenticator)
