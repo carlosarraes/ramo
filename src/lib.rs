@@ -16,6 +16,7 @@ pub mod pi_extension;
 pub mod process;
 pub mod remote_review;
 pub mod review;
+pub mod review_map;
 pub mod runtime;
 pub mod session;
 pub mod startup_notice;
