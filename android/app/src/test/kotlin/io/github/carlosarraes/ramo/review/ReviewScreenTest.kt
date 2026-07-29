@@ -64,18 +64,36 @@ class ReviewScreenTest {
         compose.onNodeWithText("Undo").assertHasClickAction()
     }
 
-    private fun setReviewContent(notice: ReviewNoticeUi? = null) {
+    @Test
+    fun unavailablePullStaysInsideReviewWithRetryAndBack() {
+        setReviewContent(
+            loading = false,
+            pull = null,
+            screen = null,
+            error = "Could not load this pull request",
+        )
+
+        compose.onNodeWithText("Could not load this pull request").assertIsDisplayed()
+        compose.onNodeWithText("Retry").assertHasClickAction()
+        compose.onNodeWithText("Back").assertHasClickAction()
+    }
+
+    private fun setReviewContent(
+        notice: ReviewNoticeUi? = null,
+        loading: Boolean = false,
+        pull: PullRequestUi? = pullRequest(),
+        screen: FileScreenUi? = fileScreen(0),
+        error: String? = null,
+    ) {
         compose.setContent {
             RamoAppSurface {
                 var selectedFile by remember { mutableIntStateOf(0) }
                 var fileSheetOpen by remember { mutableStateOf(false) }
                 var selection by remember { mutableStateOf<LineSelectionUi?>(null) }
                 var editor by remember { mutableStateOf<DraftEditorUi?>(null) }
-                val pull = pullRequest()
-                val screen = fileScreen(selectedFile)
                 ReviewScreen(
                     state = ReviewUiState(
-                        loading = false,
+                        loading = loading,
                         pullRequest = pull,
                         selectedFile = selectedFile,
                         screen = screen,
@@ -83,9 +101,12 @@ class ReviewScreenTest {
                         selection = selection,
                         editor = editor,
                         notice = notice,
+                        error = error,
                     ),
                     codeSize = 13,
                     onBack = {},
+                    onRetry = {},
+                    onDismissError = {},
                     onFileSheet = { fileSheetOpen = it },
                     onSummaryExpanded = {},
                     onSelectFile = { selectedFile = it; fileSheetOpen = false },

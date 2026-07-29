@@ -9,16 +9,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -62,11 +72,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             RamoAppSurface {
                 var codeSize by rememberSaveable { mutableIntStateOf(preferences.codeSize) }
-                if (NativeNetworkBootstrap.status != BootstrapStatus.Ready) {
-                    Text(
-                        "Ramo couldn't initialize secure networking. Restart the app and try again.",
-                        modifier = Modifier.padding(24.dp),
-                    )
+                var bootstrapStatus by remember { mutableStateOf(NativeNetworkBootstrap.status) }
+                if (bootstrapStatus != BootstrapStatus.Ready) {
+                    BootstrapFailure {
+                        bootstrapStatus = NativeNetworkBootstrap.initialize(applicationContext)
+                    }
                     return@RamoAppSurface
                 }
                 val auth: AuthViewModel = viewModel {
@@ -107,6 +117,8 @@ class MainActivity : ComponentActivity() {
                                     state = reviewState,
                                     codeSize = codeSize,
                                     onBack = { destination = AppDestination.Inbox },
+                                    onRetry = review::open,
+                                    onDismissError = review::dismissError,
                                     onFileSheet = review::setFileSheet,
                                     onSummaryExpanded = review::setSummaryExpanded,
                                     onSelectFile = review::selectFile,
@@ -219,5 +231,20 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_REPOSITORY = "repository"
         const val EXTRA_NUMBER = "number"
+    }
+}
+
+@Composable
+private fun BootstrapFailure(onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Ramo couldn't initialize secure networking.")
+        Button(onClick = onRetry) { Text("Retry") }
     }
 }

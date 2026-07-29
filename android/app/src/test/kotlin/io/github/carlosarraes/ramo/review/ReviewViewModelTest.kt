@@ -178,6 +178,28 @@ class ReviewViewModelTest {
         assertEquals("Could not load this pull request", model.state.value.error)
         assertFalse(model.state.value.error!!.contains("panicked"))
     }
+
+    @Test fun failedOpenCanBeDismissedAndRetriedWithoutASecondModel() = runTest(dispatcher) {
+        val repository = FlakyOpenReviewRepository()
+        val model = ReviewViewModel(repository, "ramo/ramo", 7)
+        advanceUntilIdle()
+        assertEquals("Could not load this pull request", model.state.value.error)
+        model.dismissError()
+        assertEquals(null, model.state.value.error)
+        model.open()
+        advanceUntilIdle()
+        assertEquals("Title", model.state.value.pullRequest!!.title)
+    }
+}
+
+private class FlakyOpenReviewRepository : ReviewRepository by FakeReviewRepository() {
+    private var attempts = 0
+
+    override suspend fun open(repository: String, number: Long): PullRequestUi {
+        attempts += 1
+        if (attempts == 1) error("temporary failure")
+        return pull()
+    }
 }
 
 private class FakeReviewRepository(

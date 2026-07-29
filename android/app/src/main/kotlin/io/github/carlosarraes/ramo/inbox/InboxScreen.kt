@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.carlosarraes.ramo.ui.components.FailureBanner
 
 internal fun TabState.visibleItems(query: String): List<InboxItem> {
     val normalized = query.trim()
@@ -133,14 +133,12 @@ fun InboxScreen(
                 )
             }
             tab.failure?.takeIf { tab.items.isNotEmpty() }?.let { failure ->
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(failure.message, Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
-                    if (failure.retryable) TextButton(onClick = onRefresh) { Text("Retry") }
-                    TextButton(onClick = { onDismissFailure(state.selected) }) { Text("Dismiss") }
-                }
+                FailureBanner(
+                    message = failure.message,
+                    retryable = failure.retryable,
+                    onRetry = onRefresh,
+                    onDismiss = { onDismissFailure(state.selected) },
+                )
             }
             PullToRefreshBox(
                 isRefreshing = tab.loading && tab.items.isNotEmpty(),
@@ -149,13 +147,16 @@ fun InboxScreen(
             ) {
                 when {
                     tab.loading && tab.items.isEmpty() -> CenteredMessage("Loading…")
-                    tab.failure != null && tab.items.isEmpty() -> Column(
+                    tab.failure != null && tab.items.isEmpty() -> Box(
                         Modifier.fillMaxSize().padding(24.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(tab.failure.message, color = MaterialTheme.colorScheme.error)
-                        if (tab.failure.retryable) Button(onClick = onRefresh) { Text("Retry") }
+                        FailureBanner(
+                            message = tab.failure.message,
+                            retryable = tab.failure.retryable,
+                            onRetry = onRefresh,
+                            onDismiss = { onDismissFailure(state.selected) },
+                        )
                     }
                     visibleItems.isEmpty() -> CenteredMessage(
                         if (state.query.isNotBlank()) {

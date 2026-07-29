@@ -30,7 +30,14 @@ class ReviewViewModel(
         viewedJobs.values.forEach(Job::cancel)
         viewedJobs.clear()
         viewedMutations.clear()
-        mutableState.value = ReviewUiState(loading = true)
+        mutableState.value = mutableState.value.copy(
+            loading = true,
+            screen = null,
+            fileSheetOpen = false,
+            error = null,
+            selection = null,
+            editor = null,
+        )
         viewModelScope.launch {
             runCatching { repository.open(repositoryName, number) }
                 .onSuccess { pull ->
@@ -175,6 +182,7 @@ class ReviewViewModel(
         }
     }
     fun dismissSuccess() { mutableState.value = mutableState.value.copy(success = null) }
+    fun dismissError() { mutableState.value = mutableState.value.copy(error = null) }
 
     fun publish() {
         val state = mutableState.value

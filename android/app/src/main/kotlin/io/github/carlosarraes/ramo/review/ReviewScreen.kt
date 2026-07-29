@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.carlosarraes.ramo.ui.theme.Green
 import io.github.carlosarraes.ramo.ui.theme.Red
+import io.github.carlosarraes.ramo.ui.components.FailureBanner
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -42,6 +43,8 @@ fun ReviewScreen(
     state: ReviewUiState,
     codeSize: Int,
     onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onDismissError: () -> Unit,
     onFileSheet: (Boolean) -> Unit,
     onSummaryExpanded: (Boolean) -> Unit,
     onSelectFile: (Int) -> Unit,
@@ -71,7 +74,7 @@ fun ReviewScreen(
     val pull = state.pullRequest
     val screen = state.screen
     if (pull == null || screen == null) {
-        ReviewUnavailable(state, onBack)
+        ReviewUnavailable(state, onBack, onRetry)
         return
     }
 
@@ -139,13 +142,19 @@ fun ReviewScreen(
             }
         },
     ) { contentPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .testTag("diff-list"),
-            state = listState,
-        ) {
+        Column(Modifier.fillMaxSize().padding(contentPadding)) {
+            state.error?.let { error ->
+                FailureBanner(
+                    message = error,
+                    retryable = true,
+                    onRetry = onRetry,
+                    onDismiss = onDismissError,
+                )
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f).testTag("diff-list"),
+                state = listState,
+            ) {
             item {
                 ReviewSummary(
                     pull = pull,
@@ -193,8 +202,6 @@ fun ReviewScreen(
                 item { Text("Previous conversations", Modifier.padding(12.dp), fontWeight = FontWeight.Bold) }
                 items(previous, key = ReviewThreadUi::id) { ConversationCard(it) }
             }
-            state.error?.let { error ->
-                item { Text(error, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
             }
         }
     }
@@ -237,11 +244,18 @@ private fun DiffRowUi.isSelected(selection: LineSelectionUi?): Boolean {
 }
 
 @Composable
-private fun ReviewUnavailable(state: ReviewUiState, onBack: () -> Unit) {
+private fun ReviewUnavailable(state: ReviewUiState, onBack: () -> Unit, onRetry: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (state.loading) CircularProgressIndicator() else Text(state.error ?: "Pull request unavailable")
-            TextButton(onClick = onBack) { Text("Back") }
+            if (state.loading) {
+                CircularProgressIndicator()
+            } else {
+                Text(state.error ?: "Pull request unavailable")
+                Row {
+                    TextButton(onClick = onBack) { Text("Back") }
+                    TextButton(onClick = onRetry) { Text("Retry") }
+                }
+            }
         }
     }
 }
