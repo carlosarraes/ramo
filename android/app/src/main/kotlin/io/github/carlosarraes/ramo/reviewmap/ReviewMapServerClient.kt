@@ -239,6 +239,8 @@ class ReviewMapServerClient internal constructor(
             ReviewMapFailureCode.OllamaUnavailable -> "Ollama is not available on the laptop"
             ReviewMapFailureCode.ModelMissing -> "The selected local model is not installed"
             ReviewMapFailureCode.AnalysisTimedOut -> "Local analysis timed out"
+            ReviewMapFailureCode.AnalysisLowQuality ->
+                "AI analysis was not useful enough; the exact map is still ready"
             ReviewMapFailureCode.ResultStale -> "The pull request changed; refresh the map"
             ReviewMapFailureCode.ServerIncompatible -> "Ramo and the laptop server are incompatible"
             else -> "Laptop analysis is unavailable; the exact map is still ready"

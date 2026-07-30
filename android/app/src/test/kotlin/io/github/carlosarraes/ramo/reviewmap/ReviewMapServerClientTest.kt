@@ -57,6 +57,28 @@ class ReviewMapServerClientTest {
     }
 
     @Test
+    fun lowQualityResultUsesTypedSafeTextAndKeepsTheExactMap() = runTest {
+        val engine = ReviewMapHttpEngine { _, _, _, _, _ ->
+            HttpResult(200, lowQualityResponse("private reflected model output"))
+        }
+        val client = ReviewMapServerClient(
+            ServerPairing("https://laptop.tail.ts.net", "id", "token", 0),
+            engine,
+        )
+
+        val result = client.resolve(ReviewMapResolveRequest("owner/repo", 7, "head"))
+
+        assertEquals(ReviewMapPhase.Failed, result.phase)
+        assertEquals(ReviewMapFailureCode.AnalysisLowQuality, result.failure?.code)
+        assertEquals(
+            "AI analysis was not useful enough; the exact map is still ready",
+            result.failure?.message,
+        )
+        assertEquals("src/lib.rs", result.map.files.single().path)
+        assertFalse(result.failure?.message.orEmpty().contains("reflected"))
+    }
+
+    @Test
     fun pairingShowsTheTypedSafeFailureInsteadOfAGenericError() {
         val error = ReviewMapServerException(
             ReviewMapFailureCode.ServerUnreachable,
@@ -69,4 +91,32 @@ class ReviewMapServerClientTest {
         )
         assertEquals("Could not pair laptop analysis", pairingFailureMessage(IllegalStateException("private")))
     }
+
+
+    private fun lowQualityResponse(serverMessage: String) = """
+        {
+          "schema_version": 1,
+          "job_id": "job-1",
+          "state": "failed",
+          "failure": {"code": "analysis_low_quality", "message": "$serverMessage"},
+          "map": {
+            "identity": {
+              "repository": "owner/repo",
+              "pull_request": 7,
+              "base_sha": "base",
+              "head_sha": "head"
+            },
+            "totals": {"additions": 3, "deletions": 1},
+            "groups": [{
+              "id": "group", "label": "src/", "kind": "authored",
+              "file_ids": ["file"], "additions": 3, "deletions": 1,
+              "collapsed_by_default": false
+            }],
+            "files": [{
+              "id": "file", "path": "src/lib.rs", "kind": "authored",
+              "additions": 3, "deletions": 1
+            }]
+          }
+        }
+    """.trimIndent()
 }

@@ -43,6 +43,7 @@ enum class ReviewMapFailureCode {
     ModelMissing,
     AnalysisTimedOut,
     AnalysisInvalid,
+    AnalysisLowQuality,
     AnalysisFailed,
     ResultStale,
     CacheUnavailable,

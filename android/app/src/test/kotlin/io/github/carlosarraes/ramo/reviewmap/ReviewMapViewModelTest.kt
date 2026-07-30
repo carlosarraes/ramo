@@ -31,12 +31,51 @@ class ReviewMapViewModelTest {
         assertEquals("AI summary", model.state.value.map!!.groups.first().summary)
     }
 
+    @Test
+    fun lowQualityFailureKeepsExactMapAndCanBeDismissedOrRetried() = runTest(dispatcher) {
+        val repository = LowQualityRepository()
+        val model = ReviewMapViewModel(repository, "owner/repo", 7)
+
+        model.open()
+        advanceUntilIdle()
+
+        assertEquals(ReviewMapPhase.Failed, model.state.value.phase)
+        assertEquals("tests/test_api.py", model.state.value.map!!.files.single().path)
+        assertEquals(ReviewMapFailureCode.AnalysisLowQuality, model.state.value.failure?.code)
+        model.dismissFailure()
+        assertEquals(null, model.state.value.failure)
+
+        model.retry()
+        advanceUntilIdle()
+        assertEquals(2, repository.exactCalls)
+    }
+
     private class FakeRepository : ReviewMapRepository {
         private val exact = map(null)
         override suspend fun exact(repository: String, number: Long) = exact
         override fun isPaired() = true
         override suspend fun resolve(request: ReviewMapResolveRequest) =
             ReviewMapServerResult("job", ReviewMapPhase.Enriched, map("AI summary"))
+        override suspend fun poll(jobId: String) = error("not needed")
+        override suspend fun retry(jobId: String) = error("not needed")
+    }
+
+    private class LowQualityRepository : ReviewMapRepository {
+        var exactCalls = 0
+        override suspend fun exact(repository: String, number: Long): ReviewMapUi {
+            exactCalls++
+            return map(null)
+        }
+        override fun isPaired() = true
+        override suspend fun resolve(request: ReviewMapResolveRequest) = ReviewMapServerResult(
+            "job",
+            ReviewMapPhase.Failed,
+            map(null),
+            ReviewMapFailure(
+                ReviewMapFailureCode.AnalysisLowQuality,
+                "AI analysis was not useful enough; the exact map is still ready",
+            ),
+        )
         override suspend fun poll(jobId: String) = error("not needed")
         override suspend fun retry(jobId: String) = error("not needed")
     }

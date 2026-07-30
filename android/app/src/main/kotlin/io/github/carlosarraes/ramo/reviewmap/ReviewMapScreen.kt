@@ -77,6 +77,9 @@ fun ReviewMapScreen(state: ReviewMapUiState, callbacks: ReviewMapCallbacks) {
                     ReviewMapPhase.Enriched -> "Local analysis · ${map.analysisModel ?: "ready"}"
                     ReviewMapPhase.Unpaired -> "Exact map ready · AI summaries not paired"
                     ReviewMapPhase.Offline -> "Exact map · laptop analysis offline"
+                    ReviewMapPhase.Failed -> if (
+                        state.failure?.code == ReviewMapFailureCode.AnalysisLowQuality
+                    ) "Exact map ready · AI guidance rejected" else "Exact map"
                     else -> "Exact map"
                 }
                 Text(status, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)

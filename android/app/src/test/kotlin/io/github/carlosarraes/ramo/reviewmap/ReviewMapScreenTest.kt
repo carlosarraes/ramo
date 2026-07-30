@@ -58,4 +58,35 @@ class ReviewMapScreenTest {
 
         compose.onNodeWithText("Exact map ready · AI summaries not paired").assertIsDisplayed()
     }
+
+    @Test
+    fun rejectedAiGuidanceLeavesExactMapVisibleAndFailureDismissible() {
+        val file = ReviewMapFileUi("f1", "src/lib.rs", 1, 0, ReviewFileKindUi.Authored)
+        val group = ReviewMapGroupUi("g1", "src/", ReviewFileKindUi.Authored, listOf("f1"), 1, 0, false)
+        val map = ReviewMapUi("owner/repo", 7, "base", "head", 1, 0, listOf(group), listOf(file))
+        val failure = ReviewMapFailure(
+            ReviewMapFailureCode.AnalysisLowQuality,
+            "AI analysis was not useful enough; the exact map is still ready",
+        )
+        compose.setContent {
+            RamoAppSurface {
+                ReviewMapScreen(
+                    ReviewMapUiState(
+                        loading = false,
+                        map = map,
+                        phase = ReviewMapPhase.Failed,
+                        expandedGroups = setOf("g1"),
+                        failure = failure,
+                    ),
+                    ReviewMapCallbacks({}, {}, {}, {}, {}),
+                )
+            }
+        }
+
+        compose.onNodeWithText("Exact map ready · AI guidance rejected").assertIsDisplayed()
+        compose.onNodeWithText("AI analysis was not useful enough; the exact map is still ready")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Dismiss").assertHasClickAction()
+        compose.onAllNodesWithText("src/lib.rs")[0].assertIsDisplayed()
+    }
 }
