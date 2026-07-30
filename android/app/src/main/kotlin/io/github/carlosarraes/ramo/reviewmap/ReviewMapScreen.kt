@@ -8,11 +8,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import io.github.carlosarraes.ramo.ui.components.FailureBanner
 
 data class ReviewMapCallbacks(
@@ -74,7 +75,7 @@ fun ReviewMapScreen(state: ReviewMapUiState, callbacks: ReviewMapCallbacks) {
                 val status = when (state.phase) {
                     ReviewMapPhase.Analyzing -> "Analyzing privately on your laptop…"
                     ReviewMapPhase.Enriched -> "Local analysis · ${map.analysisModel ?: "ready"}"
-                    ReviewMapPhase.Unpaired -> "Exact map · pair laptop analysis in Settings"
+                    ReviewMapPhase.Unpaired -> "Exact map ready · AI summaries not paired"
                     ReviewMapPhase.Offline -> "Exact map · laptop analysis offline"
                     else -> "Exact map"
                 }
@@ -85,10 +86,7 @@ fun ReviewMapScreen(state: ReviewMapUiState, callbacks: ReviewMapCallbacks) {
             }
             map.files.minByOrNull { it.recommendedOrder ?: Int.MAX_VALUE }?.let { first ->
                 item {
-                    Button(
-                        onClick = { callbacks.onOpenFile(first.path) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 48.dp),
-                    ) { Text("Start with ${first.path.substringAfterLast('/')}") }
+                    StartReviewRow(first, callbacks.onOpenFile)
                 }
             }
             map.groups.forEach { group ->
@@ -107,6 +105,32 @@ fun ReviewMapScreen(state: ReviewMapUiState, callbacks: ReviewMapCallbacks) {
             item { Text("${state.reviewedPaths.size} of ${map.files.size} files viewed", Modifier.padding(18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
+}
+
+@Composable
+private fun StartReviewRow(file: ReviewMapFileUi, onOpen: (String) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .testTag("start-review")
+            .clickable(role = Role.Button) { onOpen(file.path) }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Start review", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            Text(
+                file.path,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    HorizontalDivider()
 }
 
 @Composable

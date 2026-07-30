@@ -5,12 +5,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import io.github.carlosarraes.ramo.ui.theme.RamoAppSurface
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import androidx.compose.ui.unit.dp
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -34,6 +37,25 @@ class ReviewMapScreenTest {
         compose.onAllNodesWithText("+414")[0].assertIsDisplayed()
         compose.onAllNodesWithText("−60")[0].assertIsDisplayed()
         compose.onAllNodesWithText("Core billing path", substring = true)[0].assertIsDisplayed()
-        compose.onNodeWithText("Start with proration.ts").assertHasClickAction()
+        compose.onNodeWithText("Start review").assertIsDisplayed()
+        compose.onAllNodesWithText("src/billing/proration.ts")[0].assertIsDisplayed()
+        compose.onNodeWithTag("start-review").assertHasClickAction().assertHeightIsEqualTo(64.dp)
+    }
+
+    @Test
+    fun unpairedStateMakesClearThatTheExactMapAlreadyWorks() {
+        val file = ReviewMapFileUi("f1", "src/lib.rs", 1, 0, ReviewFileKindUi.Authored)
+        val group = ReviewMapGroupUi("g1", "src/", ReviewFileKindUi.Authored, listOf("f1"), 1, 0, false)
+        val map = ReviewMapUi("owner/repo", 7, "base", "head", 1, 0, listOf(group), listOf(file))
+        compose.setContent {
+            RamoAppSurface {
+                ReviewMapScreen(
+                    ReviewMapUiState(false, map, ReviewMapPhase.Unpaired, setOf("g1")),
+                    ReviewMapCallbacks({}, {}, {}, {}, {}),
+                )
+            }
+        }
+
+        compose.onNodeWithText("Exact map ready · AI summaries not paired").assertIsDisplayed()
     }
 }
