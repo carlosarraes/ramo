@@ -55,4 +55,18 @@ class ReviewMapServerClientTest {
         assertEquals("This phone is no longer paired", error.message)
         assertFalse(error.toString().contains("reflected"))
     }
+
+    @Test
+    fun pairingShowsTheTypedSafeFailureInsteadOfAGenericError() {
+        val error = ReviewMapServerException(
+            ReviewMapFailureCode.ServerUnreachable,
+            "Could not reach laptop analysis",
+        )
+
+        assertEquals(
+            "Could not reach laptop analysis. Turn on Tailscale on this phone, then try again.",
+            pairingFailureMessage(error),
+        )
+        assertEquals("Could not pair laptop analysis", pairingFailureMessage(IllegalStateException("private")))
+    }
 }

@@ -58,6 +58,7 @@ import io.github.carlosarraes.ramo.reviewmap.PairingLink
 import io.github.carlosarraes.ramo.reviewmap.ReviewMapCallbacks
 import io.github.carlosarraes.ramo.reviewmap.ReviewMapScreen
 import io.github.carlosarraes.ramo.reviewmap.ReviewMapServerClient
+import io.github.carlosarraes.ramo.reviewmap.pairingFailureMessage
 import io.github.carlosarraes.ramo.reviewmap.ReviewMapViewModel
 import io.github.carlosarraes.ramo.security.SecureTokenStore
 import io.github.carlosarraes.ramo.security.ServerPairingStore
@@ -277,7 +278,7 @@ class MainActivity : ComponentActivity() {
                                                     pairingStore.write(it)
                                                     pairingMessage = "Laptop analysis paired"
                                                 }
-                                                .onFailure { pairingMessage = "Could not pair laptop analysis" }
+                                                .onFailure { pairingMessage = pairingFailureMessage(it) }
                                         }
                                     }) { Text("Pair") }
                                 },

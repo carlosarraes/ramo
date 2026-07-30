@@ -16,6 +16,16 @@ class ReviewMapServerException(
     override fun toString(): String = "ReviewMapServerException(code=$code, message=${message.orEmpty()})"
 }
 
+internal fun pairingFailureMessage(error: Throwable): String {
+    val serverError = error as? ReviewMapServerException
+        ?: return "Could not pair laptop analysis"
+    return if (serverError.code == ReviewMapFailureCode.ServerUnreachable) {
+        "Could not reach laptop analysis. Turn on Tailscale on this phone, then try again."
+    } else {
+        serverError.message.orEmpty()
+    }
+}
+
 internal data class HttpResult(val status: Int, val body: String)
 
 internal fun interface ReviewMapHttpEngine {
