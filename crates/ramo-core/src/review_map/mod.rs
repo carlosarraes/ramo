@@ -4,6 +4,7 @@ mod codeowners;
 mod enrichment;
 mod model;
 mod planner;
+mod quality;
 
 pub use cache_key::{ReviewMapCacheIdentity, review_map_cache_key};
 pub use classify::{ClassifierConfig, REVIEW_MAP_CLASSIFIER_VERSION, classify_path};
@@ -15,3 +16,4 @@ pub use enrichment::{
 };
 pub use model::*;
 pub use planner::{ReviewMapError, build_review_map, validate_exact_map};
+pub use quality::{EnrichmentQualityIssue, validate_enrichment_quality};

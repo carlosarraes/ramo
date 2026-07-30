@@ -24,6 +24,7 @@ pub enum ReviewMapFailureCode {
     ModelMissing,
     AnalysisTimedOut,
     AnalysisInvalid,
+    AnalysisLowQuality,
     AnalysisFailed,
     ResultStale,
     CacheUnavailable,
