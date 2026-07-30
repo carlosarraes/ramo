@@ -51,7 +51,8 @@ impl ServerConfig {
         })?;
 
         let config_dir = config_root.join("ramo-server");
-        let selected_model = load_selected_model(&config_dir)?;
+        let selected_model =
+            load_selected_model_for_prompt(&config_dir, crate::ollama::PROMPT_VERSION)?;
         let model = selected_model.as_ref().map_or_else(
             || "qwen3:8b".into(),
             |selected| selected.selected_model.clone(),
@@ -110,6 +111,14 @@ pub fn load_selected_model(
         ));
     }
     Ok(Some(selected))
+}
+
+pub fn load_selected_model_for_prompt(
+    config_dir: &Path,
+    prompt_version: u32,
+) -> Result<Option<SelectedModelConfig>, ReviewMapFailure> {
+    Ok(load_selected_model(config_dir)?
+        .filter(|selected| selected.prompt_version == prompt_version))
 }
 
 pub fn save_selected_model(

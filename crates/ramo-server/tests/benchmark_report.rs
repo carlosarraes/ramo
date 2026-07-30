@@ -1,7 +1,9 @@
 use ramo_server::benchmark::{
     BenchmarkDecision, CandidateAggregate, sanitized_report, select_default,
 };
-use ramo_server::config::{SelectedModelConfig, load_selected_model, save_selected_model};
+use ramo_server::config::{
+    SelectedModelConfig, load_selected_model, load_selected_model_for_prompt, save_selected_model,
+};
 
 #[test]
 fn invalid_or_unreliable_models_cannot_win_on_quality_alone() {
@@ -101,6 +103,28 @@ fn selected_model_configuration_is_atomic_and_round_trips() {
         Some(selected)
     );
     assert!(!directory.path().join("selected-model.json.tmp").exists());
+}
+
+#[test]
+fn selection_from_an_older_prompt_is_preserved_but_not_activated() {
+    let directory = tempfile::tempdir().unwrap();
+    let selected = SelectedModelConfig {
+        selected_model: "qwen2.5-coder:7b".into(),
+        model_digest: "sha256:model".into(),
+        prompt_version: 1,
+        benchmark_run_id: "run-prompt-1".into(),
+    };
+    save_selected_model(directory.path(), &selected).unwrap();
+
+    assert_eq!(
+        load_selected_model_for_prompt(directory.path(), 2).unwrap(),
+        None
+    );
+    assert_eq!(
+        load_selected_model_for_prompt(directory.path(), 1).unwrap(),
+        Some(selected)
+    );
+    assert!(directory.path().join("selected-model.json").is_file());
 }
 
 fn candidate(
