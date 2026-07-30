@@ -276,6 +276,22 @@ impl BlindSession {
             .collect()
     }
 
+    pub fn judgments_with_cases(&self) -> Vec<(u64, String, String, BlindJudgment)> {
+        self.comparisons
+            .iter()
+            .filter_map(|comparison| {
+                comparison.judgment.clone().map(|judgment| {
+                    (
+                        comparison.pull_request,
+                        comparison.candidate_a_id.clone(),
+                        comparison.candidate_b_id.clone(),
+                        judgment,
+                    )
+                })
+            })
+            .collect()
+    }
+
     pub fn reveal(&self) -> BTreeMap<String, String> {
         self.outputs
             .values()

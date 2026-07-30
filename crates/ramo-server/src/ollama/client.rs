@@ -2,13 +2,17 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use ramo_core::review_map::{
-    EnrichmentProposal, EnrichmentRequest, ReviewFileKind, ReviewMap, ReviewMapFailureCode,
+    EnrichmentProposal, EnrichmentQualityIssue, EnrichmentRequest, ReviewMap, ReviewMapFailureCode,
     ReviewMapFile, ReviewMapStatus, ReviewMapTotals, validate_enrichment,
+    validate_enrichment_quality,
 };
 use reqwest::{StatusCode, Url};
 
 use crate::ReviewMapFailure;
-use crate::analysis::{AnalysisBudget, AnalyzerIdentity, budget_batches};
+use crate::analysis::{
+    AnalysisBudget, AnalyzerIdentity, OLLAMA_CONTEXT_TOKENS, OLLAMA_OUTPUT_TOKENS, budget_batches,
+    estimate_tokens,
+};
 
 use super::prompt::{repair_prompt, system_prompt, user_prompt};
 use super::schema::enrichment_schema;
@@ -61,6 +65,47 @@ impl OllamaAnalyzer {
         self
     }
 
+    async fn analyze_with_digest(
+        &self,
+        request: EnrichmentRequest,
+        model_digest: &str,
+    ) -> Result<AnalysisResult, ReviewMapFailure> {
+        let batches = budget_batches(&request, &self.budget, |batch| {
+            estimate_prompt_tokens(batch, None).unwrap_or(usize::MAX)
+        });
+        if batches.len() == 1 {
+            return self.analyze_request(&batches[0], None, model_digest).await;
+        }
+
+        let mut results = Vec::with_capacity(batches.len());
+        let mut totals = Metrics::default();
+        for batch in batches {
+            let result = self.analyze_request(&batch, None, model_digest).await?;
+            totals.add_result(&result);
+            results.push(result.proposal);
+        }
+
+        let mut synthesis_request = request;
+        for file in &mut synthesis_request.files {
+            file.patch = None;
+        }
+        if estimate_prompt_tokens(&synthesis_request, Some(&results))
+            .map_or(true, |tokens| tokens > self.budget.max_prompt_tokens)
+        {
+            return Err(ReviewMapFailure::new(
+                ReviewMapFailureCode::AnalysisInvalid,
+                "The local analysis result is too large to synthesize safely",
+            ));
+        }
+        let mut result = self
+            .analyze_request(&synthesis_request, Some(&results), model_digest)
+            .await?;
+        result.prompt_eval_count += totals.prompt_eval_count;
+        result.eval_count += totals.eval_count;
+        result.total_duration_ns += totals.total_duration_ns;
+        Ok(result)
+    }
+
     async fn analyze_request(
         &self,
         request: &EnrichmentRequest,
@@ -72,7 +117,8 @@ impl OllamaAnalyzer {
             .await?;
         match parse_and_validate(request, first) {
             Ok(result) => Ok(result),
-            Err((category, first_metrics)) => {
+            Err((rejection, first_metrics)) => {
+                let category = rejection.repair_category();
                 let second = self
                     .request_once(request, batch_results, Some(&category), model_digest)
                     .await?;
@@ -84,7 +130,7 @@ impl OllamaAnalyzer {
                         result.repair_count = 1;
                         result
                     })
-                    .map_err(|(category, _)| invalid_failure(&category))
+                    .map_err(|(rejection, _)| rejection.into_failure())
             }
         }
     }
@@ -124,6 +170,8 @@ impl OllamaAnalyzer {
             "options": {
                 "temperature": 0,
                 "seed": 42,
+                "num_ctx": OLLAMA_CONTEXT_TOKENS,
+                "num_predict": OLLAMA_OUTPUT_TOKENS,
             }
         });
         let http = self.http.as_ref().map_err(|_| {
@@ -219,6 +267,8 @@ impl Analyzer for OllamaAnalyzer {
             generation_parameters: vec![
                 ("seed".into(), "42".into()),
                 ("temperature".into(), "0".into()),
+                ("num_ctx".into(), OLLAMA_CONTEXT_TOKENS.to_string()),
+                ("num_predict".into(), OLLAMA_OUTPUT_TOKENS.to_string()),
             ],
         })
     }
@@ -227,27 +277,32 @@ impl Analyzer for OllamaAnalyzer {
         &self,
         request: EnrichmentRequest,
     ) -> Result<AnalysisResult, ReviewMapFailure> {
-        let model_digest = self.model_digest().await?;
-        let batches = budget_batches(&request, &self.budget);
-        if batches.len() == 1 {
-            return self.analyze_request(&batches[0], None, &model_digest).await;
-        }
-
-        let mut results = Vec::with_capacity(batches.len());
-        let mut totals = Metrics::default();
-        for batch in batches {
-            let result = self.analyze_request(&batch, None, &model_digest).await?;
-            totals.add_result(&result);
-            results.push(result.proposal);
-        }
-        let mut result = self
-            .analyze_request(&request, Some(&results), &model_digest)
-            .await?;
-        result.prompt_eval_count += totals.prompt_eval_count;
-        result.eval_count += totals.eval_count;
-        result.total_duration_ns += totals.total_duration_ns;
-        Ok(result)
+        tokio::time::timeout(self.timeout, async {
+            let model_digest = self.model_digest().await?;
+            self.analyze_with_digest(request, &model_digest).await
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(ReviewMapFailure::new(
+                ReviewMapFailureCode::AnalysisTimedOut,
+                "Local Review Map analysis timed out",
+            ))
+        })
     }
+}
+
+pub fn estimate_prompt_tokens(
+    request: &EnrichmentRequest,
+    batch_results: Option<&[EnrichmentProposal]>,
+) -> Result<usize, serde_json::Error> {
+    let payload = serde_json::json!({
+        "messages": [
+            { "role": "system", "content": system_prompt() },
+            { "role": "user", "content": user_prompt(request, batch_results)? },
+        ],
+        "format": enrichment_schema(request),
+    });
+    Ok(estimate_tokens(serde_json::to_vec(&payload)?.len()))
 }
 
 #[derive(serde::Deserialize)]
@@ -306,7 +361,7 @@ impl Metrics {
 fn parse_and_validate(
     request: &EnrichmentRequest,
     raw: RawAnalysis,
-) -> Result<AnalysisResult, (String, Metrics)> {
+) -> Result<AnalysisResult, (AnalysisRejection, Metrics)> {
     let metrics = Metrics {
         prompt_eval_count: raw.prompt_eval_count,
         eval_count: raw.eval_count,
@@ -314,12 +369,22 @@ fn parse_and_validate(
     };
     let mut proposal = match serde_json::from_str::<EnrichmentProposal>(&raw.content) {
         Ok(proposal) => proposal,
-        Err(_) => return Err(("invalid JSON or schema".into(), metrics)),
+        Err(_) => {
+            return Err((
+                AnalysisRejection::Invalid("invalid JSON or schema".into()),
+                metrics,
+            ));
+        }
     };
-    normalize_exact_assignments(request, &mut proposal);
     proposal.coverage = request.coverage.clone();
     if let Err(error) = validate_enrichment(&validation_map(request), &proposal) {
-        return Err((validation_category(&error), metrics));
+        return Err((
+            AnalysisRejection::Invalid(validation_category(&error)),
+            metrics,
+        ));
+    }
+    if let Err(issues) = validate_enrichment_quality(request, &proposal) {
+        return Err((AnalysisRejection::LowQuality(issues), metrics));
     }
     Ok(AnalysisResult {
         proposal,
@@ -332,89 +397,37 @@ fn parse_and_validate(
     })
 }
 
-fn normalize_exact_assignments(request: &EnrichmentRequest, proposal: &mut EnrichmentProposal) {
-    use std::collections::HashSet;
+enum AnalysisRejection {
+    Invalid(String),
+    LowQuality(Vec<EnrichmentQualityIssue>),
+}
 
-    let flexible = request
-        .files
-        .iter()
-        .filter(|file| !matches!(file.kind, ReviewFileKind::Test | ReviewFileKind::Generated))
-        .map(|file| file.path.as_str())
-        .collect::<HashSet<_>>();
-    let mut grouped = HashSet::new();
-    for group in &mut proposal.groups {
-        group
-            .paths
-            .retain(|path| !flexible.contains(path.as_str()) || grouped.insert(path.clone()));
-    }
-    proposal.groups.retain(|group| !group.paths.is_empty());
-
-    let mut remaining = request
-        .files
-        .iter()
-        .filter(|file| flexible.contains(file.path.as_str()) && !grouped.contains(&file.path))
-        .map(|file| file.path.clone())
-        .collect::<HashSet<_>>();
-    let mut next_priority = proposal
-        .groups
-        .iter()
-        .map(|group| group.review_priority)
-        .max()
-        .unwrap_or_default()
-        .saturating_add(1);
-    for exact_group in &request.groups {
-        let paths = exact_group
-            .paths
-            .iter()
-            .filter(|path| remaining.remove(path.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-        if paths.is_empty() {
-            continue;
+impl AnalysisRejection {
+    fn repair_category(&self) -> String {
+        match self {
+            Self::Invalid(category) => category.clone(),
+            Self::LowQuality(issues) => issues
+                .iter()
+                .map(|issue| issue.category())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(","),
         }
-        proposal.groups.push(ramo_core::review_map::ProposedGroup {
-            label: exact_group.label.clone(),
-            summary: "Additional files from the deterministic diff structure.".into(),
-            risk: None,
-            review_priority: next_priority,
-            paths,
-        });
-        next_priority = next_priority.saturating_add(1);
-    }
-    if !remaining.is_empty() {
-        let paths = request
-            .files
-            .iter()
-            .filter(|file| remaining.contains(&file.path))
-            .map(|file| file.path.clone())
-            .collect();
-        proposal.groups.push(ramo_core::review_map::ProposedGroup {
-            label: "Other changes".into(),
-            summary: "Additional files from the deterministic diff structure.".into(),
-            risk: None,
-            review_priority: next_priority,
-            paths,
-        });
     }
 
-    let mut ordered = HashSet::new();
-    proposal
-        .review_order
-        .retain(|path| !flexible.contains(path.as_str()) || ordered.insert(path.clone()));
-    proposal.review_order.extend(
-        request
-            .files
-            .iter()
-            .filter(|file| {
-                flexible.contains(file.path.as_str()) && ordered.insert(file.path.clone())
-            })
-            .map(|file| file.path.clone()),
-    );
-
-    let mut insights = HashSet::new();
-    proposal
-        .files
-        .retain(|insight| insights.insert(insight.path.clone()));
+    fn into_failure(self) -> ReviewMapFailure {
+        match self {
+            Self::Invalid(_) => ReviewMapFailure::new(
+                ReviewMapFailureCode::AnalysisInvalid,
+                "Ollama returned invalid structured analysis",
+            ),
+            Self::LowQuality(_) => ReviewMapFailure::new(
+                ReviewMapFailureCode::AnalysisLowQuality,
+                "Local AI did not add reliable review guidance; the exact map is still ready",
+            ),
+        }
+    }
 }
 
 fn validation_map(request: &EnrichmentRequest) -> ReviewMap {
@@ -510,11 +523,4 @@ fn map_transport_error(error: reqwest::Error) -> ReviewMapFailure {
             error,
         )
     }
-}
-
-fn invalid_failure(category: &str) -> ReviewMapFailure {
-    ReviewMapFailure::new(
-        ReviewMapFailureCode::AnalysisInvalid,
-        format!("Ollama returned invalid structured analysis: {category}"),
-    )
 }

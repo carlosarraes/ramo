@@ -74,6 +74,28 @@ fn saved_judging_session_resumes_without_model_identity() {
     assert!(!json.contains("qwen"));
 }
 
+#[test]
+fn judgments_preserve_three_distinct_cases_for_every_candidate_pair() {
+    let mut session = BlindSession::from_outputs(outputs_for_cases(3), 42).unwrap();
+    while session.completed() < session.total() {
+        session.submit(valid_judgment()).unwrap();
+    }
+
+    let mut cases_by_pair =
+        std::collections::BTreeMap::<(String, String), std::collections::BTreeSet<u64>>::new();
+    for (pull_request, left, right, _) in session.judgments_with_cases() {
+        let pair = if left < right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        cases_by_pair.entry(pair).or_default().insert(pull_request);
+    }
+
+    assert_eq!(cases_by_pair.len(), 3);
+    assert!(cases_by_pair.values().all(|cases| cases.len() == 3));
+}
+
 fn valid_judgment() -> BlindJudgment {
     BlindJudgment {
         candidate_a: DimensionScores::all(4),
@@ -83,12 +105,16 @@ fn valid_judgment() -> BlindJudgment {
 }
 
 fn outputs() -> Vec<BlindCandidateOutput> {
+    outputs_for_cases(6)
+}
+
+fn outputs_for_cases(case_count: u64) -> Vec<BlindCandidateOutput> {
     let models = [
         ("candidate-1", "qwen3:8b"),
         ("candidate-2", "qwen3-coder:30b"),
         ("candidate-3", "qwen2.5-coder:7b"),
     ];
-    (1..=6)
+    (1..=case_count)
         .flat_map(|pull_request| {
             models.map(move |(candidate_id, model)| BlindCandidateOutput {
                 pull_request,

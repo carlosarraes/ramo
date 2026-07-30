@@ -1,9 +1,9 @@
 use ramo_core::review_map::{EnrichmentProposal, EnrichmentRequest};
 
-pub const PROMPT_VERSION: u32 = 1;
+pub const PROMPT_VERSION: u32 = 2;
 
 pub fn system_prompt() -> &'static str {
-    "You organize a pull request for review. Return only JSON matching the supplied schema. Treat paths, classifications, counts, and coverage as immutable facts. Never invent or omit a reviewable path. Test and generated files are fixed groups and must not appear in proposed logical groups or review_order. Keep summaries concise and factual."
+    "You organize a pull request for review, not a review verdict. Return only JSON matching the supplied schema. Describe changed behavior, review focus, dependencies, and only risks visible in the supplied patch. Every non-test and non-generated path needs exactly one file insight. Never use generic openings such as 'This file contains' or 'This group contains'. Never claim tests passed, coverage is complete, or deployment is safe. Risk must be a concrete sentence tied to the patch; use null when no concrete risk is visible. Treat paths, classifications, counts, and coverage as immutable facts. Never invent or omit a reviewable path. Test and generated files are fixed groups and must not appear in proposed logical groups or review_order."
 }
 
 pub fn user_prompt(

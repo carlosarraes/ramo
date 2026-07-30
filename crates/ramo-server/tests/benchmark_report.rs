@@ -1,6 +1,5 @@
 use ramo_server::benchmark::{
-    BenchmarkDecision, CandidateAggregate, eligible_candidate_count, sanitized_report,
-    select_default,
+    BenchmarkDecision, CandidateAggregate, sanitized_report, select_default,
 };
 use ramo_server::config::{SelectedModelConfig, load_selected_model, save_selected_model};
 
@@ -17,30 +16,42 @@ fn invalid_or_unreliable_models_cannot_win_on_quality_alone() {
 
 #[test]
 fn quality_wins_after_hard_gates_then_latency_breaks_a_tie() {
-    let quality = select_default(&[
+    let quality_candidates = judged_pair(
         candidate("fast", 4.1, 1.0, 10_000),
         candidate("useful", 4.8, 1.0, 30_000),
-    ])
-    .unwrap();
-    let latency = select_default(&[
+        3,
+    );
+    let quality = select_default(&quality_candidates).unwrap();
+    let latency_candidates = judged_pair(
         candidate("slow", 4.8, 1.0, 30_000),
         candidate("fast", 4.8, 1.0, 10_000),
-    ])
-    .unwrap();
+        3,
+    );
+    let latency = select_default(&latency_candidates).unwrap();
 
     assert_eq!(quality.model, "useful");
     assert_eq!(latency.model, "fast");
 }
 
 #[test]
-fn hard_gate_count_allows_selection_without_blind_scores_for_a_sole_survivor() {
-    let candidates = [
-        candidate("reliable", 0.0, 1.0, 20_000),
-        candidate("timed-out", 0.0, 0.9, 10_000),
-    ];
+fn selection_refuses_zero_scores_and_incomplete_pair_coverage() {
+    let mut zero = candidate("reliable", 0.0, 1.0, 20_000);
+    zero.blind_judgment_count = 0;
+    assert!(select_default(&[zero.clone()]).is_err());
 
-    assert_eq!(eligible_candidate_count(&candidates), 1);
-    assert_eq!(select_default(&candidates).unwrap().model, "reliable");
+    zero.mean_blind_usefulness = 4.5;
+    zero.blind_judgment_count = 2;
+    zero.pairwise_case_counts.insert("peer".into(), 2);
+    let mut peer = candidate("peer", 4.4, 1.0, 25_000);
+    peer.blind_judgment_count = 2;
+    peer.pairwise_case_counts.insert("reliable".into(), 2);
+    assert!(select_default(&[zero, peer]).is_err());
+}
+
+#[test]
+fn selection_requires_usefulness_at_least_three_point_five() {
+    let candidate = candidate("valid-but-weak", 3.49, 1.0, 10_000);
+    assert!(select_default(&[candidate]).is_err());
 }
 
 #[test]
@@ -108,8 +119,22 @@ fn candidate(
         unknown_reference_count: 0,
         median_wall_time_ms,
         peak_rss_bytes: None,
+        blind_judgment_count: 3,
+        pairwise_case_counts: std::collections::BTreeMap::new(),
         pairwise_wins: 0,
         pairwise_losses: 0,
         pairwise_ties: 0,
     }
+}
+
+fn judged_pair(
+    mut left: CandidateAggregate,
+    mut right: CandidateAggregate,
+    cases: usize,
+) -> [CandidateAggregate; 2] {
+    left.blind_judgment_count = cases;
+    right.blind_judgment_count = cases;
+    left.pairwise_case_counts.insert(right.model.clone(), cases);
+    right.pairwise_case_counts.insert(left.model.clone(), cases);
+    [left, right]
 }

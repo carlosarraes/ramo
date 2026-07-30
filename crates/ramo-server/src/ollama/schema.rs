@@ -13,6 +13,7 @@ pub fn enrichment_schema(request: &EnrichmentRequest) -> Value {
         .filter(|file| !matches!(file.kind, ReviewFileKind::Test | ReviewFileKind::Generated))
         .map(|file| file.path.clone())
         .collect::<Vec<_>>();
+    let required_insight_count = flexible_paths.len();
     json!({
         "type": "object",
         "additionalProperties": false,
@@ -39,6 +40,7 @@ pub fn enrichment_schema(request: &EnrichmentRequest) -> Value {
             },
             "files": {
                 "type": "array",
+                "minItems": required_insight_count,
                 "items": {
                     "type": "object",
                     "additionalProperties": false,

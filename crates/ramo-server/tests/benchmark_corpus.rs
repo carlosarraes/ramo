@@ -24,6 +24,8 @@ fn manifest_contains_identity_but_never_patch_content() {
     let json = serde_json::to_string(&manifest).unwrap();
 
     assert!(json.contains("mondrio-platform"));
+    assert!(json.contains("\"max_prompt_tokens\":24576"));
+    assert!(!json.contains("max_patch_bytes"));
     assert!(!json.contains("\"patch\":"));
     assert!(!json.contains("\"prompt\":"));
 }

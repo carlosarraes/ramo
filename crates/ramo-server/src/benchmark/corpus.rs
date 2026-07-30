@@ -26,16 +26,14 @@ pub struct BenchmarkManifest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BenchmarkBudget {
-    pub max_patch_bytes: usize,
-    pub max_file_patch_bytes: usize,
+    pub max_prompt_tokens: usize,
     pub max_files_per_batch: usize,
 }
 
 impl From<AnalysisBudget> for BenchmarkBudget {
     fn from(value: AnalysisBudget) -> Self {
         Self {
-            max_patch_bytes: value.max_patch_bytes,
-            max_file_patch_bytes: value.max_file_patch_bytes,
+            max_prompt_tokens: value.max_prompt_tokens,
             max_files_per_batch: value.max_files_per_batch,
         }
     }
@@ -44,8 +42,7 @@ impl From<AnalysisBudget> for BenchmarkBudget {
 impl From<BenchmarkBudget> for AnalysisBudget {
     fn from(value: BenchmarkBudget) -> Self {
         Self {
-            max_patch_bytes: value.max_patch_bytes,
-            max_file_patch_bytes: value.max_file_patch_bytes,
+            max_prompt_tokens: value.max_prompt_tokens,
             max_files_per_batch: value.max_files_per_batch,
         }
     }

@@ -82,7 +82,7 @@ pub async fn serve(config: config::ServerConfig) -> Result<(), ReviewMapFailure>
         Arc::new(ollama::OllamaAnalyzer::new(
             &config.ollama_url,
             &config.model,
-            Duration::from_secs(120),
+            Duration::from_secs(90),
         )),
         cache,
         CoordinatorConfig::default(),

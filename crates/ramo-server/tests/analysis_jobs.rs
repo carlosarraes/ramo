@@ -126,6 +126,30 @@ impl Analyzer for UnavailableAnalyzer {
     }
 }
 
+struct LowQualityAnalyzer;
+
+#[async_trait]
+impl Analyzer for LowQualityAnalyzer {
+    async fn identity(&self) -> Result<AnalyzerIdentity, ReviewMapFailure> {
+        Ok(AnalyzerIdentity {
+            model: "qwen3:8b".into(),
+            model_digest: "sha256:model".into(),
+            prompt_version: 2,
+            generation_parameters: Vec::new(),
+        })
+    }
+
+    async fn analyze(
+        &self,
+        _request: ramo_core::review_map::EnrichmentRequest,
+    ) -> Result<AnalysisResult, ReviewMapFailure> {
+        Err(ReviewMapFailure::new(
+            ReviewMapFailureCode::AnalysisLowQuality,
+            "Local AI did not add reliable review guidance; the exact map is still ready",
+        ))
+    }
+}
+
 #[tokio::test]
 async fn identical_requests_share_one_analysis_job() {
     let analyzer = CountingAnalyzer::blocked();
@@ -231,6 +255,40 @@ async fn analyzer_failures_become_terminal_job_states_without_panicking() {
         JobState::Unavailable(failure)
             if failure.code == ReviewMapFailureCode::OllamaUnavailable
     ));
+}
+
+#[tokio::test]
+async fn low_quality_analysis_keeps_the_exact_map_and_does_not_cache() {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = ReviewMapCache::new(
+        directory.path(),
+        CacheLimits {
+            max_bytes: 1024 * 1024,
+            max_age: Duration::from_secs(3600),
+        },
+    )
+    .unwrap();
+    let coordinator = AnalysisCoordinator::new(
+        Arc::new(FakeProvider),
+        Arc::new(LowQualityAnalyzer),
+        cache,
+        CoordinatorConfig::default(),
+    );
+
+    let result = coordinator.resolve(request()).await.unwrap();
+    let state = wait_terminal(&coordinator, &result.job_id).await;
+    let snapshot = coordinator.job(&result.job_id).await.unwrap();
+
+    assert!(matches!(
+        state,
+        JobState::Failed(failure)
+            if failure.code == ReviewMapFailureCode::AnalysisLowQuality
+                && failure.message.contains("exact map is still ready")
+    ));
+    assert_eq!(snapshot.map.status, ReviewMapStatus::Failed);
+    assert_eq!(snapshot.map.totals.files, 1);
+    assert_eq!(snapshot.map.files[0].path, "src/lib.rs");
+    assert_eq!(directory.path().read_dir().unwrap().count(), 0);
 }
 
 async fn wait_terminal(coordinator: &AnalysisCoordinator, id: &AnalysisJobId) -> JobState {

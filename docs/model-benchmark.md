@@ -58,7 +58,7 @@ ramo server benchmark select
 ramo server benchmark report --sanitized docs/model-benchmark-results.md
 ```
 
-A candidate is eligible only with successful completion on every corpus case, 100% final schema and semantic validity after the single allowed repair, and zero invented references. Eligible candidates rank by mean blind usefulness, then median wall time, then peak memory when both measurements exist.
+A candidate is eligible only with successful completion on every corpus case, 100% final schema and semantic validity after the single allowed repair, zero invented references, at least three blind scored appearances, and mean usefulness of at least 3.5. When multiple candidates pass the protocol gates, each also needs judgments from at least three distinct PRs against another passing candidate. Repeated judgments from one PR cannot inflate this coverage. Eligible candidates rank by mean blind usefulness, net pairwise wins, median wall time, then peak memory when both measurements exist.
 
 Selection asks before atomically writing the model, installed digest, prompt version, and benchmark run ID to the server configuration. The sanitized report contains only model identities, aggregate metrics, category labels, hardware summary, and rationale. It omits repository names, PR numbers, paths, summaries, risks, prompts, patches, and model response bodies.
 

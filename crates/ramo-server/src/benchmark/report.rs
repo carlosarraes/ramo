@@ -19,10 +19,16 @@ pub struct CandidateAggregate {
     pub unknown_reference_count: usize,
     pub median_wall_time_ms: u64,
     pub peak_rss_bytes: Option<u64>,
+    pub blind_judgment_count: usize,
+    pub pairwise_case_counts: BTreeMap<String, usize>,
     pub pairwise_wins: usize,
     pub pairwise_losses: usize,
     pub pairwise_ties: usize,
 }
+
+const MIN_BLIND_USEFULNESS: f64 = 3.5;
+const MIN_BLIND_JUDGMENTS: usize = 3;
+const MIN_PAIRWISE_CASES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchmarkDecision {
@@ -34,32 +40,41 @@ pub struct BenchmarkDecision {
 pub fn eligible_candidate_count(candidates: &[CandidateAggregate]) -> usize {
     candidates
         .iter()
-        .filter(|candidate| passes_hard_gates(candidate))
+        .filter(|candidate| passes_protocol_gates(candidate))
         .count()
 }
 
 pub fn select_default(
     candidates: &[CandidateAggregate],
 ) -> Result<BenchmarkDecision, ReviewMapFailure> {
-    let mut eligible = candidates
+    let protocol_eligible = candidates
         .iter()
-        .filter(|candidate| passes_hard_gates(candidate))
+        .filter(|candidate| passes_protocol_gates(candidate))
+        .collect::<Vec<_>>();
+    let protocol_models = protocol_eligible
+        .iter()
+        .map(|candidate| candidate.model.as_str())
+        .collect::<BTreeSet<_>>();
+    let require_pair_coverage = protocol_eligible.len() > 1;
+    let mut eligible = protocol_eligible
+        .into_iter()
+        .filter(|candidate| {
+            candidate.blind_judgment_count >= MIN_BLIND_JUDGMENTS
+                && candidate.mean_blind_usefulness >= MIN_BLIND_USEFULNESS
+                && (!require_pair_coverage
+                    || candidate.pairwise_case_counts.iter().any(|(peer, cases)| {
+                        protocol_models.contains(peer.as_str()) && *cases >= MIN_PAIRWISE_CASES
+                    }))
+        })
         .collect::<Vec<_>>();
     eligible.sort_by(|left, right| compare_candidates(left, right));
     let winner = eligible
         .first()
-        .ok_or_else(|| invalid("No benchmark candidate passed every hard gate"))?;
-    let rationale = if winner.pairwise_wins + winner.pairwise_losses + winner.pairwise_ties == 0 {
-        format!(
-            "Passed every validity gate; median wall time {} ms",
-            winner.median_wall_time_ms
-        )
-    } else {
-        format!(
-            "Passed every validity gate; mean blind usefulness {:.2}, median wall time {} ms",
-            winner.mean_blind_usefulness, winner.median_wall_time_ms
-        )
-    };
+        .ok_or_else(|| invalid("No benchmark candidate has enough blind usefulness evidence"))?;
+    let rationale = format!(
+        "Passed every validity gate with {} blind judgments; mean usefulness {:.2}, median wall time {} ms",
+        winner.blind_judgment_count, winner.mean_blind_usefulness, winner.median_wall_time_ms
+    );
     Ok(BenchmarkDecision {
         model: winner.model.clone(),
         model_digest: winner.model_digest.clone(),
@@ -67,7 +82,7 @@ pub fn select_default(
     })
 }
 
-fn passes_hard_gates(candidate: &CandidateAggregate) -> bool {
+fn passes_protocol_gates(candidate: &CandidateAggregate) -> bool {
     candidate.completion_ratio == 1.0
         && candidate.schema_validity_ratio == 1.0
         && candidate.semantic_validity_ratio == 1.0
@@ -96,7 +111,8 @@ pub fn aggregate_candidates(run: &BenchmarkRun, session: &BlindSession) -> Vec<C
         .collect::<HashMap<_, _>>();
     let mut blind_scores = HashMap::<String, Vec<f64>>::new();
     let mut outcomes = HashMap::<String, (usize, usize, usize)>::new();
-    for (candidate_a, candidate_b, judgment) in session.judgments() {
+    let mut pairwise_cases = HashMap::<String, HashMap<String, BTreeSet<u64>>>::new();
+    for (pull_request, candidate_a, candidate_b, judgment) in session.judgments_with_cases() {
         blind_scores
             .entry(candidate_a.clone())
             .or_default()
@@ -105,6 +121,18 @@ pub fn aggregate_candidates(run: &BenchmarkRun, session: &BlindSession) -> Vec<C
             .entry(candidate_b.clone())
             .or_default()
             .push(mean_score(judgment.candidate_b));
+        pairwise_cases
+            .entry(candidate_a.clone())
+            .or_default()
+            .entry(candidate_b.clone())
+            .or_default()
+            .insert(pull_request);
+        pairwise_cases
+            .entry(candidate_b.clone())
+            .or_default()
+            .entry(candidate_a.clone())
+            .or_default()
+            .insert(pull_request);
         match judgment.overall {
             BlindChoice::CandidateA => {
                 outcomes.entry(candidate_a).or_default().0 += 1;
@@ -151,6 +179,16 @@ pub fn aggregate_candidates(run: &BenchmarkRun, session: &BlindSession) -> Vec<C
                 .and_then(|candidate| outcomes.get(candidate))
                 .copied()
                 .unwrap_or_default();
+            let pairwise_case_counts = candidate_id
+                .and_then(|candidate| pairwise_cases.get(candidate))
+                .into_iter()
+                .flat_map(|peers| peers.iter())
+                .filter_map(|(peer_id, cases)| {
+                    candidate_models
+                        .get(peer_id)
+                        .map(|peer_model| (peer_model.clone(), cases.len()))
+                })
+                .collect();
             CandidateAggregate {
                 model: model.clone(),
                 model_digest: measurements
@@ -177,6 +215,8 @@ pub fn aggregate_candidates(run: &BenchmarkRun, session: &BlindSession) -> Vec<C
                     .iter()
                     .filter_map(|measurement| measurement.peak_rss_bytes)
                     .max(),
+                blind_judgment_count: scores.len(),
+                pairwise_case_counts,
                 pairwise_wins: wins,
                 pairwise_losses: losses,
                 pairwise_ties: ties,
@@ -193,7 +233,7 @@ pub fn sanitized_report(
     hardware_summary: &str,
 ) -> String {
     let mut report = format!(
-        "# Ramo local model benchmark\n\nRun: {run_id}  \nHardware: {hardware_summary}  \nCorpus categories: {}\n\n## Decision\n\n**{}** — {}\n\n## Aggregate metrics\n\n| Model | Digest | Complete | Schema | Semantic | Unknown refs | Blind usefulness | Median ms | Peak RSS | W/L/T |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+        "# Ramo local model benchmark\n\nRun: {run_id}  \nHardware: {hardware_summary}  \nCorpus categories: {}\n\n## Decision\n\n**{}** — {}\n\n## Aggregate metrics\n\n| Model | Digest | Complete | Schema | Semantic | Unknown refs | Blind usefulness | Judgments | Median ms | Peak RSS | W/L/T |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
         category_labels.join(", "),
         decision.model,
         decision.rationale
@@ -206,7 +246,7 @@ pub fn sanitized_report(
                 format!("{:.2}", candidate.mean_blind_usefulness)
             };
         report.push_str(&format!(
-            "| {} | {} | {:.0}% | {:.0}% | {:.0}% | {} | {} | {} | {} | {}/{}/{} |\n",
+            "| {} | {} | {:.0}% | {:.0}% | {:.0}% | {} | {} | {} | {} | {} | {}/{}/{} |\n",
             candidate.model,
             candidate.model_digest,
             candidate.completion_ratio * 100.0,
@@ -214,6 +254,7 @@ pub fn sanitized_report(
             candidate.semantic_validity_ratio * 100.0,
             candidate.unknown_reference_count,
             blind_usefulness,
+            candidate.blind_judgment_count,
             candidate.median_wall_time_ms,
             candidate
                 .peak_rss_bytes
@@ -230,12 +271,17 @@ fn compare_candidates(left: &CandidateAggregate, right: &CandidateAggregate) -> 
     right
         .mean_blind_usefulness
         .total_cmp(&left.mean_blind_usefulness)
+        .then_with(|| pairwise_net(right).cmp(&pairwise_net(left)))
         .then_with(|| left.median_wall_time_ms.cmp(&right.median_wall_time_ms))
         .then_with(|| match (left.peak_rss_bytes, right.peak_rss_bytes) {
             (Some(left), Some(right)) => left.cmp(&right),
             _ => Ordering::Equal,
         })
         .then_with(|| left.model.cmp(&right.model))
+}
+
+fn pairwise_net(candidate: &CandidateAggregate) -> isize {
+    candidate.pairwise_wins as isize - candidate.pairwise_losses as isize
 }
 
 fn mean_score(scores: DimensionScores) -> f64 {

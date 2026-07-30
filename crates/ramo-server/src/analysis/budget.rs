@@ -3,84 +3,128 @@ use ramo_core::review_map::{
     PatchCoverage, ReviewFileKind,
 };
 
+pub const OLLAMA_CONTEXT_TOKENS: usize = 32_768;
+pub const OLLAMA_OUTPUT_TOKENS: usize = 6_144;
+pub const OLLAMA_SAFETY_TOKENS: usize = 2_048;
+pub const MAX_PROMPT_TOKENS: usize =
+    OLLAMA_CONTEXT_TOKENS - OLLAMA_OUTPUT_TOKENS - OLLAMA_SAFETY_TOKENS;
+
+pub const fn estimate_tokens(bytes: usize) -> usize {
+    bytes.div_ceil(3)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnalysisBudget {
-    pub max_patch_bytes: usize,
-    pub max_file_patch_bytes: usize,
+    pub max_prompt_tokens: usize,
     pub max_files_per_batch: usize,
 }
 
 impl Default for AnalysisBudget {
     fn default() -> Self {
         Self {
-            max_patch_bytes: 96 * 1024,
-            max_file_patch_bytes: 24 * 1024,
+            max_prompt_tokens: MAX_PROMPT_TOKENS,
             max_files_per_batch: 24,
         }
     }
 }
 
-pub fn budget_batches(
+pub fn budget_batches<F>(
     request: &EnrichmentRequest,
     budget: &AnalysisBudget,
-) -> Vec<EnrichmentRequest> {
+    estimate_prompt: F,
+) -> Vec<EnrichmentRequest>
+where
+    F: Fn(&EnrichmentRequest) -> usize,
+{
     let mut files = request.files.clone();
     files.sort_by_key(|file| file_priority(file.kind));
     let max_files = budget.max_files_per_batch.max(1);
-    let mut batches = Vec::<Vec<EnrichmentInputFile>>::new();
+    let mut batches = Vec::<EnrichmentRequest>::new();
     let mut current = Vec::new();
-    let mut current_bytes = 0usize;
 
     for mut file in files {
-        prepare_patch(&mut file, budget.max_file_patch_bytes);
-        let patch_bytes = file.patch.as_ref().map_or(0, String::len);
+        prepare_patch(&mut file);
+        let candidate = build_batch_with_extra(request, &current, file.clone());
         if !current.is_empty()
             && (current.len() >= max_files
-                || current_bytes.saturating_add(patch_bytes) > budget.max_patch_bytes)
+                || estimate_prompt(&candidate) > budget.max_prompt_tokens)
         {
-            batches.push(std::mem::take(&mut current));
-            current_bytes = 0;
+            batches.push(build_batch(request, std::mem::take(&mut current)));
         }
-        if patch_bytes > budget.max_patch_bytes {
-            truncate_patch(&mut file, budget.max_patch_bytes);
+
+        if current.is_empty() {
+            file = truncate_to_prompt_budget(
+                request,
+                file,
+                budget.max_prompt_tokens,
+                &estimate_prompt,
+            );
         }
-        current_bytes += file.patch.as_ref().map_or(0, String::len);
         current.push(file);
     }
+
     if !current.is_empty() {
-        batches.push(current);
+        batches.push(build_batch(request, current));
     }
     if batches.is_empty() {
-        batches.push(Vec::new());
+        batches.push(build_batch(request, Vec::new()));
     }
-
     batches
-        .into_iter()
-        .map(|files| build_batch(request, files))
-        .collect()
 }
 
-fn prepare_patch(file: &mut EnrichmentInputFile, limit: usize) {
+fn build_batch_with_extra(
+    request: &EnrichmentRequest,
+    current: &[EnrichmentInputFile],
+    extra: EnrichmentInputFile,
+) -> EnrichmentRequest {
+    let mut files = current.to_vec();
+    files.push(extra);
+    build_batch(request, files)
+}
+
+fn prepare_patch(file: &mut EnrichmentInputFile) {
     if file.kind == ReviewFileKind::Generated {
         file.patch = None;
         file.coverage = PatchCoverage::MetadataOnly;
     } else if file.coverage == PatchCoverage::Binary || file.patch.is_none() {
         file.patch = None;
-    } else {
-        truncate_patch(file, limit);
     }
 }
 
-fn truncate_patch(file: &mut EnrichmentInputFile, limit: usize) {
-    let Some(patch) = &mut file.patch else {
-        return;
+fn truncate_to_prompt_budget<F>(
+    request: &EnrichmentRequest,
+    mut file: EnrichmentInputFile,
+    max_prompt_tokens: usize,
+    estimate_prompt: &F,
+) -> EnrichmentInputFile
+where
+    F: Fn(&EnrichmentRequest) -> usize,
+{
+    let Some(original) = file.patch.clone() else {
+        return file;
     };
-    if patch.len() <= limit {
-        return;
+    if estimate_prompt(&build_batch(request, vec![file.clone()])) <= max_prompt_tokens {
+        return file;
     }
-    let boundary = floor_char_boundary(patch, limit);
-    patch.truncate(boundary);
+
+    let mut low = 0usize;
+    let mut high = original.len();
+    while low < high {
+        let requested = low + (high - low).div_ceil(2);
+        let boundary = floor_char_boundary(&original, requested);
+        let mut candidate = file.clone();
+        candidate.patch = Some(original[..boundary].to_owned());
+        candidate.coverage = PatchCoverage::Truncated;
+        if estimate_prompt(&build_batch(request, vec![candidate])) <= max_prompt_tokens {
+            low = requested;
+        } else {
+            high = requested - 1;
+        }
+    }
+    let boundary = floor_char_boundary(&original, low);
+    file.patch = Some(original[..boundary].to_owned());
     file.coverage = PatchCoverage::Truncated;
+    file
 }
 
 fn floor_char_boundary(value: &str, requested: usize) -> usize {

@@ -8,11 +8,11 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use ramo_core::review_map::{
     EnrichmentCoverage, EnrichmentExactGroup, EnrichmentInputFile, EnrichmentProposal,
-    EnrichmentRequest, PatchCoverage, ProposedGroup, REVIEW_MAP_SCHEMA_VERSION, ReviewFileKind,
-    ReviewMapFailureCode, ReviewMapIdentity,
+    EnrichmentRequest, PatchCoverage, ProposedFileInsight, ProposedGroup,
+    REVIEW_MAP_SCHEMA_VERSION, ReviewFileKind, ReviewMapFailureCode, ReviewMapIdentity,
 };
 use ramo_server::analysis::{AnalysisBudget, budget_batches};
-use ramo_server::ollama::{Analyzer, OllamaAnalyzer};
+use ramo_server::ollama::{Analyzer, OllamaAnalyzer, PROMPT_VERSION, estimate_prompt_tokens};
 use serde_json::{Value, json};
 
 struct FakeOllama {
@@ -124,6 +124,16 @@ async fn ollama_request_uses_local_structured_schema_and_no_streaming() {
         true
     );
     assert_eq!(sent["options"]["temperature"], 0);
+    assert_eq!(sent["options"]["num_ctx"], 32_768);
+    assert_eq!(sent["options"]["num_predict"], 6_144);
+    let system_prompt = sent["messages"][0]["content"].as_str().unwrap();
+    assert!(
+        system_prompt
+            .contains("Never claim tests passed, coverage is complete, or deployment is safe")
+    );
+    assert!(system_prompt.contains("use null when no concrete risk is visible"));
+    assert_eq!(sent["format"]["properties"]["files"]["minItems"], 1);
+    assert_eq!(PROMPT_VERSION, 2);
     assert_eq!(result.model_digest, "sha256:fixture");
     assert_eq!(result.proposal.groups[0].label, "Core billing path");
 }
@@ -162,7 +172,49 @@ async fn semantic_validation_rejects_invented_paths_and_repairs_once() {
 }
 
 #[tokio::test]
-async fn omitted_and_duplicate_assignments_are_completed_from_exact_groups() {
+async fn low_quality_output_is_repaired_once() {
+    let fake = FakeOllama::responses(vec![
+        (StatusCode::OK, response(generic_proposal())),
+        (StatusCode::OK, response(valid_proposal())),
+    ])
+    .await;
+
+    let result = OllamaAnalyzer::new(&fake.url, "qwen3:8b", Duration::from_secs(90))
+        .analyze(request_fixture())
+        .await
+        .unwrap();
+
+    assert_eq!(fake.request_count(), 2);
+    assert_eq!(result.repair_count, 1);
+}
+
+#[tokio::test]
+async fn low_quality_output_repairs_once_then_fails_typed() {
+    let fake = FakeOllama::responses(vec![
+        (StatusCode::OK, response(generic_proposal())),
+        (StatusCode::OK, response(generic_proposal())),
+    ])
+    .await;
+
+    let error = OllamaAnalyzer::new(&fake.url, "qwen3:8b", Duration::from_secs(90))
+        .analyze(request_fixture())
+        .await
+        .unwrap_err();
+
+    assert_eq!(fake.request_count(), 2);
+    assert_eq!(error.code, ReviewMapFailureCode::AnalysisLowQuality);
+    assert_eq!(
+        error.message,
+        "Local AI did not add reliable review guidance; the exact map is still ready"
+    );
+    let requests = fake.requests.lock().unwrap();
+    let repair = requests[1]["messages"][2]["content"].as_str().unwrap();
+    assert!(repair.contains("generic_summary"));
+    assert!(!repair.contains("src/lib.rs"));
+}
+
+#[tokio::test]
+async fn omitted_and_duplicate_assignments_trigger_one_repair() {
     let mut request = request_fixture();
     request.files.push(input_file(
         "src/billing.rs",
@@ -178,28 +230,26 @@ async fn omitted_and_duplicate_assignments_are_completed_from_exact_groups() {
     let mut incomplete = proposal_for(&["src/lib.rs"]);
     incomplete["groups"][0]["paths"] = json!(["src/lib.rs", "src/lib.rs"]);
     incomplete["review_order"] = json!(["src/lib.rs", "src/lib.rs"]);
-    let fake = FakeOllama::responses(vec![(StatusCode::OK, response(incomplete))]).await;
+    let fake = FakeOllama::responses(vec![
+        (StatusCode::OK, response(incomplete)),
+        (
+            StatusCode::OK,
+            response(proposal_for(&["src/lib.rs", "src/billing.rs"])),
+        ),
+    ])
+    .await;
 
     let result = OllamaAnalyzer::new(&fake.url, "qwen3:8b", Duration::from_secs(30))
         .analyze(request)
         .await
         .unwrap();
 
-    assert_eq!(fake.request_count(), 1);
+    assert_eq!(fake.request_count(), 2);
     assert_eq!(
         result.proposal.review_order,
         ["src/lib.rs", "src/billing.rs"]
     );
-    let grouped = result
-        .proposal
-        .groups
-        .iter()
-        .flat_map(|group| group.paths.iter().map(String::as_str))
-        .collect::<std::collections::HashSet<_>>();
-    assert_eq!(
-        grouped,
-        ["src/lib.rs", "src/billing.rs"].into_iter().collect()
-    );
+    assert_eq!(result.repair_count, 1);
 }
 
 #[tokio::test]
@@ -297,8 +347,7 @@ async fn multiple_budget_batches_are_validated_then_synthesized() {
     .await;
     let analyzer = OllamaAnalyzer::new(&fake.url, "qwen3:8b", Duration::from_secs(30)).with_budget(
         AnalysisBudget {
-            max_patch_bytes: usize::MAX,
-            max_file_patch_bytes: usize::MAX,
+            max_prompt_tokens: usize::MAX,
             max_files_per_batch: 1,
         },
     );
@@ -348,10 +397,10 @@ fn budgeting_omits_generated_bodies_and_bounds_batches() {
     let batches = budget_batches(
         &request,
         &AnalysisBudget {
-            max_patch_bytes: 12,
-            max_file_patch_bytes: 8,
+            max_prompt_tokens: 5_000,
             max_files_per_batch: 2,
         },
+        |batch| estimate_prompt_tokens(batch, None).unwrap(),
     );
 
     assert!(batches.len() >= 2);
@@ -369,11 +418,44 @@ fn budgeting_omits_generated_bodies_and_bounds_batches() {
         None
     );
     assert!(batches.iter().all(|batch| batch.files.len() <= 2));
+}
+
+#[test]
+fn token_budget_counts_complete_prompt_and_splits_on_file_boundaries() {
+    let request = request_with_large_authored_patches(2, 50_000);
+    let batches = budget_batches(&request, &AnalysisBudget::default(), |batch| {
+        estimate_prompt_tokens(batch, None).unwrap()
+    });
+
+    assert!(batches.len() >= 2);
     assert!(
         batches
             .iter()
-            .any(|batch| !batch.coverage.truncated_paths.is_empty())
+            .all(|batch| estimate_prompt_tokens(batch, None).unwrap() <= 24_576)
     );
+    assert_eq!(
+        batches.iter().map(|batch| batch.files.len()).sum::<usize>(),
+        2
+    );
+}
+
+#[test]
+fn token_budget_truncates_one_oversized_file_at_a_utf8_boundary() {
+    let request = request_with_large_authored_patches(1, 100_000);
+    let batches = budget_batches(&request, &AnalysisBudget::default(), |batch| {
+        estimate_prompt_tokens(batch, None).unwrap()
+    });
+
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].files[0].coverage, PatchCoverage::Truncated);
+    assert!(
+        batches[0].files[0]
+            .patch
+            .as_ref()
+            .unwrap()
+            .is_char_boundary(batches[0].files[0].patch.as_ref().unwrap().len())
+    );
+    assert!(estimate_prompt_tokens(&batches[0], None).unwrap() <= 24_576);
 }
 
 fn request_fixture() -> EnrichmentRequest {
@@ -404,6 +486,27 @@ fn request_fixture() -> EnrichmentRequest {
     }
 }
 
+fn request_with_large_authored_patches(file_count: usize, patch_bytes: usize) -> EnrichmentRequest {
+    let mut request = request_fixture();
+    request.files.clear();
+    request.groups[0].paths.clear();
+    request.coverage = EnrichmentCoverage::default();
+    for index in 0..file_count {
+        let path = format!("src/large_{index}.rs");
+        request.files.push(EnrichmentInputFile {
+            path: path.clone(),
+            kind: ReviewFileKind::Authored,
+            additions: patch_bytes,
+            deletions: 0,
+            coverage: PatchCoverage::Full,
+            patch: Some("+x\n".repeat(patch_bytes.div_ceil(3))),
+        });
+        request.groups[0].paths.push(path.clone());
+        request.coverage.analyzed_paths.push(path);
+    }
+    request
+}
+
 fn input_file(
     path: &str,
     kind: ReviewFileKind,
@@ -424,6 +527,13 @@ fn valid_proposal() -> Value {
     proposal_for(&["src/lib.rs"])
 }
 
+fn generic_proposal() -> Value {
+    let mut proposal = proposal_for(&["src/lib.rs"]);
+    proposal["groups"][0]["summary"] = json!("This group contains source changes.");
+    proposal["files"][0]["summary"] = json!("This file contains source changes.");
+    proposal
+}
+
 fn proposal_for(paths: &[&str]) -> Value {
     serde_json::to_value(EnrichmentProposal {
         groups: vec![ProposedGroup {
@@ -433,7 +543,14 @@ fn proposal_for(paths: &[&str]) -> Value {
             review_priority: 1,
             paths: paths.iter().map(|path| (*path).into()).collect(),
         }],
-        files: Vec::new(),
+        files: paths
+            .iter()
+            .map(|path| ProposedFileInsight {
+                path: (*path).into(),
+                summary: format!("Changes behavior implemented in {path}."),
+                risk: None,
+            })
+            .collect(),
         review_order: paths.iter().map(|path| (*path).into()).collect(),
         coverage: EnrichmentCoverage::default(),
     })

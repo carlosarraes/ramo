@@ -251,7 +251,7 @@ async fn run_benchmark(manifest_path: &Path, yes: bool) -> Result<(), ReviewMapF
     };
     let factory = Arc::new(OllamaBenchmarkAnalyzerFactory::new(
         "http://127.0.0.1:11434",
-        Duration::from_secs(120),
+        Duration::from_secs(90),
     ));
     let runner = BenchmarkRunner::new(
         Arc::new(crate::github::GithubPullRequestProvider::new()),
