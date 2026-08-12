@@ -18,16 +18,24 @@ use super::themes::{AppTheme, ReviewLineStyle};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewHeading {
     Local(String),
-    PullRequest { number: u64, title: String },
+    PullRequest {
+        number: u64,
+        title: String,
+        base_ref: String,
+        head_ref: String,
+    },
 }
 
 impl ReviewHeading {
     pub(crate) fn label(&self) -> String {
         match self {
             Self::Local(label) => label.clone(),
-            Self::PullRequest { number, title } => {
-                format!("GitHub PR #{number} · {title}")
-            }
+            Self::PullRequest {
+                number,
+                title,
+                base_ref,
+                head_ref,
+            } => format!("GitHub PR #{number} · {base_ref} ← {head_ref} · {title}"),
         }
     }
 }
@@ -101,7 +109,7 @@ impl Widget for ReviewHeader<'_> {
         let prefix = if prefix_width >= 3 {
             format!(
                 "{} · ",
-                truncate_cells(&self.heading.label(), prefix_width.saturating_sub(3))
+                truncate_cells_with_ellipsis(&self.heading.label(), prefix_width.saturating_sub(3),)
             )
         } else {
             String::new()
@@ -794,6 +802,19 @@ fn truncate_cells(text: &str, width: usize) -> String {
             }
         })
         .collect()
+}
+
+fn truncate_cells_with_ellipsis(text: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(text) <= width {
+        return text.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+
+    let mut truncated = truncate_cells(text, width.saturating_sub(1));
+    truncated.push('…');
+    truncated
 }
 
 #[allow(clippy::too_many_arguments)]

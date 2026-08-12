@@ -479,6 +479,8 @@ impl App {
         self.review_heading = ReviewHeading::PullRequest {
             number: context.number,
             title: context.title.clone(),
+            base_ref: context.base_ref.clone(),
+            head_ref: context.head_ref.clone(),
         };
         self.remote_review = Some(RemoteReviewSession {
             context,

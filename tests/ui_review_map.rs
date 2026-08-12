@@ -19,6 +19,7 @@ fn enriched_map_shows_totals_groups_order_and_progress() {
     for expected in [
         "+414",
         "−60",
+        "develop ← feat/mon-xxx",
         "Core billing path",
         "① src/billing/proration.ts",
         "50% reviewed",
@@ -79,6 +80,8 @@ fn render(width: u16, height: u16, snapshot: &ramo::review_map::ReviewMapSnapsho
     let heading = ReviewHeading::PullRequest {
         number: 1914,
         title: "Billing proration".into(),
+        base_ref: "develop".into(),
+        head_ref: "feat/mon-xxx".into(),
     };
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();

@@ -664,6 +664,8 @@ fn review_chrome_keeps_colored_totals_and_progress_visible() {
         &ReviewHeading::PullRequest {
             number: 123,
             title: "Improve review flow".into(),
+            base_ref: "develop".into(),
+            head_ref: "feat/mon-xxx".into(),
         },
         &snapshot,
         Some(" Filter: src"),
@@ -674,6 +676,7 @@ fn review_chrome_keeps_colored_totals_and_progress_visible() {
     let footer = frame.lines().last().unwrap();
 
     assert!(header.contains("GitHub PR #123"));
+    assert!(header.contains("develop ← feat/mon-xxx"));
     assert!(header.contains("14 files · +200 -50"));
     assert!(footer.contains("Filter: src"));
     assert!(footer.contains("Reviewed 50%"));
@@ -683,6 +686,43 @@ fn review_chrome_keeps_colored_totals_and_progress_visible() {
     };
     assert_eq!(buffer[(cell_x("+200"), 0)].fg, theme.added_sign);
     assert_eq!(buffer[(cell_x("-50"), 0)].fg, theme.removed_sign);
+}
+
+#[test]
+fn constrained_pr_heading_preserves_the_source_branch_prefix() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let mut snapshot = controller
+        .snapshot(Viewport {
+            width: 60,
+            height: 8,
+        })
+        .clone();
+    snapshot.total_additions = 200;
+    snapshot.total_deletions = 50;
+    let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
+    let buffer = render_chrome(
+        60,
+        4,
+        &ReviewHeading::PullRequest {
+            number: 123,
+            title: "Improve review flow".into(),
+            base_ref: "develop".into(),
+            head_ref: "feat/mon-very-long-description".into(),
+        },
+        &snapshot,
+        None,
+        &theme,
+    );
+    let frame = text(&buffer);
+    let header = frame.lines().next().unwrap();
+
+    assert!(header.contains("develop ← feat/"));
+    assert!(header.contains("… · 1 file"));
+    assert!(!header.contains("description"));
+    assert!(header.contains("+200 -50"));
 }
 
 #[test]

@@ -247,6 +247,8 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
         ReviewHeading::PullRequest {
             number: context.number,
             title: context.title.clone(),
+            base_ref: context.base_ref.clone(),
+            head_ref: context.head_ref.clone(),
         }
     } else {
         match &input {

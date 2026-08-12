@@ -207,6 +207,8 @@ fn attaching_pull_request_sets_the_review_heading() {
         &ReviewHeading::PullRequest {
             number: 123,
             title: "Improve review flow".into(),
+            base_ref: "main".into(),
+            head_ref: "feature".into(),
         }
     );
 }
