@@ -200,6 +200,32 @@ fn cached_alias_and_boolean_overrides_are_normalized() {
 }
 
 #[test]
+fn start_on_map_flags_normalize_with_the_last_one_winning() {
+    let invocation = parse_from(["ramo", "pr", "5", "--no-start-on-map"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::PullRequest { options, .. })
+            if options.start_on_map == Some(false)
+    ));
+    let invocation = parse_from(
+        ["ramo", "pr", "5", "--no-start-on-map", "--start-on-map"],
+        true,
+    )
+    .unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::PullRequest { options, .. })
+            if options.start_on_map == Some(true)
+    ));
+    let invocation = parse_from(["ramo", "pr", "5"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::PullRequest { options, .. })
+            if options.start_on_map.is_none()
+    ));
+}
+
+#[test]
 fn invalid_layout_is_a_clap_error() {
     let error = parse_from(["ramo", "diff", "--mode", "columns"], true).unwrap_err();
     assert!(error.to_string().contains("invalid value 'columns'"));

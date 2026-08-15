@@ -55,8 +55,12 @@ pub fn stdin_needs_tty_replacement(stdin_is_terminal: bool) -> bool {
     !stdin_is_terminal
 }
 
-pub fn initial_screen(kind: crate::core::input::InputKind, pager_mode: bool) -> AppScreen {
-    if kind == crate::core::input::InputKind::PullRequest && !pager_mode {
+pub fn initial_screen(
+    kind: crate::core::input::InputKind,
+    pager_mode: bool,
+    start_on_map: bool,
+) -> AppScreen {
+    if kind == crate::core::input::InputKind::PullRequest && !pager_mode && start_on_map {
         AppScreen::ReviewMap
     } else {
         AppScreen::Review
@@ -283,7 +287,9 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     app.set_review_heading(review_heading);
     match review_map_startup {
         Ok(startup) => {
-            let start_on_map = initial_screen(input.kind(), pager_mode) == AppScreen::ReviewMap;
+            let start_on_map =
+                initial_screen(input.kind(), pager_mode, resolved_config.start_on_map)
+                    == AppScreen::ReviewMap;
             app.attach_review_map(startup.map, startup.runtime, start_on_map);
             if let Some((client, request)) = startup.restart {
                 app.configure_review_map_retry(client, request);

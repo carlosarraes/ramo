@@ -265,6 +265,34 @@ fn invalid_test_file_pattern_names_the_config_and_pattern() {
 }
 
 #[test]
+fn start_on_map_defaults_true_and_follows_config_then_cli() {
+    let defaults = ConfigResolver::new(ConfigPaths::default())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert!(defaults.start_on_map);
+
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(&user, "start_on_map = false\n").unwrap();
+    let paths = ConfigPaths {
+        user: Some(user),
+        repo: None,
+    };
+    let from_config = ConfigResolver::new(paths.clone())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert!(!from_config.start_on_map);
+
+    let from_cli = ConfigResolver::new(paths)
+        .resolve(&patch_input(CommonOptions {
+            start_on_map: Some(true),
+            ..CommonOptions::default()
+        }))
+        .unwrap();
+    assert!(from_cli.start_on_map);
+}
+
+#[test]
 fn review_map_configuration_is_local_optional_and_validated() {
     let defaults = ConfigResolver::new(ConfigPaths::default())
         .resolve(&patch_input(CommonOptions::default()))

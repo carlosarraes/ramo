@@ -8,15 +8,23 @@ use ramo::runtime::{
 #[test]
 fn pull_requests_start_on_map_but_local_diffs_and_pagers_start_on_review() {
     assert_eq!(
-        ramo::runtime::initial_screen(InputKind::PullRequest, false),
+        ramo::runtime::initial_screen(InputKind::PullRequest, false, true),
         ramo::app::AppScreen::ReviewMap
     );
     assert_eq!(
-        ramo::runtime::initial_screen(InputKind::Diff, false),
+        ramo::runtime::initial_screen(InputKind::Diff, false, true),
         ramo::app::AppScreen::Review
     );
     assert_eq!(
-        ramo::runtime::initial_screen(InputKind::PullRequest, true),
+        ramo::runtime::initial_screen(InputKind::PullRequest, true, true),
+        ramo::app::AppScreen::Review
+    );
+    assert_eq!(
+        ramo::runtime::initial_screen(InputKind::PullRequest, false, false),
+        ramo::app::AppScreen::Review
+    );
+    assert_eq!(
+        ramo::runtime::initial_screen(InputKind::Diff, false, false),
         ramo::app::AppScreen::Review
     );
 }

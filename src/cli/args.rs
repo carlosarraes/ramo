@@ -9,7 +9,7 @@ use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
     version,
     about = "Review-first terminal diff viewer",
     disable_version_flag = true,
-    after_help = "Common review options:\n  --mode <MODE>                           layout mode: unified (default), split, auto\n  --watch                                 auto-reload when the current diff input changes\n  --theme <THEME>                         named theme override\n  --agent-context <PATH>                  JSON sidecar with agent rationale\n  --pager                                 use pager-style chrome and controls\n  --line-numbers / --no-line-numbers      show or hide line numbers\n  --wrap / --no-wrap                      wrap or truncate long diff lines\n  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows\n  --agent-notes / --no-agent-notes        show or hide agent notes by default\n  --transparent-bg / --no-transparent-bg  use or paint the terminal background\n  --exclude-untracked                     hide untracked working-tree files\n\nRun `ramo <command> --help` for command-specific syntax."
+    after_help = "Common review options:\n  --mode <MODE>                           layout mode: unified (default), split, auto\n  --watch                                 auto-reload when the current diff input changes\n  --theme <THEME>                         named theme override\n  --agent-context <PATH>                  JSON sidecar with agent rationale\n  --pager                                 use pager-style chrome and controls\n  --line-numbers / --no-line-numbers      show or hide line numbers\n  --wrap / --no-wrap                      wrap or truncate long diff lines\n  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows\n  --agent-notes / --no-agent-notes        show or hide agent notes by default\n  --transparent-bg / --no-transparent-bg  use or paint the terminal background\n  --start-on-map / --no-start-on-map      open pull requests on the Review Map\n  --exclude-untracked                     hide untracked working-tree files\n\nRun `ramo <command> --help` for command-specific syntax."
 )]
 pub struct Cli {
     #[arg(short = 'v', long = "version", action = ArgAction::Version)]
@@ -359,6 +359,10 @@ pub struct ReviewFlags {
     pub transparent_bg: bool,
     #[arg(long, overrides_with = "transparent_bg")]
     pub no_transparent_bg: bool,
+    #[arg(long, overrides_with = "no_start_on_map")]
+    pub start_on_map: bool,
+    #[arg(long, overrides_with = "start_on_map")]
+    pub no_start_on_map: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

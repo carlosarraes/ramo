@@ -55,6 +55,7 @@ pub struct ConfigLayer {
     pub review_map_server: Option<String>,
     pub review_map_token_file: Option<PathBuf>,
     pub ai_summaries: Option<bool>,
+    pub start_on_map: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -98,6 +99,7 @@ pub struct ResolvedConfig {
     pub review_map_server: String,
     pub review_map_token_file: Option<PathBuf>,
     pub ai_summaries: bool,
+    pub start_on_map: bool,
     pub custom_theme: Option<CustomThemeConfig>,
     pub startup_notices: Vec<String>,
 }
@@ -123,6 +125,7 @@ impl Default for ResolvedConfig {
             review_map_server: "http://127.0.0.1:47831".into(),
             review_map_token_file: None,
             ai_summaries: true,
+            start_on_map: true,
             custom_theme: None,
             startup_notices: Vec::new(),
         }
@@ -169,6 +172,7 @@ impl ResolvedConfig {
             self.review_map_token_file = Some(token_file.clone());
         }
         apply(&mut self.ai_summaries, layer.ai_summaries);
+        apply(&mut self.start_on_map, layer.start_on_map);
     }
 }
 

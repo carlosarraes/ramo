@@ -52,6 +52,7 @@ pub struct CommonOptions {
     pub hunk_headers: Option<bool>,
     pub agent_notes: Option<bool>,
     pub transparent_background: Option<bool>,
+    pub start_on_map: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

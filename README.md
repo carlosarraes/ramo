@@ -55,7 +55,7 @@ ramo server pair
 
 Setup is explicit and currently automated on Linux. It checks `gh`, a running Ollama service, Tailscale/MagicDNS, and `systemd --user` before writing anything. See [Private local Review Maps](docs/server.md) for the privacy boundary, pairing, cache commands, troubleshooting, and typed failures.
 
-`ramo pr N` opens the exact Review Map first. Use `j`/`k` or arrows to move, `h`/`l` to fold or expand, Enter to open one file, `/` to filter, and `M` to switch between map and code without rebuilding the review. Lowercase `m` keeps its existing hunk-header binding. Local diffs remain code-first; press `M` for their deterministic map. Pager mode never starts background analysis.
+`ramo pr N` opens the exact Review Map first. Use `j`/`k` or arrows to move, `h`/`l` to fold or expand, Enter to open one file, `/` to filter, and `M` to switch between map and code without rebuilding the review. Lowercase `m` keeps its existing hunk-header binding. Local diffs remain code-first; press `M` for their deterministic map. Pager mode never starts background analysis. To open pull requests directly on the code view instead, set `start_on_map = false` in the configuration or pass `--no-start-on-map`; the map stays one `M` away.
 
 The terminal enrichment client accepts only loopback HTTP and a paired-client token file. Exchange a five-minute pairing code locally, then point Ramo at the saved credential:
 
