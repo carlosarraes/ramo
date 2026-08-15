@@ -634,6 +634,72 @@ fn tests_last_orders_test_files_after_authored_files_and_survives_reload() {
 }
 
 #[test]
+fn viewing_a_file_collapses_marks_progress_and_advances() {
+    let view = viewport(80, 12);
+    let files = || {
+        vec![
+            file("src/a.rs", None, 1),
+            file("src/b.rs", None, 1),
+            file("src/c.rs", None, 1),
+        ]
+    };
+    let mut controller = ReviewController::new(files(), ReviewOptions::default());
+
+    let effect = controller.apply(ReviewAction::ToggleFileViewed, view);
+    assert_eq!(
+        effect,
+        ReviewEffect::FileViewedChanged {
+            path: "src/a.rs".into(),
+            viewed: true,
+        }
+    );
+    let snapshot = controller.snapshot(view).clone();
+    assert!(snapshot.visible_files[0].compacted);
+    assert!(!snapshot.visible_files[1].compacted);
+    assert_eq!(
+        snapshot.selected_file_id.as_deref(),
+        Some("file:src/b.rs->src/b.rs")
+    );
+    assert!(controller.is_file_reviewed("file:src/a.rs->src/a.rs"));
+
+    // Enter on a viewed file un-views and expands it.
+    let effect = controller.apply(
+        ReviewAction::ExpandCompactedFile("file:src/a.rs->src/a.rs".into()),
+        view,
+    );
+    assert_eq!(
+        effect,
+        ReviewEffect::FileViewedChanged {
+            path: "src/a.rs".into(),
+            viewed: false,
+        }
+    );
+    assert!(!controller.snapshot(view).visible_files[0].compacted);
+
+    // Toggling a viewed file off keeps the cursor in place.
+    controller.apply(ReviewAction::ToggleFileViewed, view);
+    controller.apply(
+        ReviewAction::SelectFile("file:src/b.rs->src/b.rs".into()),
+        view,
+    );
+    let before = controller.snapshot(view).selected_file_id.clone();
+    let effect = controller.apply(ReviewAction::ToggleFileViewed, view);
+    assert_eq!(
+        effect,
+        ReviewEffect::FileViewedChanged {
+            path: "src/b.rs".into(),
+            viewed: false,
+        }
+    );
+    assert_eq!(controller.snapshot(view).selected_file_id, before);
+
+    controller.apply(ReviewAction::JumpTop, view);
+    controller.apply(ReviewAction::ToggleFileViewed, view);
+    controller.replace_files(files(), view);
+    assert!(controller.snapshot(view).visible_files[0].compacted);
+}
+
+#[test]
 fn test_compaction_is_reversible_and_enter_expands_only_the_selected_file() {
     let view = viewport(80, 12);
     let mut controller = ReviewController::new(

@@ -6,7 +6,7 @@ use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
 use ramo::review::{ReviewAction, ReviewSide, ScrollUnit, Viewport};
-use ramo::review_map::ReviewMapAction;
+use ramo::review_map::{ReviewMapAction, ReviewMapRow};
 use ramo::ui::input::{AppAction, InputMode, map_key_event};
 use ramo_core::review_map::{
     ClassifierConfig, ReviewMapIdentity, ReviewMapInput, ReviewMapInputFile, build_review_map,
@@ -603,11 +603,72 @@ fn map_and_review_screens_share_the_existing_review_controller() {
     assert_eq!(app.input_mode(), InputMode::ReviewMap);
 }
 
+fn map_marks_file_reviewed(app: &App) -> bool {
+    app.review_map_snapshot()
+        .expect("review map is attached")
+        .rows
+        .iter()
+        .any(|row| matches!(row, ReviewMapRow::File { reviewed: true, .. }))
+}
+
+#[test]
+fn viewing_a_file_from_the_code_screen_syncs_the_review_map_check() {
+    let mut app = App::new_with_config(vec![review_file()], &ResolvedConfig::default(), false);
+    let exact = build_review_map(
+        &ReviewMapInput {
+            identity: ReviewMapIdentity {
+                repository: "owner/repository".into(),
+                pull_request: 7,
+                base_sha: "base".into(),
+                head_sha: "head".into(),
+            },
+            files: vec![ReviewMapInputFile {
+                path: "src/lib.rs".into(),
+                previous_path: None,
+                status: "modified".into(),
+                additions: 0,
+                deletions: 0,
+                patch: Some("@@ -1 +1 @@".into()),
+                binary: false,
+            }],
+            codeowners: None,
+        },
+        &ClassifierConfig::default(),
+    )
+    .unwrap();
+    app.attach_review_map(exact, None, false);
+    let view = Viewport {
+        width: 100,
+        height: 20,
+    };
+
+    assert_eq!(app.screen(), AppScreen::Review);
+    assert!(!map_marks_file_reviewed(&app));
+
+    app.handle_ui_key(key(KeyCode::Char('v')), view);
+    assert!(map_marks_file_reviewed(&app));
+
+    app.handle_ui_key(key(KeyCode::Enter), view);
+    assert!(!map_marks_file_reviewed(&app));
+}
+
 #[test]
 fn test_compaction_keys_do_not_shadow_theme_or_tmux_bindings() {
     assert_eq!(
         map_key_event(key(KeyCode::Char('T')), InputMode::Normal, false),
         Some(AppAction::Review(ReviewAction::ToggleTestFiles))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('v')), InputMode::Normal, false),
+        Some(AppAction::Review(ReviewAction::ToggleFileViewed))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('V')), InputMode::Normal, false),
+        Some(AppAction::BeginSelection)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('v')), InputMode::Normal, true),
+        Some(AppAction::Review(ReviewAction::ToggleFileViewed))
     );
     assert_eq!(
         map_key_event(key(KeyCode::Enter), InputMode::Normal, false),

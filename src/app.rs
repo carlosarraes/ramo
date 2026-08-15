@@ -472,6 +472,12 @@ impl App {
         self.screen
     }
 
+    pub fn review_map_snapshot(&self) -> Option<crate::review_map::ReviewMapSnapshot> {
+        self.review_map
+            .as_ref()
+            .map(crate::review_map::ReviewMapController::snapshot)
+    }
+
     pub fn attach_pull_request(
         &mut self,
         context: PullRequestReviewContext,
@@ -1538,10 +1544,10 @@ impl App {
             self.show_review_screen();
             return;
         }
-        let Some(controller) = self.review_map.as_mut() else {
+        if self.review_map.is_none() {
             self.toast = Some("Review Map is unavailable for this input".into());
             return;
-        };
+        }
         let selected = self
             .review_controller
             .snapshot(viewport)
@@ -1556,7 +1562,7 @@ impl App {
                 .find(|file| file.id == file_id)
                 .map(|file| file.path.clone())
         {
-            controller.mark_reviewed(&path);
+            self.sync_map_reviewed(&path, true);
         }
         self.filter_buffer.clear();
         self.screen = AppScreen::ReviewMap;
@@ -1570,8 +1576,21 @@ impl App {
         self.input_mode = InputMode::Normal;
     }
 
+    fn sync_map_reviewed(&mut self, path: &str, reviewed: bool) {
+        if let Some(controller) = self.review_map.as_mut() {
+            if reviewed {
+                controller.mark_reviewed(path);
+            } else {
+                controller.mark_unreviewed(path);
+            }
+        }
+    }
+
     fn apply_review_effect(&mut self, effect: ReviewEffect, viewport: Viewport) {
         match effect {
+            ReviewEffect::FileViewedChanged { path, viewed } => {
+                self.sync_map_reviewed(&path, viewed)
+            }
             ReviewEffect::FocusFilter => self.input_mode = InputMode::Filter,
             ReviewEffect::OpenHelp => self.input_mode = InputMode::Help,
             ReviewEffect::OpenThemeSelector => {

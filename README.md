@@ -331,7 +331,8 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
 | `T` | Compact or restore recognized test files |
-| `Enter` / click | Expand one compacted test file |
+| `v` | Mark the current file viewed: collapses it, counts toward reviewed progress, and advances to the next file |
+| `Enter` / click | Expand one compacted file; on a viewed file this also clears its viewed mark |
 | `/` | Focus the file filter; `Tab` returns to review; Escape clears and exits |
 | `t`, `?` | Theme selector and controls help |
 | `V`, `y` | Select lines and copy through OSC 52 |

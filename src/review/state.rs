@@ -175,6 +175,7 @@ pub enum ReviewAction {
     ToggleHunkHeaders,
     ToggleAgentNotes,
     ToggleTestFiles,
+    ToggleFileViewed,
     ExpandSelectedFile,
     ExpandCompactedFile(String),
     FocusFilter,
@@ -190,6 +191,7 @@ pub enum ReviewAction {
 pub enum ReviewEffect {
     None,
     Redraw,
+    FileViewedChanged { path: String, viewed: bool },
     FocusFilter,
     OpenHelp,
     OpenThemeSelector,
@@ -342,6 +344,7 @@ pub struct ReviewController {
     test_file_matcher: TestFileMatcher,
     test_files_compacted: bool,
     expanded_test_files: HashSet<String>,
+    viewed_files: HashSet<String>,
     progress: ReviewProgress,
 }
 
@@ -400,6 +403,7 @@ impl ReviewController {
             test_file_matcher,
             test_files_compacted: false,
             expanded_test_files: HashSet::new(),
+            viewed_files: HashSet::new(),
             progress,
         }
     }
@@ -1465,6 +1469,8 @@ impl ReviewController {
         self.contexts.clear();
         self.expanded_test_files
             .retain(|id| self.files.iter().any(|file| file.id == *id));
+        self.viewed_files
+            .retain(|id| self.files.iter().any(|file| file.id == *id));
         self.geometry = None;
         self.planned_files.clear();
         self.selected_file_id =
@@ -1643,15 +1649,13 @@ impl ReviewController {
                 self.rebuild(viewport, true);
                 ReviewEffect::Redraw
             }
-            ReviewAction::ExpandSelectedFile => {
-                if let Some(file_id) = self.selected_compacted_file_id() {
-                    self.expand_compacted_file(file_id, viewport);
-                }
-                ReviewEffect::Redraw
-            }
+            ReviewAction::ToggleFileViewed => self.toggle_file_viewed(viewport),
+            ReviewAction::ExpandSelectedFile => match self.selected_compacted_file_id() {
+                Some(file_id) => self.expand_compacted_file(file_id, viewport),
+                None => ReviewEffect::Redraw,
+            },
             ReviewAction::ExpandCompactedFile(file_id) => {
-                self.expand_compacted_file(file_id, viewport);
-                ReviewEffect::Redraw
+                self.expand_compacted_file(file_id, viewport)
             }
             ReviewAction::FocusFilter => ReviewEffect::FocusFilter,
             ReviewAction::OpenHelp => ReviewEffect::OpenHelp,
@@ -1671,21 +1675,67 @@ impl ReviewController {
     }
 
     fn is_file_compacted(&self, file: &DiffFile) -> bool {
-        self.test_files_compacted
-            && self.test_file_matcher.is_match(&file.path)
-            && !self.expanded_test_files.contains(&file.id)
+        self.viewed_files.contains(&file.id)
+            || (self.test_files_compacted
+                && self.test_file_matcher.is_match(&file.path)
+                && !self.expanded_test_files.contains(&file.id))
     }
 
-    fn expand_compacted_file(&mut self, file_id: String, viewport: Viewport) {
+    fn toggle_file_viewed(&mut self, viewport: Viewport) -> ReviewEffect {
+        let Some(file_id) = self
+            .selected_compacted_file_id()
+            .or_else(|| self.selected_file_id.clone())
+        else {
+            return ReviewEffect::None;
+        };
+        let Some(path) = self
+            .files
+            .iter()
+            .find(|file| file.id == file_id)
+            .map(|file| file.path.clone())
+        else {
+            return ReviewEffect::None;
+        };
+        let viewed = !self.viewed_files.remove(&file_id);
+        if viewed {
+            self.viewed_files.insert(file_id.clone());
+            // Progress stays monotonic: viewport observation would re-mark it anyway.
+            self.progress.mark_file_reviewed(&file_id);
+        } else {
+            self.expanded_test_files.insert(file_id);
+        }
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        if viewed {
+            self.move_file(1, viewport);
+        }
+        ReviewEffect::FileViewedChanged { path, viewed }
+    }
+
+    fn expand_compacted_file(&mut self, file_id: String, viewport: Viewport) -> ReviewEffect {
         let compacted = self
             .files
             .iter()
             .find(|file| file.id == file_id)
             .is_some_and(|file| self.is_file_compacted(file));
-        if compacted {
-            self.expanded_test_files.insert(file_id);
-            self.dirty = true;
-            self.rebuild(viewport, true);
+        if !compacted {
+            return ReviewEffect::Redraw;
+        }
+        let un_viewed = self.viewed_files.remove(&file_id).then(|| {
+            self.files
+                .iter()
+                .find(|file| file.id == file_id)
+                .map(|file| file.path.clone())
+        });
+        self.expanded_test_files.insert(file_id);
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        match un_viewed.flatten() {
+            Some(path) => ReviewEffect::FileViewedChanged {
+                path,
+                viewed: false,
+            },
+            None => ReviewEffect::Redraw,
         }
     }
 

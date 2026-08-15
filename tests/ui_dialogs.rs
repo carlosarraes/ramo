@@ -66,7 +66,8 @@ fn help_documents_test_file_compaction() {
     let help = help_text(true);
 
     assert!(help.contains("compact test files"));
-    assert!(help.contains("expand compact file"));
+    assert!(help.contains("expand / un-view compact file"));
+    assert!(help.contains("toggle file viewed"));
 }
 
 #[test]

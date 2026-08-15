@@ -236,6 +236,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('a') => review(ReviewAction::ToggleAgentNotes),
         KeyCode::Char('A') => Some(AppAction::OpenAgentSkill),
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
+        KeyCode::Char('v') => review(ReviewAction::ToggleFileViewed),
         KeyCode::Char('V') => Some(AppAction::BeginSelection),
         KeyCode::Char('y') => Some(AppAction::YankSelection),
         KeyCode::Char('n') => review(ReviewAction::ToggleLineNumbers),
@@ -334,6 +335,7 @@ fn pager_action(action: &AppAction) -> bool {
                 | ReviewAction::ToggleWrap
                 | ReviewAction::ToggleSidebar
                 | ReviewAction::ToggleTestFiles
+                | ReviewAction::ToggleFileViewed
                 | ReviewAction::ExpandSelectedFile
                 | ReviewAction::ExpandCompactedFile(_)
                 | ReviewAction::StartNote
