@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
+use unicode_width::UnicodeWidthStr;
 
 use super::themes::AppTheme;
 
@@ -22,41 +23,74 @@ pub fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
 
 pub fn help_text(can_refresh: bool) -> String {
     let quit = if can_refresh {
-        "r / q       reload / quit"
+        ("r / q", "reload / quit")
     } else {
-        "q           quit"
+        ("q", "quit")
     };
-    format!(
-        "Navigation\n\
-         j / k, ↑ / ↓ previous / next line\n\
-         h / l       focus left / right\n\
-         Space / f   page down\n\
-         b           page up\n\
-         Shift+Space page up\n\
-         d / u / ^D / ^U half page down / up\n\
-         [ / ]       previous / next hunk\n\
-         , / .       previous / next file\n\
-         {{ / }}       previous / next comment\n\
-         ← / →       scroll code (Shift = faster)\n\
-         g / G       top / bottom\n\
-         \nView\n\
-         1 / 2 / 0   split / stack / auto\n\
-         s / t       sidebar / theme selector\n\
-         a / z       AI notes / unchanged context\n\
-         T           compact test files\n\
-         Enter       expand compact file\n\
-         A           agent skill setup\n\
-         n / w / m   numbers / wrap / hunk headers\n\
-         e           open file in editor\n\
-         \nReview\n\
-         /           focus file filter\n\
-         c           create review note\n\
-         Enter save  Shift+Enter newline\n\
-         Ctrl-S save Ctrl-T send\n\
-         Tab         toggle files/filter focus\n\
-         ?           close help\n\
-         {quit}"
-    )
+    let navigation: &[(&str, &str)] = &[
+        ("j / k, ↑ / ↓", "previous / next line"),
+        ("h / l", "focus left / right"),
+        ("Space / f", "page down"),
+        ("b", "page up"),
+        ("Shift+Space", "page up"),
+        ("d / u / ^D / ^U", "half page down / up"),
+        ("[ / ]", "previous / next hunk"),
+        (", / .", "previous / next file"),
+        ("{ / }", "previous / next comment"),
+        ("← / →", "scroll code (Shift = faster)"),
+        ("g / G", "top / bottom"),
+    ];
+    let view: &[(&str, &str)] = &[
+        ("1 / 2 / 0", "split / stack / auto"),
+        ("s / t", "sidebar / theme selector"),
+        ("a / z", "AI notes / unchanged context"),
+        ("T", "compact test files"),
+        ("Enter", "expand compact file"),
+        ("A", "agent skill setup"),
+        ("n / w / m", "numbers / wrap / hunk headers"),
+        ("e", "open file in editor"),
+    ];
+    let review: &[(&str, &str)] = &[
+        ("/", "focus file filter"),
+        ("c", "create review note"),
+        ("Enter", "save note"),
+        ("Shift+Enter", "newline in note"),
+        ("Ctrl-S", "save note"),
+        ("Ctrl-T", "send note to tmux"),
+        ("Tab", "toggle files/filter focus"),
+        ("?", "close help"),
+        quit,
+    ];
+    let sections = [
+        ("Navigation", navigation),
+        ("View", view),
+        ("Review", review),
+    ];
+    let pad = sections
+        .iter()
+        .flat_map(|(_, rows)| rows.iter())
+        .map(|(key, _)| key.width())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    let mut text = String::new();
+    for (index, (title, rows)) in sections.iter().enumerate() {
+        if index > 0 {
+            text.push('\n');
+        }
+        text.push_str(title);
+        text.push('\n');
+        for (key, description) in *rows {
+            text.push_str(key);
+            for _ in key.width()..pad {
+                text.push(' ');
+            }
+            text.push_str(description);
+            text.push('\n');
+        }
+    }
+    text.pop();
+    text
 }
 
 #[derive(Debug, Clone)]
@@ -207,14 +241,10 @@ impl Widget for DialogOverlay<'_> {
     fn render(self, area: Rect, buffer: &mut Buffer) {
         match self {
             Self::Help { theme, can_refresh } => {
-                let dialog = centered_rect(74, 32, area);
-                render_dialog(
-                    dialog,
-                    buffer,
-                    theme,
-                    "Controls help",
-                    help_text(can_refresh),
-                );
+                let text = help_text(can_refresh);
+                let height = (text.lines().count() as u16).saturating_add(2);
+                let dialog = centered_rect(74, height, area);
+                render_dialog(dialog, buffer, theme, "Controls help", text);
             }
             Self::AgentSkill { theme } => render_dialog(
                 centered_rect(78, 11, area),

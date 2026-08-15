@@ -48,10 +48,11 @@ fn help_lists_real_direct_bindings_and_contains_no_menu_instructions() {
         "c",
         "Tab",
         "r / q",
-        "Enter save",
-        "Shift+Enter newline",
-        "Ctrl-S save",
-        "Ctrl-T send",
+        "Shift+Enter",
+        "Ctrl-S",
+        "Ctrl-T",
+        "newline in note",
+        "send note to tmux",
     ] {
         assert!(help.contains(binding), "missing {binding}:\n{help}");
     }
@@ -64,8 +65,24 @@ fn help_lists_real_direct_bindings_and_contains_no_menu_instructions() {
 fn help_documents_test_file_compaction() {
     let help = help_text(true);
 
-    assert!(help.contains("T           compact test files"));
-    assert!(help.contains("Enter       expand compact file"));
+    assert!(help.contains("compact test files"));
+    assert!(help.contains("expand compact file"));
+}
+
+#[test]
+fn help_rows_share_one_description_column() {
+    for help in [help_text(true), help_text(false)] {
+        let mut columns = std::collections::BTreeSet::new();
+        for line in help.lines() {
+            let Some(gap) = line.find("  ") else {
+                continue;
+            };
+            let key_width = line[..gap].chars().count();
+            let padding = line[gap..].chars().take_while(|c| *c == ' ').count();
+            columns.insert(key_width + padding);
+        }
+        assert_eq!(columns.len(), 1, "misaligned description columns:\n{help}");
+    }
 }
 
 #[test]
