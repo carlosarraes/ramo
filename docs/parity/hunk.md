@@ -118,7 +118,7 @@ Only `verified` entries count toward final parity. The intentional exclusions ar
 | Resize anchor preservation | verified | `review::anchor` transactions | anchor tests and resize PTY test |
 | Row/file windowing and adaptive overscan | verified | `ReviewGeometry::visible_window` | geometry 100,000-row test and bounded render highlight test |
 | Syntax highlighting | verified | bounded `HighlightCache` | `tests/highlighting.rs`, `tests/ui_render.rs::renderer_highlights_only_the_bounded_visible_window` |
-| Character-level changed-content emphasis | verified | `review::emphasis` | emphasis unit tests and semantic render test |
+| Word-level changed-content emphasis (whitespace-flat, rewrite-gated) | verified | `review::emphasis` | emphasis unit tests and semantic render test |
 | Line numbers and change markers | verified | semantic review cells and shared columns | row/render/state tests |
 | Moved-line colors | verified | moved classes and semantic palettes | input, theme, and render tests |
 | Optional hunk headers | verified | zero-row header plan | `tests/ui_render.rs::hunk_headers_can_occupy_zero_rows_and_file_states_render` |

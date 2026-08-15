@@ -2764,6 +2764,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6505efef05804732ed8a3f2d4f279429eb485bd69d5b0cc6b19cc02005cda16"
 dependencies = [
  "bstr",
+ "unicode-segmentation",
 ]
 
 [[package]]

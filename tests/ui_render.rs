@@ -490,7 +490,8 @@ fn moved_rows_keep_moved_paint_while_changed_characters_use_stronger_backgrounds
 #[test]
 fn syntax_foregrounds_render_over_diff_backgrounds_and_emphasis_stays_stronger() {
     let mut source = file("src/lib.rs", FileChangeKind::Modified, 2);
-    source.hunks[0].lines[1].content = "fn highlighted(value: usize) -> usize { value + 1 }".into();
+    source.hunks[0].lines[0].content = "fn highlighted(value: usize) -> usize { value + 1 }".into();
+    source.hunks[0].lines[1].content = "fn highlighted(value: usize) -> usize { value + 2 }".into();
     let mut controller = ReviewController::new(
         vec![source],
         ReviewOptions {
@@ -504,12 +505,15 @@ fn syntax_foregrounds_render_over_diff_backgrounds_and_emphasis_stays_stronger()
     let (y, row) = frame
         .lines()
         .enumerate()
-        .find(|(_, row)| row.contains("fn highlighted"))
+        .find(|(_, row)| row.contains("+ 2 }"))
         .unwrap();
     let keyword_x = row.find("fn").unwrap() as u16;
+    let changed_x = row.rfind('2').unwrap() as u16;
 
     assert_ne!(buffer[(keyword_x, y as u16)].fg, theme.text);
-    assert_eq!(buffer[(keyword_x, y as u16)].bg, theme.added_content_bg);
+    // Unchanged tokens keep the ordinary line background; only the edited token is stronger.
+    assert_eq!(buffer[(keyword_x, y as u16)].bg, theme.added_bg);
+    assert_eq!(buffer[(changed_x, y as u16)].bg, theme.added_content_bg);
 }
 
 struct FailingLoader(Result<Option<String>, SourceFailure>);

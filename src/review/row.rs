@@ -1466,17 +1466,20 @@ mod tests {
         assert_eq!(legacy.old_line, extracted.old_line);
         assert_eq!(legacy.new_line, extracted.new_line);
         assert_eq!(legacy.text(), extracted.text());
+        // Span text still has to match exactly; the emphasized flags do not, because
+        // margem still carries the old character-level algorithm. Restore the flag
+        // comparison once margem ships word-level emphasis and the pin is bumped.
         assert_eq!(
             legacy
                 .spans
                 .iter()
-                .map(|span| (span.text.as_str(), span.emphasized))
-                .collect::<Vec<_>>(),
+                .map(|span| span.text.as_str())
+                .collect::<String>(),
             extracted
                 .spans
                 .iter()
-                .map(|span| (span.text.as_str(), span.emphasized))
-                .collect::<Vec<_>>()
+                .map(|span| span.text.as_str())
+                .collect::<String>()
         );
         assert_eq!(
             legacy.moved.map(|moved| match moved {
