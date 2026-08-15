@@ -1829,6 +1829,23 @@ impl App {
         }
     }
 
+    fn persist_theme_choice(&mut self) {
+        if self.pager_mode || self.active_theme_id == self.initial_view_preferences.theme {
+            return;
+        }
+        let Some(path) = self.preference_path.as_deref() else {
+            return;
+        };
+        let changes = ViewPreferenceChanges {
+            theme: Some(self.active_theme_id.clone()),
+            ..Default::default()
+        };
+        match save_view_preferences(path, &changes) {
+            Ok(()) => self.initial_view_preferences.theme = self.active_theme_id.clone(),
+            Err(error) => self.toast = Some(error.to_string()),
+        }
+    }
+
     fn cancel_input(&mut self, viewport: Viewport) {
         match self.input_mode {
             InputMode::Filter if !self.filter_buffer.is_empty() => {
@@ -1899,7 +1916,8 @@ impl App {
                     self.active_theme_id = selection.confirm_id().to_owned();
                 }
                 self.theme_selection = None;
-                self.input_mode = InputMode::Normal;
+                self.input_mode = self.base_input_mode();
+                self.persist_theme_choice();
             }
             InputMode::Note => {
                 self.review_controller

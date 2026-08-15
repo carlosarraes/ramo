@@ -203,6 +203,43 @@ fn quit_prompt_save_discard_cancel_and_never_ask_are_distinct() {
 }
 
 #[test]
+fn theme_confirm_writes_immediately_and_quit_stops_prompting() {
+    let temp = tempfile::tempdir().unwrap();
+    let viewport = Viewport {
+        width: 80,
+        height: 12,
+    };
+
+    let path = temp.path().join("theme.toml");
+    let mut app = app(&ResolvedConfig::default(), &path, false);
+    app.handle_ui_key(key(KeyCode::Char('t')), viewport);
+    assert_eq!(app.input_mode(), InputMode::Theme);
+    app.handle_ui_key(key(KeyCode::Down), viewport);
+    app.handle_ui_key(key(KeyCode::Enter), viewport);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("theme = "), "{saved}");
+
+    app.handle_ui_key(key(KeyCode::Char('q')), viewport);
+    assert!(app.should_quit);
+    assert_ne!(app.input_mode(), InputMode::SavePrompt);
+}
+
+#[test]
+fn theme_confirm_without_preference_path_writes_nothing() {
+    let viewport = Viewport {
+        width: 80,
+        height: 12,
+    };
+    let mut app =
+        App::new_with_preference_path(vec![file()], &ResolvedConfig::default(), false, None);
+    app.handle_ui_key(key(KeyCode::Char('t')), viewport);
+    app.handle_ui_key(key(KeyCode::Down), viewport);
+    app.handle_ui_key(key(KeyCode::Enter), viewport);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+}
+
+#[test]
 fn disabled_prompt_and_pager_mode_never_write_preferences() {
     let temp = tempfile::tempdir().unwrap();
     let viewport = Viewport {
