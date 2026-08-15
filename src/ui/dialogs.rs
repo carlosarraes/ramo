@@ -232,9 +232,12 @@ impl Widget for DialogOverlay<'_> {
                 selected,
             } => {
                 let dialog = centered_rect(48, (ids.len() as u16).saturating_add(4).min(22), area);
+                let visible = usize::from(dialog.height.saturating_sub(2));
                 let lines = ids
                     .iter()
                     .enumerate()
+                    .skip(windowed_start(ids.len(), selected, visible))
+                    .take(visible)
                     .map(|(index, id)| {
                         let marker = if index == selected { "› " } else { "  " };
                         Line::from(vec![
@@ -268,17 +271,25 @@ impl Widget for DialogOverlay<'_> {
             } => {
                 let dialog =
                     centered_rect(82, (panes.len() as u16).saturating_add(5).min(22), area);
+                let visible = usize::from(dialog.height.saturating_sub(4));
                 let mut lines = vec![
                     Line::from("Enter send   Esc cancel".to_owned()),
                     Line::from("j/k move   g/G first/last".to_owned()),
                 ];
-                lines.extend(panes.iter().enumerate().map(|(index, pane)| {
-                    let marker = if index == selected { "› " } else { "  " };
-                    Line::from(vec![
-                        Span::styled(marker, Style::default().fg(theme.accent)),
-                        Span::styled(pane.label.clone(), Style::default().fg(theme.text)),
-                    ])
-                }));
+                lines.extend(
+                    panes
+                        .iter()
+                        .enumerate()
+                        .skip(windowed_start(panes.len(), selected, visible))
+                        .take(visible)
+                        .map(|(index, pane)| {
+                            let marker = if index == selected { "› " } else { "  " };
+                            Line::from(vec![
+                                Span::styled(marker, Style::default().fg(theme.accent)),
+                                Span::styled(pane.label.clone(), Style::default().fg(theme.text)),
+                            ])
+                        }),
+                );
                 render_lines(dialog, buffer, theme, "Send to tmux", lines);
             }
             Self::Publish {
@@ -335,6 +346,15 @@ impl Widget for DialogOverlay<'_> {
             ),
         }
     }
+}
+
+fn windowed_start(len: usize, selected: usize, visible: usize) -> usize {
+    if visible >= len {
+        return 0;
+    }
+    selected
+        .saturating_sub(visible / 2)
+        .min(len.saturating_sub(visible))
 }
 
 fn render_dialog(area: Rect, buffer: &mut Buffer, theme: &AppTheme, title: &str, text: String) {

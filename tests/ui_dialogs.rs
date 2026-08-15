@@ -80,6 +80,53 @@ fn theme_selection_previews_but_cancel_restores_the_original() {
 }
 
 #[test]
+fn theme_dialog_scrolls_to_keep_the_selection_visible() {
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let ids = (0..65).map(|i| format!("theme-{i:02}")).collect::<Vec<_>>();
+    let id_refs = ids.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut terminal = Terminal::new(TestBackend::new(48, 24)).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(DialogOverlay::theme(&theme, &id_refs, 59), frame.area());
+        })
+        .unwrap();
+    let frame = buffer_text(&terminal);
+    assert!(frame.contains("› theme-59"), "{frame}");
+    assert!(!frame.contains("theme-00"), "{frame}");
+
+    terminal
+        .draw(|frame| {
+            frame.render_widget(DialogOverlay::theme(&theme, &id_refs, 0), frame.area());
+        })
+        .unwrap();
+    let frame = buffer_text(&terminal);
+    assert!(frame.contains("› theme-00"), "{frame}");
+    assert!(!frame.contains("theme-64"), "{frame}");
+}
+
+#[test]
+fn tmux_dialog_scrolls_to_keep_the_selection_visible() {
+    let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
+    let panes = (0..30)
+        .map(|i| TmuxPane {
+            id: format!("%{i}"),
+            label: format!("pane-{i:02}"),
+            current_command: "zsh".into(),
+        })
+        .collect::<Vec<_>>();
+    let mut terminal = Terminal::new(TestBackend::new(90, 24)).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(DialogOverlay::tmux(&theme, &panes, 29), frame.area());
+        })
+        .unwrap();
+    let frame = buffer_text(&terminal);
+    assert!(frame.contains("› pane-29"), "{frame}");
+    assert!(!frame.contains("pane-00"), "{frame}");
+    assert!(frame.contains("Enter send"), "{frame}");
+}
+
+#[test]
 fn overlays_render_centered_and_remain_usable_at_small_sizes() {
     let theme = ThemeRegistry::default().resolve("github-dark-default", None, false);
     let mut terminal = Terminal::new(TestBackend::new(32, 9)).unwrap();
