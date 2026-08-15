@@ -586,6 +586,54 @@ fn pager_mode_rejects_application_only_actions_but_keeps_navigation() {
 }
 
 #[test]
+fn tests_last_orders_test_files_after_authored_files_and_survives_reload() {
+    let view = viewport(80, 12);
+    let files = || {
+        vec![
+            file("src/a.rs", None, 1),
+            file("tests/a.rs", None, 1),
+            file("src/b.rs", None, 1),
+            file("pkg/b_test.go", None, 1),
+        ]
+    };
+    let paths = |controller: &ReviewController| {
+        controller
+            .files()
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let mut controller = ReviewController::new(files(), ReviewOptions::default());
+    assert_eq!(
+        paths(&controller),
+        ["src/a.rs", "src/b.rs", "tests/a.rs", "pkg/b_test.go"]
+    );
+    assert_eq!(
+        controller.snapshot(view).visible_files[0].path,
+        "src/a.rs".to_owned()
+    );
+
+    controller.replace_files(files(), view);
+    assert_eq!(
+        paths(&controller),
+        ["src/a.rs", "src/b.rs", "tests/a.rs", "pkg/b_test.go"]
+    );
+
+    let original_order = ReviewController::new(
+        files(),
+        ReviewOptions {
+            tests_last: false,
+            ..ReviewOptions::default()
+        },
+    );
+    assert_eq!(
+        paths(&original_order),
+        ["src/a.rs", "tests/a.rs", "src/b.rs", "pkg/b_test.go"]
+    );
+}
+
+#[test]
 fn test_compaction_is_reversible_and_enter_expands_only_the_selected_file() {
     let view = viewport(80, 12);
     let mut controller = ReviewController::new(
@@ -599,15 +647,16 @@ fn test_compaction_is_reversible_and_enter_expands_only_the_selected_file() {
 
     controller.apply(ReviewAction::ToggleTestFiles, view);
     let compacted = controller.snapshot(view).clone();
-    assert!(compacted.visible_files[0].compacted);
+    assert!(!compacted.visible_files[0].compacted);
     assert!(compacted.visible_files[1].compacted);
-    assert!(!compacted.visible_files[2].compacted);
+    assert!(compacted.visible_files[2].compacted);
 
     controller.apply(ReviewAction::JumpTop, view);
+    controller.apply(ReviewAction::MoveFile(1), view);
     controller.apply(ReviewAction::ExpandSelectedFile, view);
     let expanded = controller.snapshot(view).clone();
-    assert!(!expanded.visible_files[0].compacted);
-    assert!(expanded.visible_files[1].compacted);
+    assert!(!expanded.visible_files[1].compacted);
+    assert!(expanded.visible_files[2].compacted);
 
     controller.apply(ReviewAction::ToggleTestFiles, view);
     assert!(

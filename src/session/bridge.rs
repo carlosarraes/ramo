@@ -100,8 +100,10 @@ impl From<WireOptions> for CommonOptions {
             hunk_headers: options.hunk_headers,
             agent_notes: options.agent_notes,
             transparent_background: options.transparent_background,
-            // Only meaningful at process startup; session reloads never re-pick the screen.
+            // Only meaningful at process startup; session reloads never re-pick the screen
+            // and keep the running controller's ordering options.
             start_on_map: None,
+            tests_last: None,
         }
     }
 }

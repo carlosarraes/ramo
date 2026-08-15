@@ -365,6 +365,7 @@ copy_decorations = false
 transparent_background = false
 prompt_save_view_preferences = true
 test_file_patterns = ["qa/**", "**/*_snapshot.*"]
+tests_last = true
 ```
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.
@@ -372,6 +373,8 @@ Press `t` to preview embedded or custom themes. When interactive view settings c
 `copy_decorations = true` includes the rendered line-number/change-marker gutter in full-line copies; the default copies code only. `transparentBackground` remains accepted as Hunk's compatibility alias for `transparent_background`. Deprecated `[custom_theme.syntax]` semantic colors are translated to approximate TextMate scopes and surfaced as a startup notice; exact `[custom_theme.syntax_scopes]` entries override translated values.
 
 Ramo recognizes common test paths and names such as `tests/**`, `test/**`, `__tests__/**`, `test_*`, `*_test.*`, `*.test.*`, and `*.spec.*`. `test_file_patterns` adds project-specific glob patterns; patterns from user and repository configuration accumulate.
+
+`tests_last = true` (the default) orders recognized test files after authored files while keeping each group in diff order, so reviews open on production code. Set `tests_last = false` or pass `--no-tests-last` to keep the order the diff provided.
 
 After an installed-version change, `ramo` shows a one-time local reminder to refresh any copied agent skill with `ramo skill path`. It also performs an opportunistic, nonblocking `git ls-remote` query for newer GitHub release tags: the first check is delayed 1.2 seconds, the child is killed after five seconds, failures or a missing optional Git executable are ignored, and a long-running review checks again every six hours. Notices are deduplicated, queued for seven seconds each, and suppressed in pager mode. Set `RAMO_DISABLE_UPDATE_NOTICE=1` (or Hunk's compatibility name `HUNK_DISABLE_UPDATE_NOTICE=1`) to disable both update notices. This adds no TLS library or mandatory runtime dependency to the `ramo` executable.
 

@@ -226,6 +226,22 @@ fn start_on_map_flags_normalize_with_the_last_one_winning() {
 }
 
 #[test]
+fn tests_last_flags_normalize_with_the_last_one_winning() {
+    let invocation = parse_from(["ramo", "diff", "--no-tests-last"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::VcsDiff { options, .. })
+            if options.tests_last == Some(false)
+    ));
+    let invocation = parse_from(["ramo", "diff", "--no-tests-last", "--tests-last"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::VcsDiff { options, .. })
+            if options.tests_last == Some(true)
+    ));
+}
+
+#[test]
 fn invalid_layout_is_a_clap_error() {
     let error = parse_from(["ramo", "diff", "--mode", "columns"], true).unwrap_err();
     assert!(error.to_string().contains("invalid value 'columns'"));

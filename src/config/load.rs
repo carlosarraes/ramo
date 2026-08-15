@@ -28,6 +28,7 @@ const PREFERENCE_KEYS: &[&str] = &[
     "review_map_token_file",
     "ai_summaries",
     "start_on_map",
+    "tests_last",
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
@@ -456,6 +457,7 @@ fn apply_cli_options(resolved: &mut ResolvedConfig, options: &CommonOptions) {
         options.transparent_background,
     );
     apply(&mut resolved.start_on_map, options.start_on_map);
+    apply(&mut resolved.tests_last, options.tests_last);
 }
 
 fn apply(target: &mut bool, value: Option<bool>) {

@@ -467,6 +467,7 @@ fn common_options(
         agent_notes: bool_pair(flags.agent_notes, flags.no_agent_notes),
         transparent_background: bool_pair(flags.transparent_bg, flags.no_transparent_bg),
         start_on_map: bool_pair(flags.start_on_map, flags.no_start_on_map),
+        tests_last: bool_pair(flags.tests_last, flags.no_tests_last),
     }
 }
 

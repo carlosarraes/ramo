@@ -359,6 +359,7 @@ impl App {
                 pager_mode,
                 annotated_hunks: Vec::new(),
                 test_file_patterns: config.test_file_patterns.clone(),
+                tests_last: config.tests_last,
             },
         );
         let theme_registry = ThemeRegistry::new(config.custom_theme.clone());

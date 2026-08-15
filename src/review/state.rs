@@ -85,6 +85,7 @@ pub struct ReviewOptions {
     pub pager_mode: bool,
     pub annotated_hunks: Vec<HunkTarget>,
     pub test_file_patterns: Vec<String>,
+    pub tests_last: bool,
 }
 
 impl Default for ReviewOptions {
@@ -100,6 +101,7 @@ impl Default for ReviewOptions {
             pager_mode: false,
             annotated_hunks: Vec::new(),
             test_file_patterns: Vec::new(),
+            tests_last: true,
         }
     }
 }
@@ -359,10 +361,13 @@ impl ReviewController {
         self.progress.is_file_reviewed(file_id)
     }
 
-    pub fn new(files: Vec<DiffFile>, options: ReviewOptions) -> Self {
-        let selected_file_id = files.first().map(|file| file.id.clone());
+    pub fn new(mut files: Vec<DiffFile>, options: ReviewOptions) -> Self {
         let test_file_matcher = TestFileMatcher::new(&options.test_file_patterns)
             .expect("test file patterns must be validated before review construction");
+        if options.tests_last {
+            order_tests_last(&test_file_matcher, &mut files);
+        }
+        let selected_file_id = files.first().map(|file| file.id.clone());
         let progress = ReviewProgress::new(&files);
         Self {
             files,
@@ -1440,6 +1445,9 @@ impl ReviewController {
         let selected_hunk_index = self.selected_hunk_index;
 
         self.files = files;
+        if self.options.tests_last {
+            order_tests_last(&self.test_file_matcher, &mut self.files);
+        }
         self.github_threads = place_github_threads(&self.files, self.github_thread_source.clone());
         self.progress.replace_files(&self.files);
         self.human_notes
@@ -2476,6 +2484,11 @@ fn target_diff_context(file: &DiffFile, target: &NoteTarget) -> String {
         output.push_str(&rendered);
     }
     output
+}
+
+fn order_tests_last(matcher: &TestFileMatcher, files: &mut [DiffFile]) {
+    // Stable sort: authored and test groups each keep their original diff order.
+    files.sort_by_key(|file| matcher.is_match(&file.path));
 }
 
 fn matches_filter(file: &DiffFile, filter: &str) -> bool {

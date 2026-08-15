@@ -293,6 +293,34 @@ fn start_on_map_defaults_true_and_follows_config_then_cli() {
 }
 
 #[test]
+fn tests_last_defaults_true_and_follows_config_then_cli() {
+    let defaults = ConfigResolver::new(ConfigPaths::default())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert!(defaults.tests_last);
+
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(&user, "tests_last = false\n").unwrap();
+    let paths = ConfigPaths {
+        user: Some(user),
+        repo: None,
+    };
+    let from_config = ConfigResolver::new(paths.clone())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert!(!from_config.tests_last);
+
+    let from_cli = ConfigResolver::new(paths)
+        .resolve(&patch_input(CommonOptions {
+            tests_last: Some(true),
+            ..CommonOptions::default()
+        }))
+        .unwrap();
+    assert!(from_cli.tests_last);
+}
+
+#[test]
 fn review_map_configuration_is_local_optional_and_validated() {
     let defaults = ConfigResolver::new(ConfigPaths::default())
         .resolve(&patch_input(CommonOptions::default()))
