@@ -104,6 +104,8 @@ impl From<WireOptions> for CommonOptions {
             // and keep the running controller's ordering options.
             start_on_map: None,
             tests_last: None,
+            // A session reload never re-decides consent for remote inference.
+            ask_enabled: None,
         }
     }
 }

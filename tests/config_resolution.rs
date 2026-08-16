@@ -350,6 +350,23 @@ fn ask_ai_is_off_by_default_and_layers_like_other_preferences() {
 }
 
 #[test]
+fn no_ask_flag_overrides_an_enabled_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(&user, "ask_enabled = true\n").unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions {
+        ask_enabled: Some(false),
+        ..CommonOptions::default()
+    }))
+    .unwrap();
+    assert!(!resolved.ask_enabled);
+}
+
+#[test]
 fn invalid_ask_configuration_names_the_key_and_the_allowed_values() {
     let temp = tempfile::tempdir().unwrap();
     for (source, expected) in [

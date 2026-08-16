@@ -242,6 +242,28 @@ fn tests_last_flags_normalize_with_the_last_one_winning() {
 }
 
 #[test]
+fn ask_flags_normalize_with_the_last_one_winning() {
+    let invocation = parse_from(["ramo", "diff", "--no-ask"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::VcsDiff { options, .. })
+            if options.ask_enabled == Some(false)
+    ));
+    let invocation = parse_from(["ramo", "diff", "--no-ask", "--ask"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::VcsDiff { options, .. })
+            if options.ask_enabled == Some(true)
+    ));
+    let invocation = parse_from(["ramo", "diff"], true).unwrap();
+    assert!(matches!(
+        invocation.action,
+        Action::Review(ReviewInput::VcsDiff { options, .. })
+            if options.ask_enabled.is_none()
+    ));
+}
+
+#[test]
 fn invalid_layout_is_a_clap_error() {
     let error = parse_from(["ramo", "diff", "--mode", "columns"], true).unwrap_err();
     assert!(error.to_string().contains("invalid value 'columns'"));

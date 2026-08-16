@@ -518,6 +518,7 @@ fn apply_cli_options(resolved: &mut ResolvedConfig, options: &CommonOptions) {
     );
     apply(&mut resolved.start_on_map, options.start_on_map);
     apply(&mut resolved.tests_last, options.tests_last);
+    apply(&mut resolved.ask_enabled, options.ask_enabled);
 }
 
 fn apply(target: &mut bool, value: Option<bool>) {

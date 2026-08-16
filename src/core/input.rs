@@ -54,6 +54,7 @@ pub struct CommonOptions {
     pub transparent_background: Option<bool>,
     pub start_on_map: Option<bool>,
     pub tests_last: Option<bool>,
+    pub ask_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
