@@ -348,6 +348,24 @@ Ordinary line movement follows semantic diff rows rather than treating the viewp
 
 Review progress counts changed lines, not screen rows. It only moves forward while you scroll, jump, filter, or compact files, so returning to earlier code never reduces the percentage. Compacting a test file marks its changed lines as reviewed; pressing Enter or clicking its summary row expands that file without changing the rest.
 
+### Ask AI about the diff
+
+Press `a` on any hunk to ask a question about it. The request runs in the background, so you keep reviewing while it works. When the answer arrives the footer shows an `AI n · o` badge; press `o` to jump straight to the answer, which renders as a card anchored where you asked. Up to three questions can be in flight at once. `Enter` sends, `Shift+Enter` adds a line, `Esc` cancels.
+
+**This is the one part of Ramo that sends your code off this machine, and it is off by default.** Enabling it means your question, the file path, and the anchored diff hunk are sent to the configured remote provider through the `pi` CLI. Ramo never sends the rest of the repository, other files, your environment, or credentials, and it never reads or handles API keys — `pi` owns `~/.pi/agent/auth.json`. Ramo runs `pi` with `--no-tools --no-session`, so nothing executes on your machine and no transcript is stored. This path is separate from the Review Map, which stays local-only against loopback Ollama.
+
+Turn it on deliberately:
+
+```toml
+ask_enabled = true
+ask_provider = "opencode-go"
+ask_model = "deepseek-v4-flash"
+ask_thinking = "max"
+ask_timeout_secs = 180
+```
+
+`--no-ask` disables it for a single run; `--ask` enables it for one run without editing the config. Setting `ask_provider`/`ask_model` alone does nothing: only `ask_enabled = true` grants consent. Asking is unavailable in pager mode. If the provider rejects the model, the failure card names the model and the `pi --list-models` command that lists valid ids, so a stale `ask_model` is obvious rather than silent.
+
 The first `Ctrl-t` opens a visible tmux pane picker; `j`/`k` chooses a target, Enter sends, and Escape cancels. Ramo remembers the target for later sends, while `Ctrl-Shift-t` always asks again. Inside a draft note, `Ctrl-t` sends the selected range, bounded code context, and comment, then saves the note only after tmux accepts the payload.
 
 The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel events scroll code horizontally. Left-click selects sidebar files or collapsed context. The scrollbar and sidebar divider are draggable. Dragged text uses terminal-cell-aware selection, including full-width Unicode characters, and copies through the same OSC 52 path as `V`/`y`.
@@ -369,6 +387,7 @@ transparent_background = false
 prompt_save_view_preferences = true
 test_file_patterns = ["qa/**", "**/*_snapshot.*"]
 tests_last = true
+ask_enabled = false # opt in to remote AI questions; see Ask AI about the diff
 ```
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.

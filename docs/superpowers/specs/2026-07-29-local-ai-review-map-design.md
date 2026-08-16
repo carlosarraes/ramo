@@ -40,7 +40,7 @@ GitHub's general-purpose mobile interface is also too dense for the desired quic
 ## Non-goals for v1
 
 - Running a model directly on Android.
-- Cloud inference, Cloudflare-hosted inference, or OpenCode Go/Zen integration.
+- Cloud inference, Cloudflare-hosted inference, or OpenCode Go/Zen integration. (Still true for the Review Map, which remains local-only. Scoped in 2026-08-15 by the separate, default-off `a` / Ask AI path — see `2026-08-15-ask-ai-remote-inference-design.md`.)
 - Multi-user or team-hosted Ramo servers.
 - AI-generated review comments or automatic verdicts.
 - Publishing comments through `ramo-server`; existing clients retain that responsibility.
