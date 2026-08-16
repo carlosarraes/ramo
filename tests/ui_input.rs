@@ -687,6 +687,51 @@ fn test_compaction_keys_do_not_shadow_theme_or_tmux_bindings() {
 }
 
 #[test]
+fn ask_mode_owns_its_keys_and_never_sends_a_question_to_tmux() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('a')), InputMode::Normal, false),
+        Some(AppAction::Review(ReviewAction::StartAsk))
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Enter), InputMode::Ask, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(shifted(KeyCode::Enter), InputMode::Ask, false),
+        Some(AppAction::Insert('\n'))
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('s')), InputMode::Ask, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Esc), InputMode::Ask, false),
+        Some(AppAction::Cancel)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Backspace), InputMode::Ask, false),
+        Some(AppAction::Backspace)
+    );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('x')), InputMode::Ask, false),
+        Some(AppAction::Insert('x'))
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('t')), InputMode::Ask, false),
+        None,
+        "a question must never be sent to tmux"
+    );
+}
+
+#[test]
+fn asking_is_unavailable_in_pager_mode() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('a')), InputMode::Normal, true),
+        None
+    );
+}
+
+#[test]
 fn pull_request_dialog_modes_own_their_documented_keys() {
     assert_eq!(
         map_key_event(key(KeyCode::Char('y')), InputMode::PublishPrompt, false),

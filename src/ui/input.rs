@@ -10,6 +10,7 @@ pub enum InputMode {
     Normal,
     Filter,
     Note,
+    Ask,
     Theme,
     Help,
     AgentSkill,
@@ -56,7 +57,7 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
     let action = match mode {
         InputMode::Normal => map_normal(event),
         InputMode::ReviewMap => map_review_map(event),
-        InputMode::Filter | InputMode::Note => map_text(event, mode),
+        InputMode::Filter | InputMode::Note | InputMode::Ask => map_text(event, mode),
         InputMode::Theme => map_theme(event),
         InputMode::Help => match event.code {
             KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => Some(AppAction::Cancel),
@@ -234,6 +235,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('t') => review(ReviewAction::OpenThemeSelector),
         KeyCode::Char('T') => review(ReviewAction::ToggleTestFiles),
         KeyCode::Char('i') => review(ReviewAction::ToggleAgentNotes),
+        KeyCode::Char('a') => review(ReviewAction::StartAsk),
         KeyCode::Char('A') => Some(AppAction::OpenAgentSkill),
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
         KeyCode::Char('v') => review(ReviewAction::ToggleFileViewed),
@@ -280,14 +282,16 @@ fn map_review_map(event: KeyEvent) -> Option<AppAction> {
 }
 
 fn map_text(event: KeyEvent, mode: InputMode) -> Option<AppAction> {
-    if mode == InputMode::Note {
-        if matches!(event.code, KeyCode::Char('t' | 'T'))
-            && event.modifiers.contains(KeyModifiers::CONTROL)
-        {
-            return Some(AppAction::SendNote {
-                reset_target: event.modifiers.contains(KeyModifiers::SHIFT),
-            });
-        }
+    if mode == InputMode::Note
+        && matches!(event.code, KeyCode::Char('t' | 'T'))
+        && event.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        // A question is not a note, so Ask deliberately has no tmux send.
+        return Some(AppAction::SendNote {
+            reset_target: event.modifiers.contains(KeyModifiers::SHIFT),
+        });
+    }
+    if matches!(mode, InputMode::Note | InputMode::Ask) {
         if event.code == KeyCode::Char('s') && event.modifiers.contains(KeyModifiers::CONTROL) {
             return Some(AppAction::Confirm);
         }

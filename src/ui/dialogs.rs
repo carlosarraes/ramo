@@ -45,6 +45,8 @@ pub fn help_text(can_refresh: bool) -> String {
         ("s / t", "sidebar / theme selector"),
         ("i / z", "AI notes / unchanged context"),
         ("T", "compact test files"),
+        ("a", "ask AI about this change"),
+        ("o", "jump to the AI answer"),
         ("v", "toggle file viewed"),
         ("Enter", "expand / un-view compact file"),
         ("A", "agent skill setup"),
@@ -163,6 +165,10 @@ pub enum DialogOverlay<'a> {
         theme: &'a AppTheme,
         text: &'a str,
     },
+    Ask {
+        theme: &'a AppTheme,
+        text: &'a str,
+    },
     Tmux {
         theme: &'a AppTheme,
         panes: &'a [crate::tmux::TmuxPane],
@@ -208,6 +214,9 @@ impl<'a> DialogOverlay<'a> {
     }
     pub fn note(theme: &'a AppTheme, text: &'a str) -> Self {
         Self::Note { theme, text }
+    }
+    pub fn ask(theme: &'a AppTheme, text: &'a str) -> Self {
+        Self::Ask { theme, text }
     }
     pub fn tmux(theme: &'a AppTheme, panes: &'a [crate::tmux::TmuxPane], selected: usize) -> Self {
         Self::Tmux {
@@ -294,6 +303,13 @@ impl Widget for DialogOverlay<'_> {
                 format!(
                     "{text}\n\nEnter save   Shift+Enter newline\nCtrl-S save   Ctrl-T send   Esc cancel"
                 ),
+            ),
+            Self::Ask { theme, text } => render_dialog(
+                centered_rect(68, 12, area),
+                buffer,
+                theme,
+                "Ask AI",
+                format!("{text}\n\nEnter ask   Shift+Enter newline\nCtrl-S ask   Esc cancel"),
             ),
             Self::Tmux {
                 theme,

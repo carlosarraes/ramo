@@ -1061,6 +1061,14 @@ impl App {
                     );
                 }
             }
+            InputMode::Ask => {
+                if area.width < 48 {
+                    frame.render_widget(
+                        DialogOverlay::ask(&self.review_theme, &self.comment_buf),
+                        area,
+                    );
+                }
+            }
             InputMode::SavePrompt => {
                 frame.render_widget(DialogOverlay::save(&self.review_theme), area);
             }
@@ -1350,6 +1358,18 @@ impl App {
                     self.review_controller
                         .update_human_note_draft(&self.comment_buf, viewport);
                 }
+                InputMode::Ask => {
+                    if self.comment_buf.chars().count() >= crate::ask::MAX_QUESTION_CHARS {
+                        self.toast = Some(format!(
+                            "Questions are limited to {} characters",
+                            crate::ask::MAX_QUESTION_CHARS
+                        ));
+                    } else {
+                        self.comment_buf.push(character);
+                        self.review_controller
+                            .update_ask_draft(&self.comment_buf, viewport);
+                    }
+                }
                 InputMode::OverallComment => self.comment_buf.push(character),
                 _ => {}
             },
@@ -1372,6 +1392,11 @@ impl App {
                     self.comment_buf.pop();
                     self.review_controller
                         .update_human_note_draft(&self.comment_buf, viewport);
+                }
+                InputMode::Ask => {
+                    self.comment_buf.pop();
+                    self.review_controller
+                        .update_ask_draft(&self.comment_buf, viewport);
                 }
                 InputMode::OverallComment => {
                     self.comment_buf.pop();
@@ -1600,6 +1625,7 @@ impl App {
                 ));
                 self.input_mode = InputMode::Theme;
             }
+            ReviewEffect::StartAsk => self.start_ask(viewport),
             ReviewEffect::StartNote => {
                 if self.remote_review.is_some() {
                     match self
@@ -1849,6 +1875,17 @@ impl App {
         }
     }
 
+    fn start_ask(&mut self, viewport: Viewport) {
+        if self
+            .review_controller
+            .begin_ask(self.review_selection, viewport)
+            .is_some()
+        {
+            self.comment_buf.clear();
+            self.input_mode = InputMode::Ask;
+        }
+    }
+
     fn persist_theme_choice(&mut self) {
         if self.pager_mode || self.active_theme_id == self.initial_view_preferences.theme {
             return;
@@ -1893,6 +1930,12 @@ impl App {
             }
             InputMode::Note => {
                 self.review_controller.cancel_human_note_draft(viewport);
+                self.comment_buf.clear();
+                self.input_mode = InputMode::Normal;
+                self.clear_review_selection();
+            }
+            InputMode::Ask => {
+                self.review_controller.cancel_ask_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
                 self.clear_review_selection();
@@ -1943,6 +1986,14 @@ impl App {
                 self.review_controller
                     .update_human_note_draft(&self.comment_buf, viewport);
                 self.review_controller.save_human_note_draft(viewport);
+                self.comment_buf.clear();
+                self.input_mode = InputMode::Normal;
+                self.clear_review_selection();
+            }
+            InputMode::Ask => {
+                self.review_controller
+                    .update_ask_draft(&self.comment_buf, viewport);
+                self.review_controller.commit_ask_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
                 self.clear_review_selection();
