@@ -860,6 +860,13 @@ impl ReviewController {
         &self.ask_notes
     }
 
+    /// The note card the cursor currently sits on, if any.
+    pub fn selected_note_id(&self) -> Option<&str> {
+        self.selected_row_key
+            .as_ref()
+            .and_then(|key| key.note_id.as_deref())
+    }
+
     pub fn begin_remote_human_note(
         &mut self,
         selection: Option<(SelectionPoint, SelectionPoint)>,

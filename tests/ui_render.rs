@@ -818,3 +818,56 @@ fn ask_cards_render_pending_then_answered_without_the_agent_notes_toggle() {
     assert!(answered.contains("It renames the helper."), "{answered}");
     assert!(!answered.contains("asking"), "{answered}");
 }
+
+#[test]
+fn the_ask_badge_shows_unread_answers_next_to_progress() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions::default(),
+    );
+    let snapshot = controller
+        .snapshot(Viewport {
+            width: 80,
+            height: 6,
+        })
+        .clone();
+    let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
+
+    let with_badge = {
+        let backend = TestBackend::new(80, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let areas = review_areas(frame.area());
+                frame.render_widget(
+                    ReviewFooter::new(
+                        Some("a very long status message that fills the footer row"),
+                        &snapshot,
+                        &theme,
+                    )
+                    .ask_badge(Some(2)),
+                    areas.footer,
+                );
+            })
+            .unwrap();
+        text(terminal.backend().buffer())
+    };
+    assert!(with_badge.contains("AI 2 · o"), "{with_badge}");
+    assert!(with_badge.contains("Reviewed"), "{with_badge}");
+
+    let without_badge = {
+        let backend = TestBackend::new(80, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let areas = review_areas(frame.area());
+                frame.render_widget(
+                    ReviewFooter::new(None, &snapshot, &theme).ask_badge(Some(0)),
+                    areas.footer,
+                );
+            })
+            .unwrap();
+        text(terminal.backend().buffer())
+    };
+    assert!(!without_badge.contains("AI"), "{without_badge}");
+}

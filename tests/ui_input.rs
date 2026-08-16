@@ -729,6 +729,18 @@ fn asking_is_unavailable_in_pager_mode() {
         map_key_event(key(KeyCode::Char('a')), InputMode::Normal, true),
         None
     );
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('o')), InputMode::Normal, true),
+        None
+    );
+}
+
+#[test]
+fn o_jumps_to_a_ready_ai_answer() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('o')), InputMode::Normal, false),
+        Some(AppAction::JumpAskAnswer)
+    );
 }
 
 #[test]

@@ -297,6 +297,7 @@ pub struct App {
     ask_runtime: AskRuntime,
     ask_jobs: HashMap<AskId, String>,
     ask_runner: AskRunner,
+    ask_unseen: VecDeque<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -471,6 +472,7 @@ impl App {
             ask_runtime: AskRuntime::new(),
             ask_jobs: HashMap::new(),
             ask_runner: pi_ask_runner(),
+            ask_unseen: VecDeque::new(),
         }
     }
 
@@ -523,6 +525,10 @@ impl App {
 
     pub fn poll_ask_for_tests(&mut self, viewport: Viewport) -> bool {
         self.poll_ask(viewport)
+    }
+
+    pub fn unseen_ask_answers(&self) -> usize {
+        self.ask_unseen.len()
     }
 
     pub fn review_map_snapshot(&self) -> Option<crate::review_map::ReviewMapSnapshot> {
@@ -1085,7 +1091,8 @@ impl App {
             areas.content,
         );
         frame.render_widget(
-            ReviewFooter::new(status.as_deref(), &snapshot, &self.review_theme),
+            ReviewFooter::new(status.as_deref(), &snapshot, &self.review_theme)
+                .ask_badge(Some(self.ask_unseen.len())),
             areas.footer,
         );
         match self.input_mode {
@@ -1389,6 +1396,7 @@ impl App {
                 }
             }
             AppAction::ToggleReviewMap => self.toggle_review_map(viewport),
+            AppAction::JumpAskAnswer => self.jump_to_ask_answer(viewport),
             AppAction::FocusReviewMapFilter => {
                 self.input_mode = InputMode::Filter;
             }
@@ -2004,12 +2012,38 @@ impl App {
             if let Some(note_id) = self.ask_jobs.remove(&id) {
                 self.review_controller
                     .resolve_ask(&note_id, state, viewport);
-                self.toast = Some(toast);
+                self.ask_unseen.push_back(note_id);
+                self.toast = Some(format!("{toast} — press o"));
                 changed = true;
             }
         }
+        // A reload can drop the anchored note; never offer a jump to a card that is gone.
+        let live = self
+            .review_controller
+            .ask_notes()
+            .iter()
+            .map(|note| note.id.clone())
+            .collect::<HashSet<_>>();
+        self.ask_unseen.retain(|id| live.contains(id));
         self.ask_runtime.reap();
         changed
+    }
+
+    fn jump_to_ask_answer(&mut self, viewport: Viewport) {
+        let Some(id) = self.ask_unseen.pop_front() else {
+            self.toast = Some("No AI answer is waiting".into());
+            return;
+        };
+        let effect = self
+            .review_controller
+            .apply(ReviewAction::SelectNote(id), viewport);
+        self.apply_review_effect(effect, viewport);
+        if !self.ask_unseen.is_empty() {
+            self.toast = Some(format!(
+                "{} more AI answers — press o again",
+                self.ask_unseen.len()
+            ));
+        }
     }
 
     fn persist_theme_choice(&mut self) {

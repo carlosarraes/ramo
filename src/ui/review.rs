@@ -144,6 +144,7 @@ pub struct ReviewFooter<'a> {
     status: Option<&'a str>,
     snapshot: &'a crate::review::ReviewSnapshot,
     theme: &'a AppTheme,
+    ask_badge: Option<usize>,
 }
 
 impl<'a> ReviewFooter<'a> {
@@ -156,7 +157,15 @@ impl<'a> ReviewFooter<'a> {
             status,
             snapshot,
             theme,
+            ask_badge: None,
         }
+    }
+
+    /// Unread AI answers. Unlike the status toast this survives navigation keys, so the
+    /// reviewer can finish reading before jumping.
+    pub fn ask_badge(mut self, unread: Option<usize>) -> Self {
+        self.ask_badge = unread;
+        self
     }
 }
 
@@ -172,14 +181,32 @@ impl Widget for ReviewFooter<'_> {
         let progress = format!("Reviewed {}%", self.snapshot.reviewed_percent);
         let progress_width = UnicodeWidthStr::width(progress.as_str()).min(usize::from(area.width));
         let progress_x = area.right().saturating_sub(progress_width as u16);
+        // Reserve the badge before the status truncation math so a long toast cannot eat it.
+        let badge = self
+            .ask_badge
+            .filter(|unread| *unread > 0)
+            .map(|unread| format!("AI {unread} · o "));
+        let badge_width = badge.as_deref().map_or(0, |badge| {
+            UnicodeWidthStr::width(badge).min(usize::from(area.width))
+        });
+        let badge_x = progress_x.saturating_sub(badge_width as u16);
         if let Some(status) = self.status {
-            let status_width = usize::from(progress_x.saturating_sub(area.x).saturating_sub(1));
+            let status_width = usize::from(badge_x.saturating_sub(area.x).saturating_sub(1));
             buffer.set_stringn(
                 area.x,
                 area.y,
                 truncate_cells(status, status_width),
                 status_width,
                 style,
+            );
+        }
+        if let Some(badge) = badge {
+            buffer.set_stringn(
+                badge_x,
+                area.y,
+                badge,
+                badge_width,
+                style.fg(self.theme.accent).add_modifier(Modifier::BOLD),
             );
         }
         buffer.set_stringn(progress_x, area.y, progress, progress_width, style);

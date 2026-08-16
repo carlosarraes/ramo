@@ -328,6 +328,8 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `1` / `2` / `0` | Split/unified/auto layout |
 | `s`, `n`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
 | `i` | Reveal/hide AI and agent notes |
+| `a` | Ask an AI about the change under the cursor (off by default; see Ask AI about the diff) |
+| `o` | Jump to the next ready AI answer |
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
 | `T` | Compact or restore recognized test files |

@@ -164,6 +164,34 @@ fn a_rejected_model_is_reported_on_the_card_with_the_model_id() {
 }
 
 #[test]
+fn the_answer_badge_survives_navigation_and_o_jumps_to_the_card() {
+    let mut app = App::new_with_config(vec![file()], &enabled_config(), false)
+        .with_ask_runner(|_| move || Ok("It bumps the default.".to_owned()));
+
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "why?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+    assert_eq!(app.unseen_ask_answers(), 1);
+
+    // A nav key clears the toast but must not clear the badge.
+    app.handle_ui_key(key(KeyCode::Char('j')), VIEW);
+    assert_eq!(app.unseen_ask_answers(), 1);
+
+    app.handle_ui_key(key(KeyCode::Char('o')), VIEW);
+    assert_eq!(app.unseen_ask_answers(), 0);
+    assert_eq!(app.review_controller.selected_note_id(), Some("ask:1"));
+
+    // Nothing left to jump to.
+    app.handle_ui_key(key(KeyCode::Char('o')), VIEW);
+    assert!(
+        app.toast
+            .as_deref()
+            .is_some_and(|toast| toast.contains("No AI answer"))
+    );
+}
+
+#[test]
 fn asking_is_inert_when_the_feature_is_disabled() {
     let calls = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&calls);
