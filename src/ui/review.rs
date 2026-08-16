@@ -656,7 +656,13 @@ fn render_note_card(
                 Style::default()
                     .fg(theme.note_title_text)
                     .bg(
-                        if cursor && card.kind == crate::review::row::NoteCardKind::Github {
+                        if cursor
+                            && matches!(
+                                card.kind,
+                                crate::review::row::NoteCardKind::Github
+                                    | crate::review::row::NoteCardKind::Ask
+                            )
+                        {
                             theme.selected_hunk
                         } else {
                             theme.note_title_background

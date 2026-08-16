@@ -7,9 +7,9 @@ use crate::core::input::LayoutMode;
 use crate::diff::model::DiffFile;
 use crate::input::sanitize_terminal_text;
 use crate::notes::{
-    ClearedSessionNotes, HumanNote, HumanNoteDraft, LineRange, LiveNote, LiveNoteInput,
-    NoteAnchorSide, NoteConfidence, NoteSource, NoteTarget, ReviewNote, annotated_hunks,
-    note_box_layout, resolve_ranges_target,
+    AskDraft, AskNote, AskNoteState, ClearedSessionNotes, HumanNote, HumanNoteDraft, LineRange,
+    LiveNote, LiveNoteInput, NoteAnchorSide, NoteConfidence, NoteSource, NoteTarget, ReviewNote,
+    annotated_hunks, note_box_layout, resolve_ranges_target,
 };
 use crate::remote_review::{GithubReviewThread, InlineCommentTarget, RemoteLineSide};
 
@@ -345,6 +345,9 @@ pub struct ReviewController {
     test_files_compacted: bool,
     expanded_test_files: HashSet<String>,
     viewed_files: HashSet<String>,
+    ask_notes: Vec<AskNote>,
+    ask_draft: Option<AskDraft>,
+    next_ask_id: u64,
     progress: ReviewProgress,
 }
 
@@ -404,6 +407,9 @@ impl ReviewController {
             test_files_compacted: false,
             expanded_test_files: HashSet::new(),
             viewed_files: HashSet::new(),
+            ask_notes: Vec::new(),
+            ask_draft: None,
+            next_ask_id: 1,
             progress,
         }
     }
@@ -775,6 +781,81 @@ impl ReviewController {
         self.dirty = true;
         self.rebuild(viewport, true);
         Some(id)
+    }
+
+    pub fn begin_ask(
+        &mut self,
+        selection: Option<(SelectionPoint, SelectionPoint)>,
+        viewport: Viewport,
+    ) -> Option<String> {
+        self.ensure_geometry(viewport);
+        let target = self.note_target_for_selection(selection)?;
+        let id = format!("ask:{}", self.next_ask_id);
+        self.next_ask_id = self.next_ask_id.saturating_add(1);
+        self.ask_draft = Some(AskDraft {
+            id: id.clone(),
+            target,
+            question: String::new(),
+        });
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        Some(id)
+    }
+
+    pub fn update_ask_draft(&mut self, question: &str, viewport: Viewport) {
+        let Some(draft) = self.ask_draft.as_mut() else {
+            return;
+        };
+        draft.question = sanitize_terminal_text(question, false);
+        self.dirty = true;
+        self.rebuild(viewport, true);
+    }
+
+    pub fn cancel_ask_draft(&mut self, viewport: Viewport) {
+        if self.ask_draft.take().is_some() {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
+    }
+
+    /// Moves the draft into the pending list and returns what the caller needs to build
+    /// the provider request: the note id, the file it is anchored to, and the target.
+    pub fn commit_ask_draft(&mut self, viewport: Viewport) -> Option<AskNote> {
+        let draft = self.ask_draft.take()?;
+        let question = draft.question.trim().to_owned();
+        if question.is_empty() {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+            return None;
+        }
+        let note = AskNote {
+            id: draft.id,
+            target: draft.target,
+            question,
+            state: AskNoteState::Pending,
+        };
+        self.ask_notes.push(note.clone());
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        Some(note)
+    }
+
+    pub fn resolve_ask(&mut self, id: &str, state: AskNoteState, viewport: Viewport) -> bool {
+        let state = match state {
+            AskNoteState::Answered(body) => AskNoteState::Answered(clamp_answer(&body)),
+            other => other,
+        };
+        let Some(note) = self.ask_notes.iter_mut().find(|note| note.id == id) else {
+            return false;
+        };
+        note.state = state;
+        self.dirty = true;
+        self.rebuild(viewport, true);
+        true
+    }
+
+    pub fn ask_notes(&self) -> &[AskNote] {
+        &self.ask_notes
     }
 
     pub fn begin_remote_human_note(
@@ -1471,6 +1552,17 @@ impl ReviewController {
             .retain(|id| self.files.iter().any(|file| file.id == *id));
         self.viewed_files
             .retain(|id| self.files.iter().any(|file| file.id == *id));
+        // A reload can replace the anchored file; drop questions that no longer have a home.
+        self.ask_notes
+            .retain(|note| self.files.iter().any(|file| file.id == note.target.file_id));
+        if self.ask_draft.as_ref().is_some_and(|draft| {
+            !self
+                .files
+                .iter()
+                .any(|file| file.id == draft.target.file_id)
+        }) {
+            self.ask_draft = None;
+        }
         self.geometry = None;
         self.planned_files.clear();
         self.selected_file_id =
@@ -1835,6 +1927,8 @@ impl ReviewController {
                             human_notes: &self.human_notes,
                             live_notes: &self.live_notes,
                             draft: self.human_note_draft.as_ref(),
+                            ask_notes: &self.ask_notes,
+                            ask_draft: self.ask_draft.as_ref(),
                             github_threads: self
                                 .github_threads
                                 .by_file
@@ -2181,6 +2275,11 @@ impl ReviewController {
                 .hunk_index
                 .map(|hunk| HunkTarget::new(&note.target.file_id, hunk))
         }));
+        targets.extend(self.ask_notes.iter().filter_map(|note| {
+            note.target
+                .hunk_index
+                .map(|hunk| HunkTarget::new(&note.target.file_id, hunk))
+        }));
         targets.sort_by(|left, right| {
             left.file_id
                 .cmp(&right.file_id)
@@ -2498,6 +2597,30 @@ fn format_note_range(prefix: char, range: LineRange) -> String {
     } else {
         format!("{prefix}{}–{prefix}{}", range.start, range.end)
     }
+}
+
+/// Answers are model output: cap them so one verbose reply cannot fill the viewport.
+fn clamp_answer(body: &str) -> String {
+    const MAX_ANSWER_LINES: usize = 80;
+    const MAX_ANSWER_BYTES: usize = 8 * 1024;
+    const TRUNCATED: &str = "… (answer truncated)";
+    let mut kept = Vec::new();
+    let mut bytes = 0usize;
+    let mut truncated = false;
+    for line in body.lines() {
+        if kept.len() >= MAX_ANSWER_LINES || bytes.saturating_add(line.len()) > MAX_ANSWER_BYTES {
+            truncated = true;
+            break;
+        }
+        bytes = bytes.saturating_add(line.len()).saturating_add(1);
+        kept.push(line);
+    }
+    let mut answer = kept.join("\n");
+    if truncated {
+        answer.push('\n');
+        answer.push_str(TRUNCATED);
+    }
+    answer
 }
 
 pub(crate) fn target_diff_context(file: &DiffFile, target: &NoteTarget) -> String {

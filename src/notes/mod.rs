@@ -10,7 +10,8 @@ pub use model::{
     AgentContext, AgentFileContext, LineRange, NoteConfidence, NoteSource, ReviewNote,
 };
 pub use target::{
-    ClearedSessionNotes, HumanNote, HumanNoteDraft, LiveNote, LiveNoteInput, NoteAnchorSide,
-    NoteBoxLayout, NoteTarget, annotated_hunks, annotation_range_label, note_box_layout,
-    note_source, resolve_note_target, resolve_ranges_target, stable_note_id,
+    AskDraft, AskNote, AskNoteState, ClearedSessionNotes, HumanNote, HumanNoteDraft, LiveNote,
+    LiveNoteInput, NoteAnchorSide, NoteBoxLayout, NoteTarget, annotated_hunks,
+    annotation_range_label, note_box_layout, note_source, resolve_note_target,
+    resolve_ranges_target, stable_note_id,
 };

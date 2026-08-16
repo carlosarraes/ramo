@@ -40,6 +40,31 @@ pub struct HumanNoteDraft {
     pub editing: Option<String>,
 }
 
+/// A question the reviewer asked an AI provider about one anchored hunk. Kept apart from
+/// `HumanNote` so answers never reach the exported review markdown or the publish count,
+/// and apart from `LiveNote` so they are never hidden by the agent-notes toggle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AskNote {
+    pub id: String,
+    pub target: NoteTarget,
+    pub question: String,
+    pub state: AskNoteState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AskNoteState {
+    Pending,
+    Answered(String),
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AskDraft {
+    pub id: String,
+    pub target: NoteTarget,
+    pub question: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveNoteInput {
     pub id: String,

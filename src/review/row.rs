@@ -1,8 +1,9 @@
 use crate::diff::model::{DiffFile, DiffLine, LineType, MovedLineKind};
 use crate::input::sanitize_terminal_text;
 use crate::notes::{
-    HumanNote, HumanNoteDraft, LiveNote, NoteBoxLayout, NoteSource, NoteTarget, ReviewNote,
-    annotation_range_label, note_box_layout, note_source, resolve_note_target, stable_note_id,
+    AskDraft, AskNote, AskNoteState, HumanNote, HumanNoteDraft, LiveNote, NoteBoxLayout,
+    NoteSource, NoteTarget, ReviewNote, annotation_range_label, note_box_layout, note_source,
+    resolve_note_target, stable_note_id,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -125,6 +126,7 @@ pub(crate) enum NoteCardKind {
     External,
     Human,
     Github,
+    Ask,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -222,6 +224,8 @@ pub(crate) struct NotePlanOptions<'a> {
     pub live_notes: &'a [LiveNote],
     pub draft: Option<&'a HumanNoteDraft>,
     pub github_threads: &'a [PlacedGithubThread],
+    pub ask_notes: &'a [AskNote],
+    pub ask_draft: Option<&'a AskDraft>,
     pub show_agent_notes: bool,
     pub content_width: u16,
 }
@@ -393,6 +397,28 @@ pub(crate) fn build_row_plan_with_notes(
         placements.push((
             anchor,
             draft_card(file, draft, layout_mode, options.content_width),
+        ));
+    }
+    // Ask cards are never gated by show_agent_notes: the reviewer asked for them by hand.
+    for note in options
+        .ask_notes
+        .iter()
+        .filter(|note| note.target.file_id == file.id)
+    {
+        let anchor = note_anchor_index(&plan.rows, &note.target);
+        placements.push((
+            anchor,
+            ask_card(file, note, layout_mode, options.content_width),
+        ));
+    }
+    if let Some(draft) = options
+        .ask_draft
+        .filter(|draft| draft.target.file_id == file.id)
+    {
+        let anchor = note_anchor_index(&plan.rows, &draft.target);
+        placements.push((
+            anchor,
+            ask_draft_card(file, draft, layout_mode, options.content_width),
         ));
     }
     if placements.is_empty() && file_level_cards.is_empty() {
@@ -1082,6 +1108,65 @@ fn draft_card(
         author: None,
         placement,
         kind: NoteCardKind::Human,
+    }
+}
+
+fn ask_card(
+    file: &DiffFile,
+    note: &AskNote,
+    layout: crate::core::input::LayoutMode,
+    width: u16,
+) -> NoteCard {
+    let placement = note_box_layout(layout, note.target.anchor_side, width);
+    let (suffix, body) = match &note.state {
+        AskNoteState::Pending => (" · asking…", String::new()),
+        AskNoteState::Answered(answer) => ("", answer.clone()),
+        AskNoteState::Failed(error) => (" · failed", error.clone()),
+    };
+    let mut text = format!("Q: {}", note.question);
+    if !body.is_empty() {
+        text.push_str("\n\n");
+        text.push_str(&body);
+    }
+    NoteCard {
+        id: note.id.clone(),
+        target: note.target.clone(),
+        source: NoteSource::Ai,
+        title: format!("Ask AI{suffix}"),
+        location: target_location(file, &note.target),
+        lines: wrap_note_text(&text, usize::from(placement.content_width)),
+        markup: None,
+        tags: Vec::new(),
+        author: None,
+        placement,
+        kind: NoteCardKind::Ask,
+    }
+}
+
+fn ask_draft_card(
+    file: &DiffFile,
+    draft: &AskDraft,
+    layout: crate::core::input::LayoutMode,
+    width: u16,
+) -> NoteCard {
+    let placement = note_box_layout(layout, draft.target.anchor_side, width);
+    let body = if draft.question.is_empty() {
+        "Ask about this change".to_owned()
+    } else {
+        draft.question.clone()
+    };
+    NoteCard {
+        id: draft.id.clone(),
+        target: draft.target.clone(),
+        source: NoteSource::Ai,
+        title: "Ask AI".into(),
+        location: target_location(file, &draft.target),
+        lines: wrap_note_text(&body, usize::from(placement.content_width)),
+        markup: None,
+        tags: Vec::new(),
+        author: None,
+        placement,
+        kind: NoteCardKind::Ask,
     }
 }
 

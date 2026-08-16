@@ -785,3 +785,36 @@ fn tiny_review_chrome_clips_without_writing_outside_the_buffer() {
     assert_eq!(buffer.area.width, 8);
     assert_eq!(buffer.area.height, 2);
 }
+
+#[test]
+fn ask_cards_render_pending_then_answered_without_the_agent_notes_toggle() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            agent_notes: false,
+            ..ReviewOptions::default()
+        },
+    );
+    let view = Viewport {
+        width: 100,
+        height: 24,
+    };
+    let id = controller.begin_ask(None, view).expect("draft anchored");
+    controller.update_ask_draft("what changed here?", view);
+    controller.commit_ask_draft(view).expect("pending question");
+
+    let pending = text(&render_controller(100, 24, &mut controller));
+    assert!(pending.contains("Ask AI"), "{pending}");
+    assert!(pending.contains("asking"), "{pending}");
+    assert!(pending.contains("Q: what changed here?"), "{pending}");
+
+    controller.resolve_ask(
+        &id,
+        ramo::notes::AskNoteState::Answered("It renames the helper.".into()),
+        view,
+    );
+    let answered = text(&render_controller(100, 24, &mut controller));
+    assert!(answered.contains("It renames the helper."), "{answered}");
+    assert!(!answered.contains("asking"), "{answered}");
+}

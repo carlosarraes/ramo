@@ -4,6 +4,7 @@ use ramo::core::input::LayoutMode;
 use ramo::diff::model::{
     DiffFile, DiffLine, FileChangeKind, FileStats, Hunk, LineType, SourceSpec,
 };
+use ramo::notes::AskNoteState;
 use ramo::remote_review::{
     GithubReviewThread, GithubThreadComment, GithubThreadSubject, RemoteLineSide,
 };
@@ -631,6 +632,74 @@ fn tests_last_orders_test_files_after_authored_files_and_survives_reload() {
         paths(&original_order),
         ["src/a.rs", "tests/a.rs", "src/b.rs", "pkg/b_test.go"]
     );
+}
+
+#[test]
+fn ask_cards_render_without_the_agent_notes_toggle_and_stay_out_of_exports() {
+    let view = viewport(100, 20);
+    let mut controller = ReviewController::new(
+        vec![file("src/a.rs", None, 2), file("src/b.rs", None, 1)],
+        ReviewOptions {
+            // The visibility trap: live and agent notes are hidden here, ask cards are not.
+            agent_notes: false,
+            ..ReviewOptions::default()
+        },
+    );
+
+    let id = controller.begin_ask(None, view).expect("draft anchored");
+    controller.update_ask_draft("why this change?", view);
+    let note = controller.commit_ask_draft(view).expect("pending question");
+    assert_eq!(note.id, id);
+    assert_eq!(note.question, "why this change?");
+    assert!(matches!(note.state, AskNoteState::Pending));
+    assert_eq!(controller.ask_notes().len(), 1);
+
+    assert!(controller.resolve_ask(&id, AskNoteState::Answered("It renames x.".into()), view));
+    assert!(matches!(
+        controller.ask_notes()[0].state,
+        AskNoteState::Answered(ref body) if body == "It renames x."
+    ));
+
+    // Ask notes are neither human notes nor exported review comments.
+    assert!(controller.human_notes().is_empty());
+    assert!(controller.export_annotations().is_empty());
+
+    // The answer is reachable by id, which is what the jump key uses.
+    controller.apply(ReviewAction::SelectNote(id.clone()), view);
+    assert_eq!(
+        controller
+            .snapshot(view)
+            .selected_position
+            .as_ref()
+            .map(|position| position.file_id.clone()),
+        Some("file:src/a.rs->src/a.rs".to_owned())
+    );
+}
+
+#[test]
+fn ask_drafts_and_notes_drop_when_their_file_disappears() {
+    let view = viewport(100, 20);
+    let mut controller =
+        ReviewController::new(vec![file("src/a.rs", None, 1)], ReviewOptions::default());
+    let id = controller.begin_ask(None, view).expect("draft anchored");
+    controller.update_ask_draft("still here?", view);
+    controller.commit_ask_draft(view).expect("pending question");
+    assert_eq!(controller.ask_notes().len(), 1);
+
+    controller.replace_files(vec![file("src/other.rs", None, 1)], view);
+    assert!(controller.ask_notes().is_empty(), "{id} should be dropped");
+}
+
+#[test]
+fn an_empty_question_discards_the_draft_without_asking() {
+    let view = viewport(100, 20);
+    let mut controller =
+        ReviewController::new(vec![file("src/a.rs", None, 1)], ReviewOptions::default());
+    controller.begin_ask(None, view);
+    controller.update_ask_draft("   ", view);
+
+    assert!(controller.commit_ask_draft(view).is_none());
+    assert!(controller.ask_notes().is_empty());
 }
 
 #[test]
