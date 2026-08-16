@@ -29,6 +29,11 @@ const PREFERENCE_KEYS: &[&str] = &[
     "ai_summaries",
     "start_on_map",
     "tests_last",
+    "ask_enabled",
+    "ask_provider",
+    "ask_model",
+    "ask_thinking",
+    "ask_timeout_secs",
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
@@ -217,7 +222,62 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
     }
     validate_test_file_patterns(path, &config)?;
     validate_review_map_config(path, &config)?;
+    validate_ask_config(path, &config)?;
     Ok(Some(config))
+}
+
+pub(crate) const ASK_THINKING_LEVELS: &[&str] =
+    &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const ASK_TIMEOUT_RANGE: std::ops::RangeInclusive<u64> = 5..=600;
+
+fn validate_ask_config(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
+    let invalid = |source: String| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    };
+    for layer in [
+        &config.global,
+        &config.diff,
+        &config.show,
+        &config.stash_show,
+        &config.patch,
+        &config.pager,
+        &config.difftool,
+    ] {
+        // Provider and model become argv for the pi CLI, so they must be single bare words.
+        for (key, value) in [
+            ("ask_provider", &layer.ask_provider),
+            ("ask_model", &layer.ask_model),
+        ] {
+            let Some(value) = value else { continue };
+            if value.trim().is_empty() {
+                return Err(invalid(format!("{key} must not be empty")));
+            }
+            if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+                return Err(invalid(format!(
+                    "{key} must not contain whitespace or control characters: {value:?}"
+                )));
+            }
+        }
+        if let Some(thinking) = &layer.ask_thinking
+            && !ASK_THINKING_LEVELS.contains(&thinking.as_str())
+        {
+            return Err(invalid(format!(
+                "ask_thinking must be one of {}: got {thinking:?}",
+                ASK_THINKING_LEVELS.join(", ")
+            )));
+        }
+        if let Some(timeout) = layer.ask_timeout_secs
+            && !ASK_TIMEOUT_RANGE.contains(&timeout)
+        {
+            return Err(invalid(format!(
+                "ask_timeout_secs must be between {} and {}: got {timeout}",
+                ASK_TIMEOUT_RANGE.start(),
+                ASK_TIMEOUT_RANGE.end()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_review_map_config(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {

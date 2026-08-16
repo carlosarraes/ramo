@@ -321,6 +321,67 @@ fn tests_last_defaults_true_and_follows_config_then_cli() {
 }
 
 #[test]
+fn ask_ai_is_off_by_default_and_layers_like_other_preferences() {
+    let defaults = ConfigResolver::new(ConfigPaths::default())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert!(!defaults.ask_enabled, "remote inference must be opt-in");
+    assert_eq!(defaults.ask_provider, "opencode-go");
+    assert_eq!(defaults.ask_model, "deepseek-v4-flash");
+    assert_eq!(defaults.ask_thinking, "max");
+    assert_eq!(defaults.ask_timeout_secs, 180);
+
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(
+        &user,
+        "ask_enabled = true\nask_model = \"deepseek-v4-pro\"\nask_timeout_secs = 60\n",
+    )
+    .unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+    assert!(resolved.ask_enabled);
+    assert_eq!(resolved.ask_model, "deepseek-v4-pro");
+    assert_eq!(resolved.ask_timeout_secs, 60);
+}
+
+#[test]
+fn invalid_ask_configuration_names_the_key_and_the_allowed_values() {
+    let temp = tempfile::tempdir().unwrap();
+    for (source, expected) in [
+        ("ask_model = \"\"\n", "ask_model must not be empty"),
+        (
+            "ask_provider = \"opencode go\"\n",
+            "ask_provider must not contain whitespace",
+        ),
+        (
+            "ask_thinking = \"maximum\"\n",
+            "ask_thinking must be one of",
+        ),
+        ("ask_timeout_secs = 0\n", "ask_timeout_secs must be between"),
+        (
+            "ask_timeout_secs = 1000\n",
+            "ask_timeout_secs must be between",
+        ),
+    ] {
+        let path = temp.path().join(format!("invalid-{}.toml", source.len()));
+        std::fs::write(&path, source).unwrap();
+        let error = ConfigResolver::new(ConfigPaths {
+            user: Some(path),
+            repo: None,
+        })
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains(expected), "{source:?} produced {error}");
+    }
+}
+
+#[test]
 fn review_map_configuration_is_local_optional_and_validated() {
     let defaults = ConfigResolver::new(ConfigPaths::default())
         .resolve(&patch_input(CommonOptions::default()))

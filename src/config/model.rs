@@ -57,6 +57,11 @@ pub struct ConfigLayer {
     pub ai_summaries: Option<bool>,
     pub start_on_map: Option<bool>,
     pub tests_last: Option<bool>,
+    pub ask_enabled: Option<bool>,
+    pub ask_provider: Option<String>,
+    pub ask_model: Option<String>,
+    pub ask_thinking: Option<String>,
+    pub ask_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -102,6 +107,11 @@ pub struct ResolvedConfig {
     pub ai_summaries: bool,
     pub start_on_map: bool,
     pub tests_last: bool,
+    pub ask_enabled: bool,
+    pub ask_provider: String,
+    pub ask_model: String,
+    pub ask_thinking: String,
+    pub ask_timeout_secs: u64,
     pub custom_theme: Option<CustomThemeConfig>,
     pub startup_notices: Vec<String>,
 }
@@ -129,6 +139,12 @@ impl Default for ResolvedConfig {
             ai_summaries: true,
             start_on_map: true,
             tests_last: true,
+            // Remote inference is opt-in: enabling it sends diff hunks off this machine.
+            ask_enabled: false,
+            ask_provider: "opencode-go".into(),
+            ask_model: "deepseek-v4-flash".into(),
+            ask_thinking: "max".into(),
+            ask_timeout_secs: 180,
             custom_theme: None,
             startup_notices: Vec::new(),
         }
@@ -177,6 +193,19 @@ impl ResolvedConfig {
         apply(&mut self.ai_summaries, layer.ai_summaries);
         apply(&mut self.start_on_map, layer.start_on_map);
         apply(&mut self.tests_last, layer.tests_last);
+        apply(&mut self.ask_enabled, layer.ask_enabled);
+        if let Some(provider) = &layer.ask_provider {
+            self.ask_provider.clone_from(provider);
+        }
+        if let Some(model) = &layer.ask_model {
+            self.ask_model.clone_from(model);
+        }
+        if let Some(thinking) = &layer.ask_thinking {
+            self.ask_thinking.clone_from(thinking);
+        }
+        if let Some(timeout) = layer.ask_timeout_secs {
+            self.ask_timeout_secs = timeout;
+        }
     }
 }
 
