@@ -259,7 +259,7 @@ fn remaining_direct_bindings_and_modifier_precedence_are_exact() {
         (key(KeyCode::Home), review(ReviewAction::JumpTop)),
         (key(KeyCode::End), review(ReviewAction::JumpBottom)),
         (
-            key(KeyCode::Char('a')),
+            key(KeyCode::Char('i')),
             review(ReviewAction::ToggleAgentNotes),
         ),
         (

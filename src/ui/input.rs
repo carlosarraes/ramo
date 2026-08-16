@@ -233,7 +233,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('s') => review(ReviewAction::ToggleSidebar),
         KeyCode::Char('t') => review(ReviewAction::OpenThemeSelector),
         KeyCode::Char('T') => review(ReviewAction::ToggleTestFiles),
-        KeyCode::Char('a') => review(ReviewAction::ToggleAgentNotes),
+        KeyCode::Char('i') => review(ReviewAction::ToggleAgentNotes),
         KeyCode::Char('A') => Some(AppAction::OpenAgentSkill),
         KeyCode::Char('z') => Some(AppAction::ToggleContext),
         KeyCode::Char('v') => review(ReviewAction::ToggleFileViewed),

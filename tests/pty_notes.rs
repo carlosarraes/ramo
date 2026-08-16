@@ -218,7 +218,7 @@ fn agent_notes_toggle_in_the_live_review() {
     );
     let initial = process.read_until("println!");
     assert!(!initial.contains("Agent finding visible"));
-    process.send("a");
+    process.send("i");
     process.read_until("Agent finding visible");
     process.send("q");
     assert_eq!(process.wait(), 0);

@@ -42,6 +42,7 @@ fn help_lists_real_direct_bindings_and_contains_no_menu_instructions() {
         "{ / }",
         "1 / 2 / 0",
         "s / t",
+        "i / z",
         "h / l",
         "n / w / m",
         "/",

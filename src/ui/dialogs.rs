@@ -43,7 +43,7 @@ pub fn help_text(can_refresh: bool) -> String {
     let view: &[(&str, &str)] = &[
         ("1 / 2 / 0", "split / stack / auto"),
         ("s / t", "sidebar / theme selector"),
-        ("a / z", "AI notes / unchanged context"),
+        ("i / z", "AI notes / unchanged context"),
         ("T", "compact test files"),
         ("v", "toggle file viewed"),
         ("Enter", "expand / un-view compact file"),
