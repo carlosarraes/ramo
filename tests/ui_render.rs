@@ -871,3 +871,36 @@ fn the_ask_badge_shows_unread_answers_next_to_progress() {
     };
     assert!(!without_badge.contains("AI"), "{without_badge}");
 }
+
+#[test]
+fn a_rejected_model_stays_readable_on_the_failed_card() {
+    let mut controller = ReviewController::new(
+        vec![file("src/lib.rs", FileChangeKind::Modified, 2)],
+        ReviewOptions {
+            layout: LayoutMode::Stack,
+            ..ReviewOptions::default()
+        },
+    );
+    let view = Viewport {
+        width: 100,
+        height: 24,
+    };
+    let id = controller.begin_ask(None, view).expect("draft anchored");
+    controller.update_ask_draft("what is this?", view);
+    controller.commit_ask_draft(view).expect("pending question");
+    let error = ramo::ask::AskError::ModelRejected {
+        provider: "opencode-go".into(),
+        model: "deepseek-v4-flash".into(),
+        stderr: "Model is not supported".into(),
+    }
+    .to_string();
+    controller.resolve_ask(&id, ramo::notes::AskNoteState::Failed(error), view);
+
+    let frame = text(&render_controller(100, 24, &mut controller));
+    assert!(frame.contains("failed"), "{frame}");
+    // Wrapping may break the sentence, but never the model id the user must copy into
+    // their config, nor the flag that lists the valid ids.
+    assert!(frame.contains("deepseek-v4-flash"), "{frame}");
+    assert!(frame.contains("--list-models"), "{frame}");
+    assert!(frame.contains("ask_model"), "{frame}");
+}
