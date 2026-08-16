@@ -2500,7 +2500,7 @@ fn format_note_range(prefix: char, range: LineRange) -> String {
     }
 }
 
-fn target_diff_context(file: &DiffFile, target: &NoteTarget) -> String {
+pub(crate) fn target_diff_context(file: &DiffFile, target: &NoteTarget) -> String {
     const MAX_CONTEXT_LINES: usize = 40;
     const MAX_CONTEXT_BYTES: usize = 16 * 1024;
     let mut output = String::new();
