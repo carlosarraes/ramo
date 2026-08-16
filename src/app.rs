@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -12,6 +12,7 @@ use ratatui::layout::Rect;
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::annotations::model::Annotation;
+use crate::ask::{AskError, AskId, AskRequest, AskRuntime, AskUpdate, PiCli};
 use crate::config::{
     ResolvedConfig, ViewPreferenceChanges, ViewPreferences, save_view_preferences,
 };
@@ -292,6 +293,39 @@ pub struct App {
     review_map: Option<ReviewMapController>,
     review_map_runtime: Option<ReviewMapRuntime>,
     review_map_restart: Option<(ReviewMapClient, ReviewMapResolveRequest)>,
+    ask_settings: AskSettings,
+    ask_runtime: AskRuntime,
+    ask_jobs: HashMap<AskId, String>,
+    ask_runner: AskRunner,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AskSettings {
+    enabled: bool,
+    provider: String,
+    model: String,
+    thinking: String,
+    timeout: Duration,
+}
+
+impl AskSettings {
+    fn from_config(config: &ResolvedConfig, pager_mode: bool) -> Self {
+        Self {
+            // Pager mode is a `git` pager context; never ship hunks remotely from there.
+            enabled: config.ask_enabled && !pager_mode,
+            provider: config.ask_provider.clone(),
+            model: config.ask_model.clone(),
+            thinking: config.ask_thinking.clone(),
+            timeout: Duration::from_secs(config.ask_timeout_secs),
+        }
+    }
+}
+
+/// Builds the blocking job a worker thread runs. Swappable so tests never spawn `pi`.
+type AskRunner = Box<dyn Fn(AskRequest) -> Box<dyn FnOnce() -> Result<String, AskError> + Send>>;
+
+fn pi_ask_runner() -> AskRunner {
+    Box::new(|request| Box::new(move || PiCli::new(SystemCommandExecutor).ask(&request)))
 }
 
 impl App {
@@ -433,6 +467,10 @@ impl App {
             review_map: None,
             review_map_runtime: None,
             review_map_restart: None,
+            ask_settings: AskSettings::from_config(config, pager_mode),
+            ask_runtime: AskRuntime::new(),
+            ask_jobs: HashMap::new(),
+            ask_runner: pi_ask_runner(),
         }
     }
 
@@ -470,6 +508,21 @@ impl App {
 
     pub fn screen(&self) -> AppScreen {
         self.screen
+    }
+
+    /// Replaces the provider job factory. Tests use this to resolve questions without
+    /// spawning `pi`; production keeps the default pi-backed runner.
+    pub fn with_ask_runner<F, J>(mut self, runner: F) -> Self
+    where
+        F: Fn(AskRequest) -> J + 'static,
+        J: FnOnce() -> Result<String, AskError> + Send + 'static,
+    {
+        self.ask_runner = Box::new(move |request| Box::new(runner(request)));
+        self
+    }
+
+    pub fn poll_ask_for_tests(&mut self, viewport: Viewport) -> bool {
+        self.poll_ask(viewport)
     }
 
     pub fn review_map_snapshot(&self) -> Option<crate::review_map::ReviewMapSnapshot> {
@@ -658,6 +711,7 @@ impl App {
                 needs_redraw |= self.apply_session_requests(viewport, watch.as_deref_mut());
                 needs_redraw |= self.poll_startup_notices(Instant::now());
                 needs_redraw |= self.poll_review_map();
+                needs_redraw |= self.poll_ask(viewport);
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
@@ -1876,6 +1930,14 @@ impl App {
     }
 
     fn start_ask(&mut self, viewport: Viewport) {
+        if !self.ask_settings.enabled {
+            self.toast = Some(
+                "Ask AI is off; set ask_enabled = true in your ramo config (it sends the selected \
+                 diff hunk to a remote provider)"
+                    .into(),
+            );
+            return;
+        }
         if self
             .review_controller
             .begin_ask(self.review_selection, viewport)
@@ -1884,6 +1946,70 @@ impl App {
             self.comment_buf.clear();
             self.input_mode = InputMode::Ask;
         }
+    }
+
+    /// Hands the committed question to a worker thread; the answer arrives via `poll_ask`.
+    fn dispatch_ask(&mut self, note: crate::notes::AskNote, viewport: Viewport) {
+        let Some(file) = self
+            .review_controller
+            .files()
+            .iter()
+            .find(|file| file.id == note.target.file_id)
+        else {
+            return;
+        };
+        let request = AskRequest {
+            provider: self.ask_settings.provider.clone(),
+            model: self.ask_settings.model.clone(),
+            thinking: self.ask_settings.thinking.clone(),
+            timeout: self.ask_settings.timeout,
+            prompt: crate::ask::compose_prompt(file, &note.target, &note.question),
+            system_prompt: crate::ask::SYSTEM_PROMPT.to_owned(),
+        };
+        let job = (self.ask_runner)(request);
+        match self.ask_runtime.start(job) {
+            Ok(id) => {
+                self.ask_jobs.insert(id, note.id);
+                self.toast = Some("Asking AI…".into());
+            }
+            Err(busy) => {
+                // Anchor the refusal on the card; a toast alone would vanish on the next key.
+                self.review_controller.resolve_ask(
+                    &note.id,
+                    crate::notes::AskNoteState::Failed(busy.to_string()),
+                    viewport,
+                );
+            }
+        }
+    }
+
+    fn poll_ask(&mut self, viewport: Viewport) -> bool {
+        let mut changed = false;
+        for _ in 0..8 {
+            let Some(update) = self.ask_runtime.try_recv() else {
+                break;
+            };
+            let (id, state, toast) = match update {
+                AskUpdate::Answered { id, body } => (
+                    id,
+                    crate::notes::AskNoteState::Answered(body),
+                    "AI answer ready".to_owned(),
+                ),
+                AskUpdate::Failed { id, message } => (
+                    id,
+                    crate::notes::AskNoteState::Failed(message.clone()),
+                    message,
+                ),
+            };
+            if let Some(note_id) = self.ask_jobs.remove(&id) {
+                self.review_controller
+                    .resolve_ask(&note_id, state, viewport);
+                self.toast = Some(toast);
+                changed = true;
+            }
+        }
+        self.ask_runtime.reap();
+        changed
     }
 
     fn persist_theme_choice(&mut self) {
@@ -1993,7 +2119,9 @@ impl App {
             InputMode::Ask => {
                 self.review_controller
                     .update_ask_draft(&self.comment_buf, viewport);
-                self.review_controller.commit_ask_draft(viewport);
+                if let Some(note) = self.review_controller.commit_ask_draft(viewport) {
+                    self.dispatch_ask(note, viewport);
+                }
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
                 self.clear_review_selection();
