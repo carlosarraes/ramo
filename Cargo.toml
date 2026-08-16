@@ -15,7 +15,7 @@ rust-version = "1.85"
 
 [package]
 name = "ramo"
-version = "0.0.19"
+version = "0.0.20"
 edition = "2024"
 
 [lib]
