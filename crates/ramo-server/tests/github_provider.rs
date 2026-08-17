@@ -187,6 +187,7 @@ fn snapshot_fixture() -> PullRequestSnapshot {
             repository_url: "https://github.com/owner/repo".into(),
             number: 7,
             title: "Review map".into(),
+            body: String::new(),
             url: "https://github.com/owner/repo/pull/7".into(),
             base_ref: "main".into(),
             base_revision: "base-sha".into(),

@@ -1211,35 +1211,53 @@ fn target_location(file: &DiffFile, target: &NoteTarget) -> String {
     )
 }
 
-fn wrap_note_text(text: &str, width: usize) -> Vec<String> {
+/// Word-wraps to `width`, preserving each source line's leading whitespace and hanging
+/// continuations under it. The indentation matters for anything Markdown-shaped — nested
+/// list items and fenced code lose their structure without it.
+pub(crate) fn wrap_note_text(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let mut output = Vec::new();
     for source_line in text.lines() {
-        let mut current = String::new();
-        let mut current_width = 0usize;
-        for word in source_line.split_whitespace() {
+        let trimmed = source_line.trim_start();
+        let indent = &source_line[..source_line.len() - trimmed.len()];
+        // Deep indentation on a narrow pane would leave no room for the text itself.
+        let indent = if UnicodeWidthStr::width(indent).saturating_add(4) <= width {
+            indent
+        } else {
+            ""
+        };
+        let indent_width = UnicodeWidthStr::width(indent);
+        let mut current = indent.to_owned();
+        let mut current_width = indent_width;
+        for word in trimmed.split_whitespace() {
             let word_width = UnicodeWidthStr::width(word);
-            if current_width > 0 && current_width.saturating_add(1 + word_width) <= width {
+            if current_width > indent_width && current_width.saturating_add(1 + word_width) <= width
+            {
                 current.push(' ');
                 current.push_str(word);
                 current_width += 1 + word_width;
-            } else {
-                if !current.is_empty() {
+                continue;
+            }
+            if current_width > indent_width {
+                output.push(std::mem::take(&mut current));
+                current = indent.to_owned();
+                current_width = indent_width;
+            }
+            // A single word longer than the pane is broken across lines.
+            for character in word.chars() {
+                let character_width = character.width().unwrap_or(0);
+                if current_width > indent_width
+                    && current_width.saturating_add(character_width) > width
+                {
                     output.push(std::mem::take(&mut current));
-                    current_width = 0;
+                    current = indent.to_owned();
+                    current_width = indent_width;
                 }
-                for character in word.chars() {
-                    let character_width = character.width().unwrap_or(0);
-                    if current_width > 0 && current_width.saturating_add(character_width) > width {
-                        output.push(std::mem::take(&mut current));
-                        current_width = 0;
-                    }
-                    current.push(character);
-                    current_width = current_width.saturating_add(character_width);
-                }
+                current.push(character);
+                current_width = current_width.saturating_add(character_width);
             }
         }
-        if !current.is_empty() {
+        if current_width > indent_width {
             output.push(current);
         } else if source_line.is_empty() {
             output.push(String::new());

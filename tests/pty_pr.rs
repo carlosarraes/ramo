@@ -165,8 +165,8 @@ case "$*" in
   "repo view --json nameWithOwner,url")
     printf '%s\n' '{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo"}'
     ;;
-  "pr view 123 --json number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid")
-    printf '%s\n' '{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"base123","headRefName":"feature","headRefOid":"head123"}'
+  "pr view 123 --json number,title,body,url,author,baseRefName,baseRefOid,headRefName,headRefOid")
+    printf '%s\n' '{"number":123,"title":"Improve review flow","body":"PR_DESCRIPTION_BODY","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"base123","headRefName":"feature","headRefOid":"head123"}'
     ;;
   "pr diff 123 --color=never")
     printf '%s\n' 'diff --git a/src/lib.rs b/src/lib.rs' '--- a/src/lib.rs' '+++ b/src/lib.rs' '@@ -0,0 +1,2 @@' '+FIRST_PR_LINE' '+SECOND_PR_LINE'
@@ -309,4 +309,38 @@ fn with_comments_shows_existing_feedback_but_publishes_only_new_comments() {
             .unwrap()
             .contains("api graphql")
     );
+}
+
+#[test]
+fn p_shows_the_pull_request_description_and_returns_to_the_diff() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join(".ramo/config.toml");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "prompt_save_view_preferences = false\n").unwrap();
+    let (path, payload, source_log, call_log) = fake_gh(temp.path());
+    let mut process = PtyProcess::spawn(temp.path(), &path, &payload, &source_log, &call_log, &[]);
+
+    process.read_until("Review Map");
+    process.send("j\r");
+    process.read_until("FIRST_PR_LINE");
+
+    let opened = process.mark();
+    process.send("P");
+    let screen = process.read_since_until(opened, "PR_DESCRIPTION_BODY");
+    assert!(screen.contains("PR #123"), "{screen}");
+    assert!(screen.contains("Improve review flow"), "{screen}");
+    assert!(
+        screen.contains("author wants to merge feature into main"),
+        "{screen}"
+    );
+
+    // `P` returns to exactly the diff it was opened from.
+    let closed = process.mark();
+    process.send("P");
+    process.read_since_until(closed, "FIRST_PR_LINE");
+
+    process.send("q");
+    process.read_until("no inline comments");
+    process.send("d");
+    assert_eq!(process.wait(), 0);
 }

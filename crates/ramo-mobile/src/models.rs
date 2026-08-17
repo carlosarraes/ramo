@@ -560,6 +560,7 @@ mod tests {
                 repository_url: "https://github.com/ramo/ramo".into(),
                 number: 7,
                 title: "Mobile".into(),
+                body: String::new(),
                 url: "https://github.com/ramo/ramo/pull/7".into(),
                 base_ref: "main".into(),
                 base_revision: "base".into(),

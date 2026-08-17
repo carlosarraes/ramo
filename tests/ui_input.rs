@@ -7,7 +7,7 @@ use ramo::diff::model::{
 };
 use ramo::review::{ReviewAction, ReviewSide, ScrollUnit, Viewport};
 use ramo::review_map::{ReviewMapAction, ReviewMapRow};
-use ramo::ui::input::{AppAction, InputMode, map_key_event};
+use ramo::ui::input::{AppAction, InputMode, PrScroll, map_key_event};
 use ramo_core::review_map::{
     ClassifierConfig, ReviewMapIdentity, ReviewMapInput, ReviewMapInputFile, build_review_map,
 };
@@ -760,5 +760,56 @@ fn pull_request_dialog_modes_own_their_documented_keys() {
     assert_eq!(
         map_key_event(key(KeyCode::Enter), InputMode::Message, false),
         Some(AppAction::DismissMessage)
+    );
+}
+
+#[test]
+fn p_opens_the_pr_description_and_that_mode_owns_its_scroll_keys() {
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('P')), InputMode::Normal, false),
+        Some(AppAction::TogglePrDescription)
+    );
+    // A pull request is never a pager context, so the key is inert there.
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('P')), InputMode::Normal, true),
+        None
+    );
+
+    for (code, expected) in [
+        (KeyCode::Char('j'), PrScroll::Line(1)),
+        (KeyCode::Down, PrScroll::Line(1)),
+        (KeyCode::Char('k'), PrScroll::Line(-1)),
+        (KeyCode::Char('d'), PrScroll::HalfPage(1)),
+        (KeyCode::Char('u'), PrScroll::HalfPage(-1)),
+        (KeyCode::Char('b'), PrScroll::Page(-1)),
+        (KeyCode::Char('g'), PrScroll::Top),
+        (KeyCode::Char('G'), PrScroll::Bottom),
+    ] {
+        assert_eq!(
+            map_key_event(key(code), InputMode::PrDescription, false),
+            Some(AppAction::ScrollPrDescription(expected)),
+            "{code:?}"
+        );
+    }
+    assert_eq!(
+        map_key_event(
+            controlled(KeyCode::Char('d')),
+            InputMode::PrDescription,
+            false
+        ),
+        Some(AppAction::ScrollPrDescription(PrScroll::HalfPage(1)))
+    );
+
+    for code in [KeyCode::Char('P'), KeyCode::Char('q'), KeyCode::Esc] {
+        assert_eq!(
+            map_key_event(key(code), InputMode::PrDescription, false),
+            Some(AppAction::TogglePrDescription),
+            "{code:?}"
+        );
+    }
+    // Typing keys must not leak into the review underneath.
+    assert_eq!(
+        map_key_event(key(KeyCode::Char('c')), InputMode::PrDescription, false),
+        None
     );
 }

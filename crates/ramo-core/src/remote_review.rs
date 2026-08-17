@@ -119,6 +119,10 @@ pub struct PullRequestReviewContext {
     pub repository_url: String,
     pub number: u64,
     pub title: String,
+    /// The pull request description. Defaulted so payloads serialized before this field
+    /// existed still deserialize, and because an empty description is perfectly normal.
+    #[serde(default)]
+    pub body: String,
     pub url: String,
     pub base_ref: String,
     pub base_revision: String,

@@ -244,7 +244,7 @@ impl<E: CommandExecutor> GithubCli<E> {
                 "view",
                 &number,
                 "--json",
-                "number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid",
+                "number,title,body,url,author,baseRefName,baseRefOid,headRefName,headRefOid",
             ],
         )?;
         parse_json(GithubOperation::ResolvePullRequest, &text)
@@ -361,6 +361,7 @@ impl<E: CommandExecutor> GithubPullRequestSource for GithubCli<E> {
             repository_url: repository.url,
             number,
             title: pull_request.title,
+            body: pull_request.body,
             url: pull_request.url,
             base_ref: pull_request.base_ref_name,
             base_revision: pull_request.base_ref_oid,
@@ -533,6 +534,9 @@ struct RawRepository {
 struct RawPullRequest {
     number: u64,
     title: String,
+    // An empty description is normal, so this is defaulted rather than required.
+    #[serde(default)]
+    body: String,
     url: String,
     author: RawAuthor,
     base_ref_name: String,

@@ -39,7 +39,8 @@ use crate::startup_notice::{RemoteUpdatePoll, RemoteUpdateRuntime};
 use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
-use crate::ui::input::{AppAction, InputMode, map_key_event, map_mouse_event};
+use crate::ui::input::{AppAction, InputMode, PrScroll, map_key_event, map_mouse_event};
+use crate::ui::pr_description::{PrDescription, PrDescriptionWidget};
 use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
 use crate::ui::review_map::{ReviewMapHitTarget, ReviewMapWidget, review_map_hits};
 use crate::ui::themes::{AppTheme, ThemeRegistry};
@@ -131,6 +132,7 @@ pub enum ViewLayout {
 pub enum AppScreen {
     ReviewMap,
     Review,
+    PrDescription,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -299,6 +301,10 @@ pub struct App {
     ask_runner: AskRunner,
     ask_unseen: VecDeque<String>,
     review_message: Option<String>,
+    /// Built on first `P` and re-wrapped on resize; `None` until the screen is opened.
+    pr_description: Option<PrDescription>,
+    /// The screen `P` was opened from, so closing returns exactly where it started.
+    pr_description_origin: AppScreen,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -475,6 +481,8 @@ impl App {
             ask_runner: pi_ask_runner(),
             ask_unseen: VecDeque::new(),
             review_message: config.review_message.clone(),
+            pr_description: None,
+            pr_description_origin: AppScreen::Review,
         }
     }
 
@@ -1051,6 +1059,18 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        if self.screen == AppScreen::PrDescription {
+            if let (Some(session), Some(description)) =
+                (self.remote_review.as_ref(), self.pr_description.as_mut())
+            {
+                description.resize(&session.context.body, area.width, area.height);
+                frame.render_widget(
+                    PrDescriptionWidget::new(&session.context, description, &self.review_theme),
+                    area,
+                );
+            }
+            return;
+        }
         if self.screen == AppScreen::ReviewMap {
             if let Some(controller) = &self.review_map {
                 let snapshot = controller.snapshot();
@@ -1177,7 +1197,11 @@ impl App {
                     );
                 }
             }
-            InputMode::Normal | InputMode::Filter | InputMode::ReviewMap => {}
+            // PrDescription owns the whole screen and returned before this match.
+            InputMode::Normal
+            | InputMode::Filter
+            | InputMode::ReviewMap
+            | InputMode::PrDescription => {}
         }
         if matches!(self.mode, Mode::TmuxPanePick) {
             frame.render_widget(
@@ -1398,6 +1422,8 @@ impl App {
                 }
             }
             AppAction::ToggleReviewMap => self.toggle_review_map(viewport),
+            AppAction::TogglePrDescription => self.toggle_pr_description(viewport),
+            AppAction::ScrollPrDescription(step) => self.scroll_pr_description(step, viewport),
             AppAction::JumpAskAnswer => self.jump_to_ask_answer(viewport),
             AppAction::FocusReviewMapFilter => {
                 self.input_mode = InputMode::Filter;
@@ -1625,6 +1651,43 @@ impl App {
             }
             ReviewMapEffect::OpenHelp => self.input_mode = InputMode::Help,
             ReviewMapEffect::None | ReviewMapEffect::Redraw => {}
+        }
+    }
+
+    fn toggle_pr_description(&mut self, viewport: Viewport) {
+        if self.screen == AppScreen::PrDescription {
+            self.screen = self.pr_description_origin;
+            self.input_mode = if self.screen == AppScreen::ReviewMap {
+                InputMode::ReviewMap
+            } else {
+                InputMode::Normal
+            };
+            return;
+        }
+        let Some(session) = self.remote_review.as_ref() else {
+            self.toast = Some("No pull request is open".into());
+            return;
+        };
+        // The viewport is the diff pane rather than the whole terminal, so the widget
+        // re-wraps to the real width on its first draw.
+        self.pr_description = Some(PrDescription::new(&session.context.body, viewport.width));
+        self.pr_description_origin = self.screen;
+        self.screen = AppScreen::PrDescription;
+        self.input_mode = InputMode::PrDescription;
+    }
+
+    fn scroll_pr_description(&mut self, step: PrScroll, viewport: Viewport) {
+        let Some(description) = self.pr_description.as_mut() else {
+            return;
+        };
+        let height = viewport.height.max(1);
+        let page = i32::from(height);
+        match step {
+            PrScroll::Line(delta) => description.scroll(delta, height),
+            PrScroll::HalfPage(delta) => description.scroll(delta * (page / 2).max(1), height),
+            PrScroll::Page(delta) => description.scroll(delta * page.max(1), height),
+            PrScroll::Top => description.scroll_to_top(),
+            PrScroll::Bottom => description.scroll_to_bottom(height),
         }
     }
 
@@ -2131,6 +2194,7 @@ impl App {
                 self.review_selection = None;
             }
             InputMode::ReviewMap => self.show_review_screen(),
+            InputMode::PrDescription => self.toggle_pr_description(viewport),
         }
     }
 

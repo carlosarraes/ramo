@@ -35,6 +35,7 @@ impl GithubClient {
                 repository_url: format!("https://github.com/{}", key.repository),
                 number: key.number,
                 title: pull.title,
+                body: String::new(),
                 url: pull.html_url,
                 base_ref: pull.base.reference,
                 base_revision: pull.base.sha,

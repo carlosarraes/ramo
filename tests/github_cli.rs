@@ -46,6 +46,7 @@ fn context() -> PullRequestReviewContext {
         repository_url: "https://github.com/owner/repo".into(),
         number: 123,
         title: "Improve review flow".into(),
+        body: "Summary\n\n- faster\n- clearer".into(),
         url: "https://github.com/owner/repo/pull/123".into(),
         base_ref: "main".into(),
         base_revision: "base123".into(),
@@ -68,7 +69,7 @@ fn resolve_and_diff_use_exact_literal_argv() {
             ),
             result(
                 0,
-                r#"{"number":123,"title":"Improve review flow","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"base123","headRefName":"feature","headRefOid":"head123"}"#,
+                r#"{"number":123,"title":"Improve review flow","body":"Summary\n\n- faster\n- clearer","url":"https://github.com/owner/repo/pull/123","author":{"login":"author"},"baseRefName":"main","baseRefOid":"base123","headRefName":"feature","headRefOid":"head123"}"#,
                 "",
             ),
             result(0, "diff --git a/a b/a\n", ""),
@@ -96,7 +97,7 @@ fn resolve_and_diff_use_exact_literal_argv() {
             "view",
             "123",
             "--json",
-            "number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid"
+            "number,title,body,url,author,baseRefName,baseRefOid,headRefName,headRefOid"
         ]
     );
     assert_eq!(

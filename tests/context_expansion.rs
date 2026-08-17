@@ -388,6 +388,7 @@ fn pull_request_app(loader: Box<dyn ContextSourceLoader>) -> App {
             repository_url: "https://github.com/owner/repo".into(),
             number: 123,
             title: "Improve review flow".into(),
+            body: String::new(),
             url: "https://github.com/owner/repo/pull/123".into(),
             base_ref: "main".into(),
             base_revision: "base123".into(),

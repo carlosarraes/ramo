@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ramo::app::{App, RemoteReviewOutcome};
+use ramo::app::{App, AppScreen, RemoteReviewOutcome};
 use ramo::config::ResolvedConfig;
 use ramo::core::input::LayoutMode;
 use ramo::diff::parser::parse_unified_diff;
@@ -60,6 +60,7 @@ fn context(author: &str, viewer: &str) -> PullRequestReviewContext {
         repository_url: "https://github.com/owner/repo".into(),
         number: 123,
         title: "Improve review flow".into(),
+        body: String::new(),
         url: "https://github.com/owner/repo/pull/123".into(),
         base_ref: "main".into(),
         base_revision: "base123".into(),
@@ -176,6 +177,49 @@ fn an_edited_overall_comment_still_wins_over_a_configured_review_message() {
     app.handle_ui_key(key(KeyCode::Char('c')), VIEWPORT);
 
     assert_eq!(calls.borrow().submissions[0].body, "typed by hand");
+}
+
+#[test]
+fn p_opens_the_pr_description_and_returns_to_the_review() {
+    let (mut app, _) = app("abc123");
+    assert_eq!(app.screen(), AppScreen::Review);
+
+    app.handle_ui_key(key(KeyCode::Char('P')), VIEWPORT);
+    assert_eq!(app.screen(), AppScreen::PrDescription);
+    assert_eq!(app.input_mode(), InputMode::PrDescription);
+
+    app.handle_ui_key(key(KeyCode::Char('P')), VIEWPORT);
+    assert_eq!(app.screen(), AppScreen::Review);
+    assert_eq!(app.input_mode(), InputMode::Normal);
+
+    // Escape and `q` are the other two ways out; `q` must not quit the app from here.
+    app.handle_ui_key(key(KeyCode::Char('P')), VIEWPORT);
+    app.handle_ui_key(key(KeyCode::Char('q')), VIEWPORT);
+    assert_eq!(app.screen(), AppScreen::Review);
+    assert!(!app.should_quit);
+}
+
+#[test]
+fn p_without_a_pull_request_explains_itself() {
+    let files = parse_unified_diff(concat!(
+        "diff --git a/src/lib.rs b/src/lib.rs\n",
+        "--- a/src/lib.rs\n",
+        "+++ b/src/lib.rs\n",
+        "@@ -0,0 +1 @@\n",
+        "+new\n",
+    ));
+    let mut app = App::new_with_config(files, &ResolvedConfig::default(), false);
+
+    app.handle_ui_key(key(KeyCode::Char('P')), VIEWPORT);
+
+    assert_eq!(app.screen(), AppScreen::Review);
+    assert!(
+        app.toast
+            .as_deref()
+            .is_some_and(|toast| toast.contains("No pull request")),
+        "{:?}",
+        app.toast
+    );
 }
 
 #[test]

@@ -20,6 +20,18 @@ pub enum InputMode {
     OverallComment,
     Message,
     ReviewMap,
+    PrDescription,
+}
+
+/// Scroll steps for the PR description. `Line`/`Page` deltas are in units; `Top` and
+/// `Bottom` clamp, so the screen needs no notion of content height to dispatch them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrScroll {
+    Line(i32),
+    HalfPage(i32),
+    Page(i32),
+    Top,
+    Bottom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +39,8 @@ pub enum AppAction {
     Review(ReviewAction),
     ReviewMap(ReviewMapAction),
     ToggleReviewMap,
+    TogglePrDescription,
+    ScrollPrDescription(PrScroll),
     JumpAskAnswer,
     FocusReviewMapFilter,
     Insert(char),
@@ -90,6 +104,7 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
             KeyCode::Esc => Some(AppAction::KeepReviewing),
             _ => None,
         },
+        InputMode::PrDescription => map_pr_description(event),
         InputMode::OverallComment => map_overall_comment(event),
         InputMode::Message => match event.code {
             KeyCode::Enter | KeyCode::Esc => Some(AppAction::DismissMessage),
@@ -100,6 +115,37 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
         None
     } else {
         action
+    }
+}
+
+fn map_pr_description(event: KeyEvent) -> Option<AppAction> {
+    if event.modifiers.contains(KeyModifiers::CONTROL) {
+        return match event.code {
+            KeyCode::Char('d') => Some(AppAction::ScrollPrDescription(PrScroll::HalfPage(1))),
+            KeyCode::Char('u') => Some(AppAction::ScrollPrDescription(PrScroll::HalfPage(-1))),
+            _ => None,
+        };
+    }
+    if event.modifiers.contains(KeyModifiers::ALT) {
+        return None;
+    }
+    let scroll = |step| Some(AppAction::ScrollPrDescription(step));
+    match event.code {
+        KeyCode::Down | KeyCode::Char('j') => scroll(PrScroll::Line(1)),
+        KeyCode::Up | KeyCode::Char('k') => scroll(PrScroll::Line(-1)),
+        KeyCode::Char('d') => scroll(PrScroll::HalfPage(1)),
+        KeyCode::Char('u') => scroll(PrScroll::HalfPage(-1)),
+        KeyCode::Char(' ') if event.modifiers.contains(KeyModifiers::SHIFT) => {
+            scroll(PrScroll::Page(-1))
+        }
+        KeyCode::Char(' ') | KeyCode::Char('f') | KeyCode::PageDown => scroll(PrScroll::Page(1)),
+        KeyCode::Char('b') | KeyCode::PageUp => scroll(PrScroll::Page(-1)),
+        KeyCode::Char('g') | KeyCode::Home => scroll(PrScroll::Top),
+        KeyCode::Char('G') | KeyCode::End => scroll(PrScroll::Bottom),
+        KeyCode::Char('P') | KeyCode::Char('q') | KeyCode::Esc => {
+            Some(AppAction::TogglePrDescription)
+        }
+        _ => None,
     }
 }
 
@@ -247,6 +293,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('w') => review(ReviewAction::ToggleWrap),
         KeyCode::Char('m') => review(ReviewAction::ToggleHunkHeaders),
         KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
+        KeyCode::Char('P') => Some(AppAction::TogglePrDescription),
         KeyCode::Char('e') => review(ReviewAction::EditSelectedFile),
         KeyCode::Char('r') => review(ReviewAction::Reload),
         KeyCode::Char('/') => review(ReviewAction::FocusFilter),
