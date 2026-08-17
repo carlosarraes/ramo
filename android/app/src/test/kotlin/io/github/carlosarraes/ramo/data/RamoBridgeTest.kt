@@ -8,6 +8,6 @@ class RamoBridgeTest {
     @Test
     fun reportsCoreVersion() = runTest {
         val bridge = NativeRamoBridge()
-        assertEquals("0.0.20", bridge.coreVersion())
+        assertEquals("0.0.21", bridge.coreVersion())
     }
 }
