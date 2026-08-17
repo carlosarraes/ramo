@@ -13,6 +13,16 @@ resolver = "2"
 edition = "2024"
 rust-version = "1.85"
 
+# Profiles are only honored at the workspace root, so these apply to every
+# member crate. Full debuginfo put the largest artifacts at 140-174 MB each,
+# and Cargo never evicts old hash-variants: target/debug had reached 75 GB
+# across ~27 generations of every test binary.
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = "line-tables-only"
+
 [package]
 name = "ramo"
 version = "0.0.20"
