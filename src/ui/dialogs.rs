@@ -45,7 +45,7 @@ pub fn help_text(can_refresh: bool) -> String {
         ("s / t", "sidebar / theme selector"),
         ("i / z", "AI notes / unchanged context"),
         ("T", "compact test files"),
-        ("a", "ask AI about this change"),
+        ("a", "ask AI (again to follow up)"),
         ("o", "jump to the AI answer"),
         ("v", "toggle file viewed"),
         ("Enter", "expand / un-view compact file"),

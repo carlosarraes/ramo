@@ -646,7 +646,10 @@ fn ask_cards_render_without_the_agent_notes_toggle_and_stay_out_of_exports() {
         },
     );
 
-    let id = controller.begin_ask(None, view).expect("draft anchored");
+    let id = controller
+        .begin_ask(None, view)
+        .started()
+        .expect("draft anchored");
     controller.update_ask_draft("why this change?", view);
     let note = controller.commit_ask_draft(view).expect("pending question");
     assert_eq!(note.id, id);
@@ -681,7 +684,10 @@ fn ask_drafts_and_notes_drop_when_their_file_disappears() {
     let view = viewport(100, 20);
     let mut controller =
         ReviewController::new(vec![file("src/a.rs", None, 1)], ReviewOptions::default());
-    let id = controller.begin_ask(None, view).expect("draft anchored");
+    let id = controller
+        .begin_ask(None, view)
+        .started()
+        .expect("draft anchored");
     controller.update_ask_draft("still here?", view);
     controller.commit_ask_draft(view).expect("pending question");
     assert_eq!(controller.ask_notes().len(), 1);

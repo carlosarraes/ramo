@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -65,6 +65,26 @@ fn file() -> DiffFile {
         old_source: SourceSpec::File(PathBuf::from("old")),
         new_source: SourceSpec::File(PathBuf::from("new")),
     }
+}
+
+/// Four added lines, so a visual selection can span a range wider than one row.
+fn wide_file() -> DiffFile {
+    let mut file = file();
+    file.hunks = vec![Hunk {
+        old_start: 1,
+        new_start: 1,
+        header: "@@ -1,0 +1,4 @@ fn demo()".into(),
+        lines: (1..=4)
+            .map(|number| DiffLine {
+                kind: LineType::Addition,
+                content: format!("let x{number} = {number};"),
+                old_lineno: None,
+                new_lineno: Some(number),
+                moved: None,
+            })
+            .collect(),
+    }];
+    file
 }
 
 fn enabled_config() -> ResolvedConfig {
@@ -216,6 +236,137 @@ fn asking_is_inert_when_the_feature_is_disabled() {
             .as_deref()
             .is_some_and(|toast| toast.contains("ask_enabled"))
     );
+}
+
+/// Records every prompt the provider is handed, so a test can assert what a follow-up carried.
+fn recording_app(files: Vec<DiffFile>, answer: &'static str) -> (App, Arc<Mutex<Vec<String>>>) {
+    let prompts = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&prompts);
+    let app =
+        App::new_with_config(files, &enabled_config(), false).with_ask_runner(move |request| {
+            seen.lock().unwrap().push(request.prompt.clone());
+            move || Ok(answer.to_owned())
+        });
+    (app, prompts)
+}
+
+#[test]
+fn re_asking_inside_an_earlier_question_continues_its_thread() {
+    let (mut app, prompts) = recording_app(vec![file()], "Because 2 is the new default.");
+
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "why bump x?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    // Same lines again: this must continue the thread, not start a new one.
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    assert_eq!(app.input_mode(), InputMode::Ask);
+    type_question(&mut app, "why not 3?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    let notes = app.review_controller.ask_notes();
+    assert_eq!(notes.len(), 2, "a follow-up is still its own card");
+    assert_eq!(
+        notes[1].thread_id, notes[0].id,
+        "the follow-up must join the root's thread"
+    );
+    assert!(notes[1].is_follow_up());
+    assert!(!notes[0].is_follow_up());
+
+    // Cloned, not borrowed: holding the guard here would deadlock the assertions below.
+    let sent = prompts.lock().unwrap().clone();
+    let follow_up = &sent[1];
+    assert!(follow_up.contains("QUESTION\nwhy not 3?"), "{follow_up}");
+    assert!(follow_up.contains("PRIOR TURNS"), "{follow_up}");
+    assert!(follow_up.contains("Q1 why bump x?"), "{follow_up}");
+    assert!(
+        follow_up.contains("A1 Because 2 is the new default."),
+        "{follow_up}"
+    );
+    // Every pi call is stateless, so the code must be re-sent with each turn.
+    assert!(follow_up.contains("+let x = 2;"), "{follow_up}");
+
+    // The root question carried no thread.
+    assert!(!sent[0].contains("PRIOR TURNS"));
+}
+
+#[test]
+fn a_follow_up_is_refused_while_the_thread_is_still_pending() {
+    let mut app = App::new_with_config(vec![file()], &enabled_config(), false)
+        .with_ask_runner(|_| move || Ok("eventually".to_owned()));
+
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "why bump x?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    // Deliberately not settled: the first turn is still Pending.
+
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+
+    assert_eq!(app.input_mode(), InputMode::Normal, "no draft opens");
+    assert_eq!(app.review_controller.ask_notes().len(), 1);
+    assert!(
+        app.toast
+            .as_deref()
+            .is_some_and(|toast| toast.contains("follow-up")),
+        "{:?}",
+        app.toast
+    );
+}
+
+#[test]
+fn a_follow_up_from_the_answer_card_keeps_the_original_range() {
+    let (mut app, _) = recording_app(vec![wide_file()], "It initializes four locals.");
+
+    // Select three rows, then ask about the range.
+    app.handle_ui_key(key(KeyCode::Char('V')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('j')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('j')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "what do these do?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    let root = app.review_controller.ask_notes()[0].target.clone();
+    assert!(
+        root.new_range.is_some_and(|range| range.end > range.start),
+        "the setup must produce a multi-line range, got {root:?}"
+    );
+
+    // `o` parks the cursor on the answer card; asking from there used to collapse the
+    // range to its first line, because a note row's key carries only the range starts.
+    app.handle_ui_key(key(KeyCode::Char('o')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "why?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    let notes = app.review_controller.ask_notes();
+    assert_eq!(notes[1].target, root, "a follow-up reuses the root target");
+}
+
+#[test]
+fn an_unrelated_line_starts_a_new_thread() {
+    let (mut app, prompts) = recording_app(vec![wide_file()], "answer");
+
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "first?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    // Move well clear of the first question's single line.
+    app.handle_ui_key(key(KeyCode::Char('j')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('j')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('a')), VIEW);
+    type_question(&mut app, "second?");
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    let notes = app.review_controller.ask_notes();
+    assert_eq!(notes[1].thread_id, notes[1].id, "{:?}", notes[1]);
+    assert!(!notes[1].is_follow_up());
+    assert!(!prompts.lock().unwrap()[1].contains("PRIOR TURNS"));
 }
 
 #[test]

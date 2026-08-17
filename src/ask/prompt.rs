@@ -8,17 +8,31 @@ pub const MAX_QUESTION_CHARS: usize = 1000;
 const MAX_HUNK_LINES: usize = 300;
 const MAX_HUNK_BYTES: usize = 16 * 1024;
 const MAX_PROMPT_BYTES: usize = 24 * 1024;
+/// Thread history is capped before the section budget runs, so a long conversation costs
+/// the hunk its room rather than silently swallowing the whole prompt.
+const MAX_HISTORY_BYTES: usize = 8 * 1024;
 const TRUNCATED_HUNK: &str = "… (hunk truncated)";
+const DROPPED_TURNS: &str = "… (earlier turns dropped)";
 
 pub const SYSTEM_PROMPT: &str = "You answer a reviewer's question about one diff hunk shown in a \
 terminal review tool. You can only see what is in this message. Do not ask to read other files and \
 do not speculate about code you cannot see; say plainly what you cannot determine. Answer in plain \
 text. At most 12 short lines. No markdown headings. No code fences unless quoting six lines or \
-fewer.";
+fewer. A PRIOR TURNS section, when present, holds earlier questions and your answers about these \
+same lines; treat the new question as continuing that conversation and do not repeat yourself.";
 
 /// Builds the single user message sent to the provider. The payload is exactly the
-/// question plus one anchored hunk — never the repository, other files, or environment.
-pub fn compose_prompt(file: &DiffFile, target: &NoteTarget, question: &str) -> String {
+/// question, the answered turns that came before it, and one anchored hunk — never the
+/// repository, other files, or environment.
+///
+/// `prior` is oldest-first `(question, answer)`. Every `pi -p` call is stateless, so a
+/// follow-up carries its own history and its own hunk; nothing is remembered for us.
+pub fn compose_prompt(
+    file: &DiffFile,
+    target: &NoteTarget,
+    question: &str,
+    prior: &[(String, String)],
+) -> String {
     let question = clamp_chars(&sanitize_terminal_text(question, false), MAX_QUESTION_CHARS);
     let mut prompt = String::new();
     prompt.push_str("QUESTION\n");
@@ -40,8 +54,12 @@ pub fn compose_prompt(file: &DiffFile, target: &NoteTarget, question: &str) -> S
         .and_then(|index| file.hunks.get(index))
         .map(|hunk| render_hunk(hunk, target));
 
-    // Trim the hunk first, then the selection, so the question always survives.
+    // Trim the hunk first, then the selection, then the thread, so the question always
+    // survives. A follow-up stripped of its thread is worse than one with a trimmed hunk.
     let mut sections = Vec::new();
+    if let Some(history) = render_history(prior) {
+        sections.push(("PRIOR TURNS", history));
+    }
     if !selected.trim().is_empty() {
         sections.push(("SELECTED", selected));
     }
@@ -64,6 +82,38 @@ pub fn compose_prompt(file: &DiffFile, target: &NoteTarget, question: &str) -> S
     }
     prompt.push('\n');
     prompt
+}
+
+/// Renders the thread oldest-first, keeping the most recent turns when it does not fit.
+/// Dropping the oldest is the right end to lose: a follow-up almost always refers to the
+/// answer immediately before it.
+fn render_history(prior: &[(String, String)]) -> Option<String> {
+    if prior.is_empty() {
+        return None;
+    }
+    let mut kept = Vec::new();
+    let mut used = 0usize;
+    let mut dropped = false;
+    for (index, (question, answer)) in prior.iter().enumerate().rev() {
+        let number = index.saturating_add(1);
+        let turn = format!(
+            "Q{number} {}\nA{number} {}",
+            sanitize_terminal_text(question.trim(), false),
+            sanitize_terminal_text(answer.trim(), false)
+        );
+        // Always keep the newest turn, however long, and let the section budget clamp it.
+        if !kept.is_empty() && used.saturating_add(turn.len()) > MAX_HISTORY_BYTES {
+            dropped = true;
+            break;
+        }
+        used = used.saturating_add(turn.len() + 1);
+        kept.push(turn);
+    }
+    kept.reverse();
+    if dropped {
+        kept.insert(0, DROPPED_TURNS.to_owned());
+    }
+    Some(kept.join("\n"))
 }
 
 fn location(file: &DiffFile, target: &NoteTarget) -> String {
@@ -221,7 +271,7 @@ mod tests {
             ],
         );
 
-        let prompt = compose_prompt(&sample, &target(), "Why change x?");
+        let prompt = compose_prompt(&sample, &target(), "Why change x?", &[]);
 
         assert!(prompt.starts_with("QUESTION\nWhy change x?"), "{prompt}");
         assert!(prompt.contains("\nFILE\nsrc/lib.rs"), "{prompt}");
@@ -240,7 +290,7 @@ mod tests {
             vec![line(LineType::Addition, "new", None, Some(2))],
         );
 
-        let prompt = compose_prompt(&sample, &target(), "What moved?");
+        let prompt = compose_prompt(&sample, &target(), "What moved?", &[]);
 
         assert!(
             prompt.contains("src/lib.rs (renamed from src/old.rs)"),
@@ -268,7 +318,7 @@ mod tests {
             end: 500,
         });
 
-        let prompt = compose_prompt(&sample, &anchored, "What is here?");
+        let prompt = compose_prompt(&sample, &anchored, "What is here?", &[]);
 
         assert!(
             prompt.len() <= MAX_PROMPT_BYTES + TRUNCATED_HUNK.len() + 16,
@@ -281,15 +331,66 @@ mod tests {
     }
 
     #[test]
+    fn prior_turns_are_rendered_oldest_first_and_only_when_present() {
+        let sample = file(None, vec![line(LineType::Addition, "x", None, Some(2))]);
+
+        let root = compose_prompt(&sample, &target(), "why?", &[]);
+        assert!(!root.contains("PRIOR TURNS"), "{root}");
+
+        let prior = vec![
+            ("why bump x?".to_owned(), "it is the new default".to_owned()),
+            ("why not 3?".to_owned(), "3 overflows".to_owned()),
+        ];
+        let follow_up = compose_prompt(&sample, &target(), "and 4?", &prior);
+
+        let turns = follow_up.find("PRIOR TURNS").expect("history section");
+        assert!(follow_up[turns..].contains("Q1 why bump x?"), "{follow_up}");
+        assert!(
+            follow_up.find("Q1 why bump x?") < follow_up.find("Q2 why not 3?"),
+            "oldest turn must come first: {follow_up}"
+        );
+        assert!(follow_up[turns..].contains("A2 3 overflows"), "{follow_up}");
+        // The question stays at the top, and the hunk is still re-sent.
+        assert!(follow_up.starts_with("QUESTION\nand 4?"), "{follow_up}");
+        assert!(follow_up.contains("\nHUNK\n"), "{follow_up}");
+    }
+
+    #[test]
+    fn an_oversized_thread_drops_its_oldest_turns_and_says_so() {
+        let sample = file(None, vec![line(LineType::Addition, "x", None, Some(2))]);
+        let prior = (1..=12)
+            .map(|turn| {
+                (
+                    format!("question {turn}"),
+                    format!("answer {turn} {}", "x".repeat(1024)),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let prompt = compose_prompt(&sample, &target(), "and now?", &prior);
+
+        assert!(prompt.contains(DROPPED_TURNS), "{}", &prompt[..200]);
+        assert!(
+            !prompt.contains("Q1 question 1"),
+            "the oldest turn must be the one dropped"
+        );
+        assert!(
+            prompt.contains("Q12 question 12"),
+            "the newest turn must always survive"
+        );
+        assert!(prompt.len() <= MAX_PROMPT_BYTES + TRUNCATED_HUNK.len() + 16);
+    }
+
+    #[test]
     fn questions_are_clamped_and_sanitized() {
         let sample = file(None, vec![line(LineType::Addition, "x", None, Some(2))]);
         let long = "q".repeat(MAX_QUESTION_CHARS + 500);
 
-        let prompt = compose_prompt(&sample, &target(), &long);
+        let prompt = compose_prompt(&sample, &target(), &long, &[]);
         let question = prompt.lines().nth(1).expect("question line");
         assert_eq!(question.chars().count(), MAX_QUESTION_CHARS);
 
-        let control = compose_prompt(&sample, &target(), "why\u{7}now");
+        let control = compose_prompt(&sample, &target(), "why\u{7}now", &[]);
         assert!(
             !control.contains('\u{7}'),
             "control characters must be stripped"

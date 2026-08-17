@@ -334,7 +334,7 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `1` / `2` / `0` | Split/unified/auto layout |
 | `s`, `n`, `w`, `m` | Sidebar, line numbers, wrapping, hunk headers |
 | `i` | Reveal/hide AI and agent notes |
-| `a` | Ask an AI about the change under the cursor (off by default; see Ask AI about the diff) |
+| `a` | Ask an AI about the change under the cursor; press it again inside the same lines to follow up (off by default; see Ask AI about the diff) |
 | `o` | Jump to the next ready AI answer |
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
@@ -358,7 +358,9 @@ Review progress counts changed lines, not screen rows. It only moves forward whi
 
 Press `a` on any hunk to ask a question about it. The request runs in the background, so you keep reviewing while it works. When the answer arrives the footer shows an `AI n · o` badge; press `o` to jump straight to the answer, which renders as a card anchored where you asked. Up to three questions can be in flight at once. `Enter` sends, `Shift+Enter` adds a line, `Esc` cancels.
 
-**This is the one part of Ramo that sends your code off this machine, and it is off by default.** Enabling it means your question, the file path, and the anchored diff hunk are sent to the configured remote provider through the `pi` CLI. Ramo never sends the rest of the repository, other files, your environment, or credentials, and it never reads or handles API keys — `pi` owns `~/.pi/agent/auth.json`. Ramo runs `pi` with `--no-tools --no-session`, so nothing executes on your machine and no transcript is stored. This path is separate from the Review Map, which stays local-only against loopback Ollama.
+Press `a` again anywhere inside a question's lines — or on its answer card, after `o` — to ask a follow-up. The card is titled `Ask AI · follow-up` and the earlier questions and answers travel with the new one, so "why not?" works without restating anything. Asking on any other line starts a fresh conversation. A follow-up is refused while the previous answer is still pending, since there would be nothing to build on.
+
+**This is the one part of Ramo that sends your code off this machine, and it is off by default.** Enabling it means your question, the file path, and the anchored diff hunk are sent to the configured remote provider through the `pi` CLI. Ramo never sends the rest of the repository, other files, your environment, or credentials, and it never reads or handles API keys — `pi` owns `~/.pi/agent/auth.json`. Ramo runs `pi` with `--no-tools --no-session`, so nothing executes on your machine and no transcript is stored. Follow-ups keep that guarantee: each call is still a fresh, stateless `pi -p`, and the conversation is replayed from Ramo's own in-memory cards rather than from a session file on disk. This path is separate from the Review Map, which stays local-only against loopback Ollama.
 
 Turn it on deliberately:
 

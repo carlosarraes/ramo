@@ -188,6 +188,24 @@ pub enum ReviewAction {
     Quit,
 }
 
+/// Outcome of opening the ask box. `ThreadPending` is distinct from `Unavailable` so the
+/// caller can explain the refusal instead of silently doing nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AskStart {
+    Started(String),
+    ThreadPending,
+    Unavailable,
+}
+
+impl AskStart {
+    pub fn started(self) -> Option<String> {
+        match self {
+            Self::Started(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewEffect {
     None,
@@ -789,19 +807,97 @@ impl ReviewController {
         &mut self,
         selection: Option<(SelectionPoint, SelectionPoint)>,
         viewport: Viewport,
-    ) -> Option<String> {
+    ) -> AskStart {
         self.ensure_geometry(viewport);
-        let target = self.note_target_for_selection(selection)?;
+        let thread = self.ask_thread_root(selection).map(|root| {
+            (
+                root.id.clone(),
+                root.target.clone(),
+                self.thread_is_pending(&root.id),
+            )
+        });
+        // A follow-up with nothing to build on would be a question about an answer that
+        // does not exist yet, so refuse rather than silently starting a bare thread.
+        if let Some((_, _, true)) = thread {
+            return AskStart::ThreadPending;
+        }
+        // A follow-up reuses the root's target verbatim. Deriving it from the cursor would
+        // collapse a multi-line question to its first line, because a note row's key
+        // carries only the range starts.
+        let (thread_id, target) = match thread {
+            Some((root_id, root_target, _)) => (Some(root_id), root_target),
+            None => (
+                None,
+                match self.note_target_for_selection(selection) {
+                    Some(target) => target,
+                    None => return AskStart::Unavailable,
+                },
+            ),
+        };
         let id = format!("ask:{}", self.next_ask_id);
         self.next_ask_id = self.next_ask_id.saturating_add(1);
         self.ask_draft = Some(AskDraft {
+            thread_id: thread_id.unwrap_or_else(|| id.clone()),
             id: id.clone(),
             target,
             question: String::new(),
         });
         self.dirty = true;
         self.rebuild(viewport, true);
-        Some(id)
+        AskStart::Started(id)
+    }
+
+    /// The root question whose thread a new question at `selection` should join: either the
+    /// answer card the cursor is parked on, or the most recent question whose lines contain
+    /// the anchor row. `None` starts a fresh thread.
+    fn ask_thread_root(
+        &self,
+        selection: Option<(SelectionPoint, SelectionPoint)>,
+    ) -> Option<&AskNote> {
+        let geometry = self.geometry.as_ref()?;
+        let index = match selection {
+            Some((anchor, focus)) => anchor.row.min(focus.row),
+            None => {
+                let selected = self.selected_row_key.as_ref()?;
+                geometry
+                    .rows
+                    .iter()
+                    .position(|bound| &bound.key == selected)?
+            }
+        };
+        let key = &geometry.rows.get(index)?.key;
+        let matched = key
+            .note_id
+            .as_deref()
+            .and_then(|note_id| self.ask_notes.iter().find(|note| note.id == note_id))
+            .or_else(|| {
+                self.ask_notes
+                    .iter()
+                    .rev()
+                    .find(|note| note.target.covers(&key.file_id, key.old_line, key.new_line))
+            })?;
+        let thread_id = matched.thread_id.as_str();
+        self.ask_notes.iter().find(|note| note.id == thread_id)
+    }
+
+    fn thread_is_pending(&self, thread_id: &str) -> bool {
+        self.ask_notes
+            .iter()
+            .rfind(|note| note.thread_id == thread_id)
+            .is_some_and(|note| note.state == AskNoteState::Pending)
+    }
+
+    /// Every answered turn of a thread, oldest first, as `(question, answer)`. Pending and
+    /// failed turns are skipped: neither carries anything the next question can build on.
+    pub fn ask_thread_history(&self, thread_id: &str) -> Vec<(String, String)> {
+        self.ask_notes
+            .iter()
+            .filter(|note| note.thread_id == thread_id)
+            .filter_map(|note| match &note.state {
+                AskNoteState::Answered(answer) => Some((note.question.clone(), answer.clone())),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn update_ask_draft(&mut self, question: &str, viewport: Viewport) {
@@ -832,6 +928,7 @@ impl ReviewController {
         }
         let note = AskNote {
             id: draft.id,
+            thread_id: draft.thread_id,
             target: draft.target,
             question,
             state: AskNoteState::Pending,

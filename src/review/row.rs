@@ -1132,7 +1132,14 @@ fn ask_card(
         id: note.id.clone(),
         target: note.target.clone(),
         source: NoteSource::Ai,
-        title: format!("Ask AI{suffix}"),
+        title: format!(
+            "Ask AI{}{suffix}",
+            if note.is_follow_up() {
+                " · follow-up"
+            } else {
+                ""
+            }
+        ),
         location: target_location(file, &note.target),
         lines: wrap_note_text(&text, usize::from(placement.content_width)),
         markup: None,
@@ -1150,16 +1157,23 @@ fn ask_draft_card(
     width: u16,
 ) -> NoteCard {
     let placement = note_box_layout(layout, draft.target.anchor_side, width);
-    let body = if draft.question.is_empty() {
-        "Ask about this change".to_owned()
-    } else {
+    let follow_up = draft.is_follow_up();
+    let body = if !draft.question.is_empty() {
         draft.question.clone()
+    } else if follow_up {
+        "Ask a follow-up about this change".to_owned()
+    } else {
+        "Ask about this change".to_owned()
     };
     NoteCard {
         id: draft.id.clone(),
         target: draft.target.clone(),
         source: NoteSource::Ai,
-        title: "Ask AI".into(),
+        title: if follow_up {
+            "Ask AI · follow-up".into()
+        } else {
+            "Ask AI".to_owned()
+        },
         location: target_location(file, &draft.target),
         lines: wrap_note_text(&body, usize::from(placement.content_width)),
         markup: None,

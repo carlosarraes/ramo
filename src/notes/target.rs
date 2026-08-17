@@ -21,6 +21,21 @@ pub struct NoteTarget {
     pub anchor_line: Option<u32>,
 }
 
+impl NoteTarget {
+    /// Whether a rendered diff row falls inside this target's lines. Ask uses it to decide
+    /// that a second question anywhere in an earlier question's range continues its thread.
+    pub fn covers(&self, file_id: &str, old_line: Option<u32>, new_line: Option<u32>) -> bool {
+        if self.file_id != file_id {
+            return false;
+        }
+        let within = |range: &Option<LineRange>, line: Option<u32>| match (range, line) {
+            (Some(range), Some(line)) => range.start <= line && line <= range.end,
+            _ => false,
+        };
+        within(&self.new_range, new_line) || within(&self.old_range, old_line)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HumanNote {
     pub id: String,
@@ -46,9 +61,18 @@ pub struct HumanNoteDraft {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AskNote {
     pub id: String,
+    /// The root question this one continues. A root question carries its own id, so
+    /// `thread_id != id` is exactly the test for "this is a follow-up".
+    pub thread_id: String,
     pub target: NoteTarget,
     pub question: String,
     pub state: AskNoteState,
+}
+
+impl AskNote {
+    pub fn is_follow_up(&self) -> bool {
+        self.thread_id != self.id
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,8 +85,15 @@ pub enum AskNoteState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AskDraft {
     pub id: String,
+    pub thread_id: String,
     pub target: NoteTarget,
     pub question: String,
+}
+
+impl AskDraft {
+    pub fn is_follow_up(&self) -> bool {
+        self.thread_id != self.id
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -24,8 +24,8 @@ use crate::remote_review::{
     ReviewVerdict,
 };
 use crate::review::{
-    ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController, ReviewEffect,
-    ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, SourceFailure, Viewport,
+    AskStart, ContextSourceLoader, NativeContextSourceLoader, ReviewAction, ReviewController,
+    ReviewEffect, ReviewHit, ReviewOptions, ReviewPoint, SelectionPoint, SourceFailure, Viewport,
 };
 use crate::review_map::{
     ReviewMapAction, ReviewMapClient, ReviewMapController, ReviewMapEffect,
@@ -1949,18 +1949,25 @@ impl App {
             );
             return;
         }
-        if self
+        match self
             .review_controller
             .begin_ask(self.review_selection, viewport)
-            .is_some()
         {
-            self.comment_buf.clear();
-            self.input_mode = InputMode::Ask;
+            AskStart::Started(_) => {
+                self.comment_buf.clear();
+                self.input_mode = InputMode::Ask;
+            }
+            AskStart::ThreadPending => {
+                self.toast = Some("Wait for the current answer before asking a follow-up".into());
+            }
+            AskStart::Unavailable => {}
         }
     }
 
     /// Hands the committed question to a worker thread; the answer arrives via `poll_ask`.
     fn dispatch_ask(&mut self, note: crate::notes::AskNote, viewport: Viewport) {
+        // Collected before the file borrow so the thread's own pending turn is excluded.
+        let history = self.review_controller.ask_thread_history(&note.thread_id);
         let Some(file) = self
             .review_controller
             .files()
@@ -1974,7 +1981,7 @@ impl App {
             model: self.ask_settings.model.clone(),
             thinking: self.ask_settings.thinking.clone(),
             timeout: self.ask_settings.timeout,
-            prompt: crate::ask::compose_prompt(file, &note.target, &note.question),
+            prompt: crate::ask::compose_prompt(file, &note.target, &note.question, &history),
             system_prompt: crate::ask::SYSTEM_PROMPT.to_owned(),
         };
         let job = (self.ask_runner)(request);

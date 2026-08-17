@@ -800,7 +800,10 @@ fn ask_cards_render_pending_then_answered_without_the_agent_notes_toggle() {
         width: 100,
         height: 24,
     };
-    let id = controller.begin_ask(None, view).expect("draft anchored");
+    let id = controller
+        .begin_ask(None, view)
+        .started()
+        .expect("draft anchored");
     controller.update_ask_draft("what changed here?", view);
     controller.commit_ask_draft(view).expect("pending question");
 
@@ -885,7 +888,10 @@ fn a_rejected_model_stays_readable_on_the_failed_card() {
         width: 100,
         height: 24,
     };
-    let id = controller.begin_ask(None, view).expect("draft anchored");
+    let id = controller
+        .begin_ask(None, view)
+        .started()
+        .expect("draft anchored");
     controller.update_ask_draft("what is this?", view);
     controller.commit_ask_draft(view).expect("pending question");
     let error = ramo::ask::AskError::ModelRejected {
