@@ -34,6 +34,7 @@ const PREFERENCE_KEYS: &[&str] = &[
     "ask_model",
     "ask_thinking",
     "ask_timeout_secs",
+    "review_message",
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
@@ -223,7 +224,48 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
     validate_test_file_patterns(path, &config)?;
     validate_review_map_config(path, &config)?;
     validate_ask_config(path, &config)?;
+    validate_review_message(path, &config)?;
     Ok(Some(config))
+}
+
+/// GitHub itself accepts far more, but a review body that runs away is almost always a
+/// paste accident, and it is only discovered at publish time when the review is rejected.
+const MAX_REVIEW_MESSAGE_BYTES: usize = 2 * 1024;
+
+fn validate_review_message(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
+    for layer in [
+        &config.global,
+        &config.diff,
+        &config.show,
+        &config.stash_show,
+        &config.patch,
+        &config.pager,
+        &config.difftool,
+    ] {
+        let Some(message) = &layer.review_message else {
+            continue;
+        };
+        if message.len() > MAX_REVIEW_MESSAGE_BYTES {
+            return Err(ConfigError::Parse {
+                path: path.to_path_buf(),
+                source: format!(
+                    "review_message must be at most {MAX_REVIEW_MESSAGE_BYTES} bytes: got {}",
+                    message.len()
+                ),
+            });
+        }
+        // A review body is Markdown, so newlines and tabs are legitimate; nothing else is.
+        if let Some(control) = message
+            .chars()
+            .find(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+        {
+            return Err(ConfigError::Parse {
+                path: path.to_path_buf(),
+                source: format!("review_message must not contain control characters: {control:?}"),
+            });
+        }
+    }
+    Ok(())
 }
 
 pub(crate) const ASK_THINKING_LEVELS: &[&str] =

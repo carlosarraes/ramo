@@ -71,6 +71,10 @@ fn context(author: &str, viewer: &str) -> PullRequestReviewContext {
 }
 
 fn app(revision: &str) -> (App, Rc<RefCell<Calls>>) {
+    app_with_config(revision, &ResolvedConfig::default())
+}
+
+fn app_with_config(revision: &str, config: &ResolvedConfig) -> (App, Rc<RefCell<Calls>>) {
     let files = parse_unified_diff(concat!(
         "diff --git a/src/lib.rs b/src/lib.rs\n",
         "--- a/src/lib.rs\n",
@@ -78,7 +82,7 @@ fn app(revision: &str) -> (App, Rc<RefCell<Calls>>) {
         "@@ -0,0 +1 @@\n",
         "+new\n",
     ));
-    let mut app = App::new_with_config(files, &ResolvedConfig::default(), false);
+    let mut app = App::new_with_config(files, config, false);
     app.review_controller = ramo::review::ReviewController::new(
         app.files.clone(),
         ReviewOptions {
@@ -124,6 +128,54 @@ fn quit_confirms_then_submits_one_review_after_a_fresh_head_check() {
     );
     assert_eq!(app.remote_outcome(), Some(RemoteReviewOutcome::Published));
     assert!(app.should_quit);
+}
+
+#[test]
+fn a_configured_review_message_replaces_the_default_body_for_every_verdict() {
+    for verdict in [KeyCode::Char('c'), KeyCode::Char('a'), KeyCode::Char('r')] {
+        let (mut app, calls) = app_with_config(
+            "abc123",
+            &ResolvedConfig {
+                review_message: Some("approved".into()),
+                ..ResolvedConfig::default()
+            },
+        );
+        app.handle_ui_key(key(KeyCode::Char('q')), VIEWPORT);
+        app.handle_ui_key(key(KeyCode::Char('y')), VIEWPORT);
+        app.handle_ui_key(key(verdict), VIEWPORT);
+
+        assert_eq!(calls.borrow().submissions.len(), 1, "{verdict:?}");
+        assert_eq!(
+            calls.borrow().submissions[0].body,
+            "approved",
+            "{verdict:?}"
+        );
+    }
+}
+
+#[test]
+fn an_edited_overall_comment_still_wins_over_a_configured_review_message() {
+    let (mut app, calls) = app_with_config(
+        "abc123",
+        &ResolvedConfig {
+            review_message: Some("approved".into()),
+            ..ResolvedConfig::default()
+        },
+    );
+    app.handle_ui_key(key(KeyCode::Char('q')), VIEWPORT);
+    app.handle_ui_key(key(KeyCode::Char('y')), VIEWPORT);
+    // `o` opens the editor prefilled with the configured message, so clear it first.
+    app.handle_ui_key(key(KeyCode::Char('o')), VIEWPORT);
+    for _ in 0.."approved".len() {
+        app.handle_ui_key(key(KeyCode::Backspace), VIEWPORT);
+    }
+    for character in "typed by hand".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEWPORT);
+    }
+    app.handle_ui_key(key(KeyCode::Enter), VIEWPORT);
+    app.handle_ui_key(key(KeyCode::Char('c')), VIEWPORT);
+
+    assert_eq!(calls.borrow().submissions[0].body, "typed by hand");
 }
 
 #[test]

@@ -141,6 +141,12 @@ Request changes. Press `o` before choosing a verdict to edit the generated
 overall comment. At the first prompt, `n` or Escape returns to the review with
 all notes intact; `d` explicitly discards them and quits.
 
+By default the overall comment reads `Review submitted from Ramo with N inline
+comments.` Set `review_message` in your configuration to replace it with a fixed
+body for every verdict — `review_message = "approved"` — or with an empty string
+to publish no overall comment at all. Editing the body with `o` always wins over
+the configured value.
+
 Immediately before publishing, Ramo checks that the PR head commit still
 matches the loaded snapshot. If it changed, nothing is submitted and the notes
 remain open. GitHub receives one review containing the overall body and every
@@ -388,6 +394,7 @@ prompt_save_view_preferences = true
 test_file_patterns = ["qa/**", "**/*_snapshot.*"]
 tests_last = true
 ask_enabled = false # opt in to remote AI questions; see Ask AI about the diff
+review_message = "approved" # optional; replaces the generated PR review body
 ```
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.

@@ -62,6 +62,7 @@ pub struct ConfigLayer {
     pub ask_model: Option<String>,
     pub ask_thinking: Option<String>,
     pub ask_timeout_secs: Option<u64>,
+    pub review_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -112,6 +113,9 @@ pub struct ResolvedConfig {
     pub ask_model: String,
     pub ask_thinking: String,
     pub ask_timeout_secs: u64,
+    /// `None` keeps the count-aware default body; `Some` replaces it verbatim, so an
+    /// empty string is a deliberate "publish with no overall comment".
+    pub review_message: Option<String>,
     pub custom_theme: Option<CustomThemeConfig>,
     pub startup_notices: Vec<String>,
 }
@@ -145,6 +149,7 @@ impl Default for ResolvedConfig {
             ask_model: "deepseek-v4-flash".into(),
             ask_thinking: "max".into(),
             ask_timeout_secs: 180,
+            review_message: None,
             custom_theme: None,
             startup_notices: Vec::new(),
         }
@@ -205,6 +210,9 @@ impl ResolvedConfig {
         }
         if let Some(timeout) = layer.ask_timeout_secs {
             self.ask_timeout_secs = timeout;
+        }
+        if let Some(message) = &layer.review_message {
+            self.review_message = Some(message.clone());
         }
     }
 }

@@ -298,6 +298,7 @@ pub struct App {
     ask_jobs: HashMap<AskId, String>,
     ask_runner: AskRunner,
     ask_unseen: VecDeque<String>,
+    review_message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -473,6 +474,7 @@ impl App {
             ask_jobs: HashMap::new(),
             ask_runner: pi_ask_runner(),
             ask_unseen: VecDeque::new(),
+            review_message: config.review_message.clone(),
         }
     }
 
@@ -1799,9 +1801,10 @@ impl App {
 
     fn confirm_remote_publish(&mut self) {
         let count = self.review_controller.human_notes().len();
+        let configured = self.review_message.clone();
         if let Some(session) = &mut self.remote_review {
             if !session.overall_body_edited {
-                session.overall_body = default_overall_body(count);
+                session.overall_body = configured.unwrap_or_else(|| default_overall_body(count));
             }
             self.input_mode = InputMode::VerdictPrompt;
         }

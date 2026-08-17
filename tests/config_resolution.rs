@@ -399,6 +399,81 @@ fn invalid_ask_configuration_names_the_key_and_the_allowed_values() {
 }
 
 #[test]
+fn review_message_is_unset_by_default_and_layers_like_other_preferences() {
+    let defaults = ConfigResolver::new(ConfigPaths::default())
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap();
+    assert!(
+        defaults.review_message.is_none(),
+        "an unset key must keep the count-aware default body"
+    );
+
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(&user, "review_message = \"approved\"\n").unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+    assert_eq!(resolved.review_message.as_deref(), Some("approved"));
+
+    // An empty string is a deliberate "publish with no overall comment", not "unset".
+    let empty = temp.path().join("empty.toml");
+    std::fs::write(&empty, "review_message = \"\"\n").unwrap();
+    let resolved = ConfigResolver::new(ConfigPaths {
+        user: Some(empty),
+        repo: None,
+    })
+    .resolve(&patch_input(CommonOptions::default()))
+    .unwrap();
+    assert_eq!(resolved.review_message.as_deref(), Some(""));
+}
+
+#[test]
+fn an_invalid_review_message_names_the_key() {
+    let temp = tempfile::tempdir().unwrap();
+    for (source, expected) in [
+        (
+            format!("review_message = {:?}\n", "x".repeat(2 * 1024 + 1)),
+            "review_message must be at most",
+        ),
+        (
+            "review_message = \"appro\\u0007ved\"\n".to_owned(),
+            "review_message must not contain control characters",
+        ),
+    ] {
+        let path = temp.path().join(format!("invalid-{}.toml", source.len()));
+        std::fs::write(&path, &source).unwrap();
+        let error = ConfigResolver::new(ConfigPaths {
+            user: Some(path),
+            repo: None,
+        })
+        .resolve(&patch_input(CommonOptions::default()))
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains(expected), "produced {error}");
+    }
+
+    // Markdown bodies are legitimately multi-line.
+    let multiline = temp.path().join("multiline.toml");
+    std::fs::write(
+        &multiline,
+        "review_message = \"looks good\\n\\n- nit: naming\"\n",
+    )
+    .unwrap();
+    assert!(
+        ConfigResolver::new(ConfigPaths {
+            user: Some(multiline),
+            repo: None,
+        })
+        .resolve(&patch_input(CommonOptions::default()))
+        .is_ok()
+    );
+}
+
+#[test]
 fn review_map_configuration_is_local_optional_and_validated() {
     let defaults = ConfigResolver::new(ConfigPaths::default())
         .resolve(&patch_input(CommonOptions::default()))
