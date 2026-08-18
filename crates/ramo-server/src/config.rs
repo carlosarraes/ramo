@@ -82,7 +82,52 @@ impl ServerConfig {
             pi_provider: "openai-codex".into(),
             pi_model: "gpt-5.6-luna".into(),
             pi_effort: "max".into(),
-        })
+        }
+        .with_user_map_section(&config_root))
+    }
+
+    /// Applies the reviewer's `[map]` section from ramo's own config.
+    ///
+    /// The server is a separate process with its own discovery, so without this the documented
+    /// `[map] backend/provider/model/effort` keys would parse in the terminal and then be
+    /// silently ignored by the process that actually runs the model. Only these four keys are
+    /// read; everything else in that file belongs to the terminal.
+    fn with_user_map_section(mut self, config_dir: &Path) -> Self {
+        #[derive(serde::Deserialize)]
+        struct File {
+            #[serde(default)]
+            map: MapSection,
+        }
+        #[derive(Default, serde::Deserialize)]
+        struct MapSection {
+            backend: Option<String>,
+            provider: Option<String>,
+            model: Option<String>,
+            effort: Option<String>,
+        }
+        let Ok(source) = std::fs::read_to_string(config_dir.join("ramo/config.toml")) else {
+            return self;
+        };
+        let Ok(file) = toml::from_str::<File>(&source) else {
+            // A malformed config is the terminal's error to report, not the server's.
+            return self;
+        };
+        if let Some(backend) = file.map.backend.as_deref() {
+            self.analyzer = match backend {
+                "ollama" => AnalyzerKind::Ollama,
+                _ => AnalyzerKind::Pi,
+            };
+        }
+        for (target, value) in [
+            (&mut self.pi_provider, file.map.provider),
+            (&mut self.pi_model, file.map.model),
+            (&mut self.pi_effort, file.map.effort),
+        ] {
+            if let Some(value) = value {
+                *target = value;
+            }
+        }
+        self
     }
 
     pub fn validate(&self) -> Result<(), ReviewMapFailure> {
@@ -203,4 +248,83 @@ pub fn save_selected_model(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod map_section_tests {
+    use super::*;
+
+    fn config_root(body: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("ramo")).unwrap();
+        std::fs::write(dir.path().join("ramo/config.toml"), body).unwrap();
+        dir
+    }
+
+    fn base() -> ServerConfig {
+        ServerConfig {
+            bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
+            config_dir: PathBuf::new(),
+            state_dir: PathBuf::new(),
+            cache_dir: PathBuf::new(),
+            ollama_url: "http://127.0.0.1:11434".into(),
+            model: "qwen3:8b".into(),
+            selected_model: None,
+            analyzer: AnalyzerKind::default(),
+            pi_provider: "openai-codex".into(),
+            pi_model: "gpt-5.6-luna".into(),
+            pi_effort: "max".into(),
+        }
+    }
+
+    #[test]
+    fn the_reviewers_map_section_reaches_the_process_that_runs_the_model() {
+        let dir = config_root("[map]\nmodel = \"gpt-5.6-sol\"\neffort = \"low\"\n");
+        let config = base().with_user_map_section(dir.path());
+
+        assert_eq!(config.pi_model, "gpt-5.6-sol");
+        assert_eq!(config.pi_effort, "low");
+        assert_eq!(
+            config.pi_provider, "openai-codex",
+            "unset keys keep the default"
+        );
+    }
+
+    #[test]
+    fn the_backend_key_makes_the_local_ollama_path_selectable() {
+        let dir = config_root("[map]\nbackend = \"ollama\"\n");
+        assert_eq!(
+            base().with_user_map_section(dir.path()).analyzer,
+            AnalyzerKind::Ollama
+        );
+
+        let dir = config_root("[map]\nbackend = \"pi\"\n");
+        assert_eq!(
+            base().with_user_map_section(dir.path()).analyzer,
+            AnalyzerKind::Pi
+        );
+    }
+
+    #[test]
+    fn an_absent_or_malformed_config_leaves_the_defaults_alone() {
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(
+            base().with_user_map_section(empty.path()).pi_model,
+            "gpt-5.6-luna"
+        );
+
+        // The terminal reports malformed config with its own error; the server must not die.
+        let broken = config_root("[map\nmodel =");
+        assert_eq!(
+            base().with_user_map_section(broken.path()).pi_model,
+            "gpt-5.6-luna"
+        );
+
+        // Terminal-only keys are ignored rather than rejected.
+        let other = config_root("[ask]\nenabled = true\n\n[map]\nenabled = true\n");
+        assert_eq!(
+            base().with_user_map_section(other.path()).pi_model,
+            "gpt-5.6-luna"
+        );
+    }
 }

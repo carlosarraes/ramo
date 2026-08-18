@@ -75,6 +75,7 @@ const SETTING_SECTIONS: &[(&str, &[&str])] = &[
         "map",
         &[
             "enabled",
+            "backend",
             "provider",
             "model",
             "effort",
@@ -419,6 +420,13 @@ fn validate_sections(path: &Path, config: &ConfigFile) -> Result<(), ConfigError
                 ASK_TIMEOUT_RANGE.end()
             )));
         }
+    }
+    if let Some(backend) = &config.map.backend
+        && !["pi", "ollama"].contains(&backend.as_str())
+    {
+        return Err(invalid(format!(
+            "[map] backend must be pi or ollama: got {backend:?}"
+        )));
     }
     if let Some(endpoint) = &config.map.server {
         crate::review_map::validate_loopback_endpoint(endpoint)

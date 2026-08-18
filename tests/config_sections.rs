@@ -263,3 +263,27 @@ fn both_spellings_of_theme_parse_because_the_key_collides_with_its_section() {
         "migrating must not delete the [theme] table"
     );
 }
+
+#[test]
+fn the_map_backend_selects_the_analyzer_and_rejects_anything_else() {
+    assert_eq!(
+        resolve("[map]\nbackend = \"ollama\"\n").map_backend,
+        "ollama"
+    );
+    assert_eq!(resolve("").map_backend, "pi", "pi is the default backend");
+
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(&user, "[map]\nbackend = \"llama.cpp\"\n").unwrap();
+    let error = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input())
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains("[map] backend must be pi or ollama"),
+        "{error}"
+    );
+}

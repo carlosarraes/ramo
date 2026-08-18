@@ -116,6 +116,8 @@ pub struct AgentSection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct MapSection {
     pub enabled: Option<bool>,
+    /// `"pi"` (default) or `"ollama"`. Read by `ramo-server`, which owns the analyzer.
+    pub backend: Option<String>,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
@@ -244,6 +246,7 @@ pub struct ResolvedConfig {
     pub ask_model: String,
     pub ask_thinking: String,
     pub ask_timeout_secs: u64,
+    pub map_backend: String,
     pub map_provider: String,
     pub map_model: String,
     pub map_effort: String,
@@ -292,6 +295,7 @@ impl Default for ResolvedConfig {
             ask_model: "gpt-5.6-luna".into(),
             ask_thinking: "max".into(),
             ask_timeout_secs: 180,
+            map_backend: "pi".into(),
             map_provider: "openai-codex".into(),
             map_model: "gpt-5.6-luna".into(),
             map_effort: "max".into(),
@@ -419,6 +423,7 @@ impl ResolvedConfig {
         }
 
         apply(&mut self.ai_summaries, file.map.enabled);
+        assign(&mut self.map_backend, &file.map.backend);
         assign(&mut self.map_provider, &file.map.provider);
         assign(&mut self.map_model, &file.map.model);
         assign(&mut self.map_effort, &file.map.effort);
