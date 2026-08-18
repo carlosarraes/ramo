@@ -1,7 +1,9 @@
 pub mod appearance;
 pub mod dialogs;
+pub mod document;
 pub mod highlight;
 pub mod input;
+pub mod linear_ticket;
 pub mod pr_description;
 pub mod review;
 pub mod review_map;

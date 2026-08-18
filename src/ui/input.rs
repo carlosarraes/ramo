@@ -21,6 +21,7 @@ pub enum InputMode {
     Message,
     ReviewMap,
     PrDescription,
+    LinearTicket,
 }
 
 /// Readline-style editing applied to whichever text buffer currently has focus. Kept as one
@@ -57,6 +58,8 @@ pub enum AppAction {
     ToggleReviewMap,
     TogglePrDescription,
     ScrollPrDescription(PrScroll),
+    ToggleLinearTicket,
+    ScrollLinearTicket(PrScroll),
     JumpAskAnswer,
     FocusReviewMapFilter,
     Insert(char),
@@ -122,6 +125,7 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
             _ => None,
         },
         InputMode::PrDescription => map_pr_description(event),
+        InputMode::LinearTicket => map_linear_ticket(event),
         InputMode::OverallComment => map_overall_comment(event),
         InputMode::Message => match event.code {
             KeyCode::Enter | KeyCode::Esc => Some(AppAction::DismissMessage),
@@ -136,6 +140,12 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
 }
 
 fn map_pr_description(event: KeyEvent) -> Option<AppAction> {
+    map_document_scroll(event, 'P')
+}
+
+/// Motions shared by every full-screen document. `close` is the key that also toggles the
+/// screen shut, alongside `q` and Escape.
+fn map_document_scroll(event: KeyEvent, close: char) -> Option<AppAction> {
     if event.modifiers.contains(KeyModifiers::CONTROL) {
         return match event.code {
             KeyCode::Char('d') => Some(AppAction::ScrollPrDescription(PrScroll::HalfPage(1))),
@@ -159,11 +169,20 @@ fn map_pr_description(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('b') | KeyCode::PageUp => scroll(PrScroll::Page(-1)),
         KeyCode::Char('g') | KeyCode::Home => scroll(PrScroll::Top),
         KeyCode::Char('G') | KeyCode::End => scroll(PrScroll::Bottom),
-        KeyCode::Char('P') | KeyCode::Char('q') | KeyCode::Esc => {
-            Some(AppAction::TogglePrDescription)
-        }
+        KeyCode::Esc | KeyCode::Char('q') => Some(AppAction::TogglePrDescription),
+        KeyCode::Char(character) if character == close => Some(AppAction::TogglePrDescription),
         _ => None,
     }
+}
+
+/// Same motions as the PR description; only the close key and the action differ.
+fn map_linear_ticket(event: KeyEvent) -> Option<AppAction> {
+    let action = map_document_scroll(event, 'L')?;
+    Some(match action {
+        AppAction::TogglePrDescription => AppAction::ToggleLinearTicket,
+        AppAction::ScrollPrDescription(step) => AppAction::ScrollLinearTicket(step),
+        other => other,
+    })
 }
 
 fn map_overall_comment(event: KeyEvent) -> Option<AppAction> {
@@ -314,6 +333,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('m') => review(ReviewAction::ToggleHunkHeaders),
         KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
         KeyCode::Char('P') => Some(AppAction::TogglePrDescription),
+        KeyCode::Char('L') => Some(AppAction::ToggleLinearTicket),
         KeyCode::Char('e') => review(ReviewAction::EditSelectedFile),
         KeyCode::Char('r') => review(ReviewAction::Reload),
         KeyCode::Char('/') => review(ReviewAction::FocusFilter),

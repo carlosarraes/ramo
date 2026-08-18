@@ -342,6 +342,7 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `a` | Ask an AI about the change under the cursor; press it again inside the same lines to follow up (off by default; see Ask AI about the diff) |
 | `o` | Jump to the next ready AI answer |
 | `P` | In `ramo pr`, read the pull request description; `j`/`k`, `d`/`u`, `g`/`G` scroll and `P`, `q`, or Escape returns |
+| `L` | In `ramo pr`, read the Linear ticket the PR refers to. The identifier is inferred from the branch, title, or a Linear URL in the description; same scroll keys, `L` returns |
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
 | `T` | Compact or restore recognized test files |

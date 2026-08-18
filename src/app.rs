@@ -38,9 +38,11 @@ use crate::session::{
 use crate::startup_notice::{RemoteUpdatePoll, RemoteUpdateRuntime};
 use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
+use crate::ui::document::ScrollableDocument;
 use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, PrScroll, TextEdit, map_key_event, map_mouse_event};
-use crate::ui::pr_description::{PrDescription, PrDescriptionWidget};
+use crate::ui::linear_ticket::LinearTicketWidget;
+use crate::ui::pr_description::PrDescriptionWidget;
 use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
 use crate::ui::review_map::{ReviewMapHitTarget, ReviewMapWidget, review_map_hits};
 use crate::ui::text_input::TextInput;
@@ -134,6 +136,7 @@ pub enum AppScreen {
     ReviewMap,
     Review,
     PrDescription,
+    LinearTicket,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -303,9 +306,13 @@ pub struct App {
     ask_unseen: VecDeque<String>,
     review_message: Option<String>,
     /// Built on first `P` and re-wrapped on resize; `None` until the screen is opened.
-    pr_description: Option<PrDescription>,
+    pr_description: Option<ScrollableDocument>,
     /// The screen `P` was opened from, so closing returns exactly where it started.
     pr_description_origin: AppScreen,
+    linear: Option<LinearScreen>,
+    linear_origin: AppScreen,
+    linear_settings: LinearSettings,
+    linear_runner: LinearRunner,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -327,6 +334,38 @@ impl AskSettings {
             thinking: config.ask_thinking.clone(),
             timeout: Duration::from_secs(config.ask_timeout_secs),
         }
+    }
+}
+
+/// The Linear ticket screen: the fetched ticket, its wrapped description, and a warning when
+/// Linear's own GitHub link points at a different pull request than the one under review.
+struct LinearScreen {
+    ticket: crate::linear::LinearTicket,
+    document: ScrollableDocument,
+    mismatch: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LinearSettings {
+    enabled: bool,
+    command: String,
+}
+
+/// Swappable so tests never spawn the Linear CLI.
+type LinearRunner =
+    Box<dyn Fn(String, String) -> Result<crate::linear::LinearTicket, crate::linear::LinearError>>;
+
+fn linear_runner() -> LinearRunner {
+    Box::new(|command, id| crate::linear::LinearCli::new(SystemCommandExecutor, command).view(&id))
+}
+
+fn apply_scroll(document: &mut ScrollableDocument, step: PrScroll) {
+    match step {
+        PrScroll::Line(delta) => document.scroll_lines(delta),
+        PrScroll::HalfPage(delta) => document.scroll_half_pages(delta),
+        PrScroll::Page(delta) => document.scroll_pages(delta),
+        PrScroll::Top => document.scroll_to_top(),
+        PrScroll::Bottom => document.scroll_to_bottom(),
     }
 }
 
@@ -484,6 +523,13 @@ impl App {
             review_message: config.review_message.clone(),
             pr_description: None,
             pr_description_origin: AppScreen::Review,
+            linear: None,
+            linear_origin: AppScreen::Review,
+            linear_settings: LinearSettings {
+                enabled: config.linear_enabled && !pager_mode,
+                command: config.linear_command.clone(),
+            },
+            linear_runner: linear_runner(),
         }
     }
 
@@ -519,12 +565,42 @@ impl App {
         }
     }
 
+    /// Renders one frame into an in-memory backend and returns its text. Used by tests that
+    /// assert on what a screen actually shows rather than on state alone.
+    pub fn render_to_string(&mut self, width: u16, height: u16) -> String {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("in-memory terminal");
+        terminal
+            .draw(|frame| self.draw(frame))
+            .expect("draw the frame");
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|row| {
+                (0..buffer.area.width)
+                    .filter_map(|column| buffer.cell((column, row)).map(|cell| cell.symbol()))
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     pub fn screen(&self) -> AppScreen {
         self.screen
     }
 
     /// Replaces the provider job factory. Tests use this to resolve questions without
     /// spawning `pi`; production keeps the default pi-backed runner.
+    /// Replaces the Linear fetch so tests never spawn the CLI.
+    pub fn with_linear_runner<F>(mut self, runner: F) -> Self
+    where
+        F: Fn(String, String) -> Result<crate::linear::LinearTicket, crate::linear::LinearError>
+            + 'static,
+    {
+        self.linear_runner = Box::new(runner);
+        self
+    }
+
     pub fn with_ask_runner<F, J>(mut self, runner: F) -> Self
     where
         F: Fn(AskRequest) -> J + 'static,
@@ -1061,12 +1137,25 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
         if self.screen == AppScreen::PrDescription {
-            if let (Some(session), Some(description)) =
+            if let (Some(session), Some(document)) =
                 (self.remote_review.as_ref(), self.pr_description.as_mut())
             {
-                description.resize(&session.context.body, area.width, area.height);
                 frame.render_widget(
-                    PrDescriptionWidget::new(&session.context, description, &self.review_theme),
+                    PrDescriptionWidget::new(&session.context, document, &self.review_theme),
+                    area,
+                );
+            }
+            return;
+        }
+        if self.screen == AppScreen::LinearTicket {
+            if let Some(screen) = self.linear.as_mut() {
+                frame.render_widget(
+                    LinearTicketWidget::new(
+                        &screen.ticket,
+                        &mut screen.document,
+                        &self.review_theme,
+                        screen.mismatch,
+                    ),
                     area,
                 );
             }
@@ -1202,7 +1291,8 @@ impl App {
             InputMode::Normal
             | InputMode::Filter
             | InputMode::ReviewMap
-            | InputMode::PrDescription => {}
+            | InputMode::PrDescription
+            | InputMode::LinearTicket => {}
         }
         if matches!(self.mode, Mode::TmuxPanePick) {
             frame.render_widget(
@@ -1425,7 +1515,9 @@ impl App {
             }
             AppAction::ToggleReviewMap => self.toggle_review_map(viewport),
             AppAction::TogglePrDescription => self.toggle_pr_description(viewport),
-            AppAction::ScrollPrDescription(step) => self.scroll_pr_description(step, viewport),
+            AppAction::ScrollPrDescription(step) => self.scroll_pr_description(step),
+            AppAction::ToggleLinearTicket => self.toggle_linear_ticket(viewport),
+            AppAction::ScrollLinearTicket(step) => self.scroll_linear_ticket(step),
             AppAction::JumpAskAnswer => self.jump_to_ask_answer(viewport),
             AppAction::FocusReviewMapFilter => {
                 self.input_mode = InputMode::Filter;
@@ -1629,24 +1721,77 @@ impl App {
         };
         // The viewport is the diff pane rather than the whole terminal, so the widget
         // re-wraps to the real width on its first draw.
-        self.pr_description = Some(PrDescription::new(&session.context.body, viewport.width));
+        self.pr_description = Some(crate::ui::pr_description::new_document(
+            &session.context.body,
+            viewport.width,
+        ));
         self.pr_description_origin = self.screen;
         self.screen = AppScreen::PrDescription;
         self.input_mode = InputMode::PrDescription;
     }
 
-    fn scroll_pr_description(&mut self, step: PrScroll, viewport: Viewport) {
-        let Some(description) = self.pr_description.as_mut() else {
+    fn scroll_pr_description(&mut self, step: PrScroll) {
+        if let Some(document) = self.pr_description.as_mut() {
+            apply_scroll(document, step);
+        }
+    }
+
+    fn scroll_linear_ticket(&mut self, step: PrScroll) {
+        if let Some(screen) = self.linear.as_mut() {
+            apply_scroll(&mut screen.document, step);
+        }
+    }
+
+    /// `L` shows the Linear ticket the pull request refers to. The identifier is inferred from
+    /// the PR itself, so there is nothing to type.
+    fn toggle_linear_ticket(&mut self, viewport: Viewport) {
+        if self.screen == AppScreen::LinearTicket {
+            self.screen = self.linear_origin;
+            self.input_mode = self.base_input_mode();
+            return;
+        }
+        if let Some(screen) = &self.linear {
+            self.linear_origin = self.screen;
+            self.screen = AppScreen::LinearTicket;
+            self.input_mode = InputMode::LinearTicket;
+            let _ = screen;
+            return;
+        }
+        if !self.linear_settings.enabled {
+            self.toast = Some("Linear tickets are off; set enabled = true under [linear]".into());
+            return;
+        }
+        let Some(session) = self.remote_review.as_ref() else {
+            self.toast = Some("No pull request is open".into());
             return;
         };
-        let height = viewport.height.max(1);
-        let page = i32::from(height);
-        match step {
-            PrScroll::Line(delta) => description.scroll(delta, height),
-            PrScroll::HalfPage(delta) => description.scroll(delta * (page / 2).max(1), height),
-            PrScroll::Page(delta) => description.scroll(delta * page.max(1), height),
-            PrScroll::Top => description.scroll_to_top(),
-            PrScroll::Bottom => description.scroll_to_bottom(height),
+        let context = &session.context;
+        let Some(id) =
+            crate::linear::infer_ticket(&context.body, &context.head_ref, &context.title)
+        else {
+            self.toast = Some("No Linear ticket found in the branch, title, or description".into());
+            return;
+        };
+        let number = context.number;
+        let command = self.linear_settings.command.clone();
+        match (self.linear_runner)(command, id.clone()) {
+            Ok(ticket) => {
+                let mismatch = ticket
+                    .linked_pull_request()
+                    .filter(|linked| *linked != number);
+                self.linear = Some(LinearScreen {
+                    document: crate::ui::linear_ticket::new_document(
+                        &ticket.description,
+                        viewport.width,
+                    ),
+                    ticket,
+                    mismatch,
+                });
+                self.linear_origin = self.screen;
+                self.screen = AppScreen::LinearTicket;
+                self.input_mode = InputMode::LinearTicket;
+            }
+            Err(error) => self.toast = Some(format!("{id}: {error}")),
         }
     }
 
@@ -2204,6 +2349,7 @@ impl App {
             }
             InputMode::ReviewMap => self.show_review_screen(),
             InputMode::PrDescription => self.toggle_pr_description(viewport),
+            InputMode::LinearTicket => self.toggle_linear_ticket(viewport),
         }
     }
 

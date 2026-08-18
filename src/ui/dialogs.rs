@@ -48,6 +48,7 @@ pub fn help_text(can_refresh: bool) -> String {
         ("a", "ask AI (again to follow up)"),
         ("o", "jump to the AI answer"),
         ("P", "read the PR description"),
+        ("L", "read the Linear ticket"),
         ("v", "toggle file viewed"),
         ("Enter", "expand / un-view compact file"),
         ("A", "agent skill setup"),
