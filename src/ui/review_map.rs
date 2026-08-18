@@ -4,6 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthStr;
 
+use crate::review::row::wrap_note_text;
 use crate::review_map::{ReviewMapRow, ReviewMapSnapshot};
 
 use super::review::ReviewHeading;
@@ -62,6 +63,7 @@ impl Widget for ReviewMapWidget<'_> {
         );
         render_state(layout.state, buffer, self.snapshot, self.theme);
         render_rows(layout.content, buffer, self.snapshot, self.theme);
+        render_detail(layout.detail, buffer, self.snapshot, self.theme);
         render_footer(layout.footer, buffer, self.snapshot, self.theme);
     }
 }
@@ -95,16 +97,29 @@ struct MapLayout {
     header: Rect,
     state: Rect,
     content: Rect,
+    detail: Rect,
     footer: Rect,
 }
+
+/// The tree only carries a gist; below this width there is no room for even that, and below this
+/// height the band would starve the tree it is supposed to explain.
+const DETAIL_MIN_WIDTH: u16 = 70;
+const DETAIL_MAX_HEIGHT: u16 = 6;
+const CONTENT_MIN_HEIGHT: u16 = 4;
 
 fn map_layout(area: Rect) -> MapLayout {
     let header_height = u16::from(area.height >= 1);
     let footer_height = u16::from(area.height >= 2);
     let state_height = u16::from(area.height >= 3);
-    let content_height = area
+    let body_height = area
         .height
         .saturating_sub(header_height + state_height + footer_height);
+    let detail_height = if area.width >= DETAIL_MIN_WIDTH && body_height > CONTENT_MIN_HEIGHT {
+        DETAIL_MAX_HEIGHT.min(body_height - CONTENT_MIN_HEIGHT)
+    } else {
+        0
+    };
+    let content_height = body_height.saturating_sub(detail_height);
     MapLayout {
         header: Rect::new(area.x, area.y, area.width, header_height),
         state: Rect::new(
@@ -118,6 +133,13 @@ fn map_layout(area: Rect) -> MapLayout {
             area.y.saturating_add(header_height + state_height),
             area.width,
             content_height,
+        ),
+        detail: Rect::new(
+            area.x,
+            area.y
+                .saturating_add(header_height + state_height + content_height),
+            area.width,
+            detail_height,
         ),
         footer: Rect::new(
             area.x,
@@ -258,16 +280,19 @@ fn render_rows(area: Rect, buffer: &mut Buffer, snapshot: &ReviewMapSnapshot, th
             } => {
                 let fold = if *expanded { "▾" } else { "▸" };
                 let stats = format!("+{additions} −{deletions}");
-                let summary = if area.width >= 70 {
-                    summary
-                        .as_deref()
-                        .map(|summary| format!(" — {summary}"))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                let prefix = format!("{marker} {fold} {label}{summary}");
-                render_row_with_stats(area, y, buffer, &prefix, &stats, base, theme);
+                let label = format!("{marker} {fold} {label}");
+                render_row_with_stats(
+                    area,
+                    y,
+                    buffer,
+                    RowText {
+                        label: &label,
+                        summary: inline_summary(area, summary.as_deref()).as_deref(),
+                        stats: &stats,
+                    },
+                    base,
+                    theme,
+                );
             }
             ReviewMapRow::File {
                 path,
@@ -281,40 +306,140 @@ fn render_rows(area: Rect, buffer: &mut Buffer, snapshot: &ReviewMapSnapshot, th
                 let order = recommended_order
                     .map_or_else(|| "  ".into(), |order| format!("{} ", order_label(order)));
                 let viewed = if *reviewed { "✓ " } else { "" };
-                let summary = if area.width >= 70 {
-                    summary
-                        .as_deref()
-                        .map(|summary| format!(" — {summary}"))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                let prefix = format!("{marker}   {viewed}{order}{path}{summary}");
+                let label = format!("{marker}   {viewed}{order}{path}");
                 let stats = format!("+{additions} −{deletions}");
-                render_row_with_stats(area, y, buffer, &prefix, &stats, base, theme);
+                render_row_with_stats(
+                    area,
+                    y,
+                    buffer,
+                    RowText {
+                        label: &label,
+                        summary: inline_summary(area, summary.as_deref()).as_deref(),
+                        stats: &stats,
+                    },
+                    base,
+                    theme,
+                );
             }
         }
     }
+}
+
+/// The gist stays on the row — it is what makes the tree worth scanning — but only where there is
+/// room for it to say anything.
+fn inline_summary(area: Rect, summary: Option<&str>) -> Option<String> {
+    (area.width >= DETAIL_MIN_WIDTH).then(|| summary.map(|summary| format!(" — {summary}")))?
+}
+
+/// The tree can only ever show a gist. This band carries the focused row's whole insight, plus the
+/// risk sentence the model produces for every row and the tree has never had a column to spare for.
+fn render_detail(area: Rect, buffer: &mut Buffer, snapshot: &ReviewMapSnapshot, theme: &AppTheme) {
+    if area.is_empty() {
+        return;
+    }
+    let base = Style::default().fg(theme.text).bg(theme.background);
+    buffer.set_style(area, base);
+    buffer.set_stringn(
+        area.x,
+        area.y,
+        "─".repeat(usize::from(area.width)),
+        usize::from(area.width),
+        base.fg(theme.border),
+    );
+    let Some(row) = snapshot
+        .selected_id
+        .as_deref()
+        .and_then(|id| snapshot.rows.iter().find(|row| row.id() == id))
+    else {
+        return;
+    };
+    let (title, summary, risk) = match row {
+        ReviewMapRow::Group {
+            label,
+            summary,
+            risk,
+            ..
+        } => (label.as_str(), summary.as_deref(), risk.as_deref()),
+        ReviewMapRow::File {
+            path,
+            summary,
+            risk,
+            ..
+        } => (path.as_str(), summary.as_deref(), risk.as_deref()),
+    };
+    let width = usize::from(area.width);
+    let mut y = area.y.saturating_add(1);
+    let bottom = area.bottom();
+    if y < bottom {
+        buffer.set_stringn(
+            area.x,
+            y,
+            truncate(title, width),
+            width,
+            base.add_modifier(Modifier::BOLD),
+        );
+        y = y.saturating_add(1);
+    }
+    for line in summary
+        .map(|summary| wrap_note_text(summary, width))
+        .unwrap_or_default()
+    {
+        if y >= bottom {
+            return;
+        }
+        buffer.set_stringn(area.x, y, &line, width, base);
+        y = y.saturating_add(1);
+    }
+    let Some(risk) = risk else {
+        return;
+    };
+    for line in wrap_note_text(&format!("Risk: {risk}"), width) {
+        if y >= bottom {
+            return;
+        }
+        buffer.set_stringn(area.x, y, &line, width, base.fg(theme.muted));
+        y = y.saturating_add(1);
+    }
+}
+
+/// The three pieces of text a row draws, each in its own colour: the label anchors the scan, the
+/// summary recedes behind it, and the stats are pinned right.
+struct RowText<'a> {
+    label: &'a str,
+    summary: Option<&'a str>,
+    stats: &'a str,
 }
 
 fn render_row_with_stats(
     area: Rect,
     y: u16,
     buffer: &mut Buffer,
-    prefix: &str,
-    stats: &str,
+    text: RowText<'_>,
     base: Style,
     theme: &AppTheme,
 ) {
+    let RowText {
+        label,
+        summary,
+        stats,
+    } = text;
     let stats_width = width(stats);
     let prefix_width = usize::from(area.width).saturating_sub(stats_width + 1);
-    buffer.set_stringn(
-        area.x,
-        y,
-        truncate(prefix, prefix_width),
-        prefix_width,
-        base,
-    );
+    // The path anchors the scan, so it keeps the foreground; the summary recedes behind it rather
+    // than competing for the same attention in the same colour.
+    let label_text = truncate(label, prefix_width);
+    let label_width = width(&label_text);
+    buffer.set_stringn(area.x, y, &label_text, prefix_width, base);
+    if let Some(summary) = summary {
+        let room = prefix_width.saturating_sub(label_width);
+        buffer.set_stringn(
+            area.x.saturating_add(label_width as u16),
+            y,
+            truncate_on_word(summary, room),
+            room,
+            base.fg(theme.muted),
+        );
+    }
     if stats_width < usize::from(area.width) {
         let stats_x = area.right().saturating_sub(stats_width as u16);
         let (added, removed) = stats.split_once(' ').unwrap_or((stats, ""));
@@ -378,6 +503,21 @@ fn order_label(order: usize) -> String {
 
 fn width(value: &str) -> usize {
     UnicodeWidthStr::width(value)
+}
+
+/// `truncate` cuts at a column, which lands mid-word and reads as a mangled thought rather than an
+/// abbreviated one. Backing up to the last space costs a few columns and buys a readable line.
+fn truncate_on_word(value: &str, maximum: usize) -> String {
+    let cut = truncate(value, maximum);
+    let Some(body) = cut.strip_suffix('…') else {
+        return cut;
+    };
+    let trimmed = body.trim_end();
+    if value.len() > trimmed.len() && !value[trimmed.len()..].starts_with(' ') {
+        let boundary = trimmed.rfind(' ').unwrap_or(trimmed.len());
+        return format!("{}…", &trimmed[..boundary]);
+    }
+    format!("{trimmed}…")
 }
 
 fn truncate(value: &str, maximum: usize) -> String {

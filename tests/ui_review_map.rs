@@ -1,4 +1,4 @@
-use ramo::review_map::ReviewMapController;
+use ramo::review_map::{ReviewMapAction, ReviewMapController};
 use ramo::ui::review::ReviewHeading;
 use ramo::ui::review_map::{ReviewMapHitTarget, ReviewMapWidget, review_map_hits};
 use ramo::ui::themes::ThemeRegistry;
@@ -8,6 +8,7 @@ use ramo_core::review_map::{
 };
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+use ratatui::buffer::Buffer;
 
 #[test]
 fn enriched_map_shows_totals_groups_order_and_progress() {
@@ -75,7 +76,95 @@ fn hit_geometry_tracks_visible_group_and_file_rows() {
     assert_eq!(hits[1].area.y, 3);
 }
 
-fn render(width: u16, height: u16, snapshot: &ramo::review_map::ReviewMapSnapshot) -> String {
+const LONG_SUMMARY: &str = "Extends Finalize with revision_requested and makes request_changes an immediate terminal transition independent of chain mode";
+const LONG_RISK: &str = "The new Finalize literal can expose transition consumers that still assume the only terminal outcomes are approved and rejected";
+
+#[test]
+fn the_detail_band_shows_the_focused_rows_full_summary_and_risk() {
+    let mut controller = ReviewMapController::new(long_map());
+    controller.apply(ReviewMapAction::Select(
+        "file:head:src/billing/proration.ts".into(),
+    ));
+    let snapshot = controller.snapshot();
+    let flat = flatten(&render(96, 20, &snapshot));
+
+    // Reflowed in full rather than cut, and carrying the risk the tree has never had room for.
+    assert!(flat.contains(LONG_SUMMARY), "summary was cut:\n{flat}");
+    assert!(flat.contains(LONG_RISK), "risk missing:\n{flat}");
+}
+
+#[test]
+fn the_tree_dims_summaries_so_paths_stay_scannable() {
+    let controller = ReviewMapController::new(long_map());
+    let snapshot = controller.snapshot();
+    let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
+    let buffer = render_buffer(96, 20, &snapshot);
+
+    let (y, line) = row_containing(&buffer, "src/billing/proration.ts").expect("file row");
+    let dash = line.find('\u{2014}').expect("summary separator");
+    let path_x = line.find("src/billing").expect("path start");
+
+    assert_eq!(
+        buffer[(path_x as u16, y)].fg,
+        theme.text,
+        "path should be bright"
+    );
+    assert_eq!(
+        buffer[((dash + 2) as u16, y)].fg,
+        theme.muted,
+        "summary should be dimmed"
+    );
+}
+
+#[test]
+fn inline_summaries_are_cut_on_a_word_boundary() {
+    let controller = ReviewMapController::new(long_map());
+    let snapshot = controller.snapshot();
+    let buffer = render_buffer(96, 20, &snapshot);
+
+    let (_, line) = row_containing(&buffer, "src/billing/proration.ts").expect("file row");
+    let dash = line.find('\u{2014}').expect("summary separator");
+    let tail = &line[dash + '\u{2014}'.len_utf8()..];
+    let shown = tail.split('\u{2026}').next().expect("summary text").trim();
+
+    assert!(
+        !shown.is_empty() && LONG_SUMMARY.starts_with(shown),
+        "not a prefix: {shown:?}"
+    );
+    let rest = &LONG_SUMMARY[shown.len()..];
+    assert!(
+        rest.is_empty() || rest.starts_with(' '),
+        "cut mid-word before {rest:?}"
+    );
+}
+
+fn flatten(frame: &str) -> String {
+    frame.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn row_containing(buffer: &Buffer, needle: &str) -> Option<(u16, String)> {
+    (0..buffer.area.height).find_map(|y| {
+        let line: String = (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect();
+        line.contains(needle).then_some((y, line))
+    })
+}
+
+fn long_map() -> ReviewMap {
+    let mut map = map(ReviewMapStatus::Enriched);
+    map.files[0].insight = Some(FileInsight {
+        summary: LONG_SUMMARY.into(),
+        risk: Some(LONG_RISK.into()),
+    });
+    map
+}
+
+fn render_buffer(
+    width: u16,
+    height: u16,
+    snapshot: &ramo::review_map::ReviewMapSnapshot,
+) -> Buffer {
     let theme = ThemeRegistry::default().resolve("tokyo-night", None, false);
     let heading = ReviewHeading::PullRequest {
         number: 1914,
@@ -93,7 +182,11 @@ fn render(width: u16, height: u16, snapshot: &ramo::review_map::ReviewMapSnapsho
             );
         })
         .unwrap();
-    let buffer = terminal.backend().buffer();
+    terminal.backend().buffer().clone()
+}
+
+fn render(width: u16, height: u16, snapshot: &ramo::review_map::ReviewMapSnapshot) -> String {
+    let buffer = render_buffer(width, height, snapshot);
     (0..buffer.area.height)
         .map(|y| {
             (0..buffer.area.width)
