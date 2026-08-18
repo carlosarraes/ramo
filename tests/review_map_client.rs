@@ -29,6 +29,23 @@ fn client_sends_bearer_auth_and_decodes_a_bounded_response() {
 }
 
 #[test]
+fn client_waits_for_a_server_that_fetches_before_it_answers() {
+    // `POST /v1/review-maps` blocks on a GitHub round trip and an analyzer pre-flight before it
+    // hands back a job id, so seconds of silence is the normal case rather than a dead server.
+    let server = FakeHttpServer::json_after(
+        Duration::from_millis(2_500),
+        202,
+        response_json(1, ReviewMapStatus::Analyzing),
+    );
+    let client = ReviewMapClient::new(server.endpoint(), "token").unwrap();
+
+    let result = client.resolve(&request()).unwrap();
+
+    assert_eq!(result.state, ReviewMapStatus::Analyzing);
+    server.finish();
+}
+
+#[test]
 fn client_rejects_oversized_or_incompatible_responses() {
     let oversized = FakeHttpServer::raw(format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -159,21 +176,32 @@ struct FakeHttpServer {
 
 impl FakeHttpServer {
     fn json(status: u16, value: serde_json::Value) -> Self {
+        Self::json_after(Duration::ZERO, status, value)
+    }
+
+    fn json_after(delay: Duration, status: u16, value: serde_json::Value) -> Self {
         let body = serde_json::to_vec(&value).unwrap();
-        Self::raw(format!(
-            "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            String::from_utf8(body).unwrap()
-        ))
+        Self::raw_after(
+            delay,
+            format!(
+                "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                String::from_utf8(body).unwrap()
+            ),
+        )
     }
 
     fn raw(response: String) -> Self {
+        Self::raw_after(Duration::ZERO, response)
+    }
+
+    fn raw_after(delay: Duration, response: String) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let worker = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             stream
-                .set_read_timeout(Some(Duration::from_secs(1)))
+                .set_read_timeout(Some(Duration::from_secs(10)))
                 .unwrap();
             let mut request = Vec::new();
             let mut chunk = [0_u8; 4096];
@@ -198,6 +226,7 @@ impl FakeHttpServer {
                     }
                 }
             }
+            std::thread::sleep(delay);
             stream.write_all(response.as_bytes()).unwrap();
             String::from_utf8(request).unwrap()
         });

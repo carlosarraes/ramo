@@ -9,7 +9,11 @@ use ramo_core::review_map::{
 
 const MAX_REVIEW_MAP_HEADERS: usize = 32 * 1024;
 pub const MAX_REVIEW_MAP_RESPONSE: usize = 1024 * 1024;
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Loopback connects succeed or are refused immediately, so this only bounds a hung listener.
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// `POST /v1/review-maps` fetches the pull request from GitHub and pre-flights the analyzer before
+/// it hands back a job id, so the read budget has to cover a network round trip, not a local hop.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReviewMapResolveRequest {
@@ -87,6 +91,7 @@ pub struct ReviewMapClient {
     endpoint: String,
     address: SocketAddr,
     token: String,
+    connect_timeout: Duration,
     timeout: Duration,
 }
 
@@ -113,6 +118,7 @@ impl ReviewMapClient {
             endpoint,
             address,
             token,
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT.min(timeout),
             timeout,
         })
     }
@@ -123,7 +129,7 @@ impl ReviewMapClient {
         path: &str,
         body: &[u8],
     ) -> Result<ReviewMapPoll, ReviewMapClientError> {
-        let mut stream = TcpStream::connect_timeout(&self.address, self.timeout)
+        let mut stream = TcpStream::connect_timeout(&self.address, self.connect_timeout)
             .map_err(|_| unavailable("Could not connect to local ramo-server"))?;
         stream
             .set_read_timeout(Some(self.timeout))
@@ -160,6 +166,7 @@ impl std::fmt::Debug for ReviewMapClient {
             .debug_struct("ReviewMapClient")
             .field("endpoint", &self.endpoint)
             .field("token", &"[REDACTED]")
+            .field("connect_timeout", &self.connect_timeout)
             .field("timeout", &self.timeout)
             .finish()
     }
