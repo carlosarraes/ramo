@@ -263,10 +263,12 @@ pub fn issue_pairing_code() -> Result<String, ReviewMapFailure> {
         )
     })?;
     let paths = SetupPaths::discover(executable)?;
+    // The endpoint file is written by `setup`, which is Linux-only. Pairing a terminal on the
+    // same machine needs no public endpoint, so fall back to the loopback bind address rather
+    // than refusing to pair at all.
     let endpoint = std::fs::read_to_string(&paths.endpoint_path)
-        .map_err(setup_io)?
-        .trim()
-        .to_owned();
+        .map(|endpoint| endpoint.trim().to_owned())
+        .unwrap_or_else(|_| format!("http://{}", config.bind_address));
     let pairing = crate::api::PairingState::open(
         crate::api::ReviewMapClientTokenStore::default(),
         config.state_dir.join("pairing.json"),
