@@ -10,13 +10,16 @@
 //! `assets/review-map-extension.ts`.
 
 use std::ffi::OsString;
+use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use ramo_core::pi::{PiCli, PiError, PiRequest, PiSession, PiTools};
 use ramo_core::process::SystemCommandExecutor;
 use ramo_core::review_map::{EnrichmentProposal, EnrichmentRequest, ReviewMapFailureCode};
+use tokio::sync::OnceCell;
 
 use crate::ReviewMapFailure;
 use crate::analysis::{AnalysisBudget, AnalyzerIdentity, budget_batches};
@@ -34,6 +37,10 @@ pub struct PiAnalyzer {
     effort: String,
     timeout: Duration,
     budget: AnalysisBudget,
+    /// `probe_pi` spawns a Node cold start costing over a second, and `identity()` runs on every
+    /// resolve *before* the map cache is consulted, so an unmemoized probe is charged to every
+    /// request. Only success is stored, so pi appearing on PATH later needs no restart.
+    probe: Arc<OnceCell<()>>,
 }
 
 impl PiAnalyzer {
@@ -49,6 +56,7 @@ impl PiAnalyzer {
             effort: effort.into(),
             timeout,
             budget: AnalysisBudget::default(),
+            probe: Arc::new(OnceCell::new()),
         }
     }
 
@@ -115,12 +123,14 @@ impl PiAnalyzer {
 impl Analyzer for PiAnalyzer {
     async fn identity(&self) -> Result<AnalyzerIdentity, ReviewMapFailure> {
         // Mirrors Ollama's pre-flight: fail before queueing work when the backend is absent.
-        let available = tokio::task::spawn_blocking(probe_pi)
-            .await
-            .map_err(|error| {
-                ReviewMapFailure::new(ReviewMapFailureCode::AnalysisFailed, error.to_string())
-            })?;
-        available?;
+        probe_once(&self.probe, || async {
+            tokio::task::spawn_blocking(probe_pi)
+                .await
+                .map_err(|error| {
+                    ReviewMapFailure::new(ReviewMapFailureCode::AnalysisFailed, error.to_string())
+                })?
+        })
+        .await?;
         Ok(AnalyzerIdentity {
             model: format!("{}/{}", self.provider, self.model),
             model_digest: self.synthetic_digest(),
@@ -236,6 +246,16 @@ fn classify(error: PiError) -> ReviewMapFailure {
     ReviewMapFailure::new(code, message)
 }
 
+/// Runs `probe` until it succeeds once, then never again. `OnceCell` leaves the cell empty when
+/// the closure fails, which is exactly the "cache success only" policy the pre-flight wants.
+async fn probe_once<F, Fut>(cell: &OnceCell<()>, probe: F) -> Result<(), ReviewMapFailure>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<(), ReviewMapFailure>>,
+{
+    cell.get_or_try_init(probe).await.copied()
+}
+
 fn probe_pi() -> Result<(), ReviewMapFailure> {
     use ramo_core::process::{CaptureLimits, CommandExecutor, CommandRequest};
     let result = SystemCommandExecutor
@@ -327,6 +347,35 @@ mod tests {
             "max",
             Duration::from_secs(180),
         )
+    }
+
+    #[tokio::test]
+    async fn the_pi_probe_is_paid_once_and_retried_until_it_succeeds() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Failure must not be cached: pi arriving on PATH later should not need a restart.
+        let cell = OnceCell::new();
+        let calls = AtomicUsize::new(0);
+        let probe = || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(ReviewMapFailure::new(
+                ReviewMapFailureCode::OllamaUnavailable,
+                "absent",
+            ))
+        };
+        assert!(probe_once(&cell, probe).await.is_err());
+        assert!(probe_once(&cell, probe).await.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+        // Success is cached, so the Node cold start stays off the request path.
+        let ok = || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        for _ in 0..5 {
+            probe_once(&cell, ok).await.unwrap();
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
 
     #[test]
