@@ -796,6 +796,7 @@ impl ReviewController {
             target,
             remote_target: None,
             body: String::new(),
+            caret: 0,
             editing: None,
         });
         self.dirty = true;
@@ -841,6 +842,7 @@ impl ReviewController {
             id: id.clone(),
             target,
             question: String::new(),
+            caret: 0,
         });
         self.dirty = true;
         self.rebuild(viewport, true);
@@ -905,8 +907,27 @@ impl ReviewController {
             return;
         };
         draft.question = sanitize_terminal_text(question, false);
+        draft.caret = draft.caret.min(draft.question.chars().count());
         self.dirty = true;
         self.rebuild(viewport, true);
+    }
+
+    /// Moves the caret of whichever draft is open. Kept separate from the text setters so a
+    /// pure motion never re-sanitizes or re-wraps the body.
+    pub fn set_draft_caret(&mut self, caret: usize, viewport: Viewport) {
+        let moved = if let Some(draft) = self.ask_draft.as_mut() {
+            let clamped = caret.min(draft.question.chars().count());
+            std::mem::replace(&mut draft.caret, clamped) != clamped
+        } else if let Some(draft) = self.human_note_draft.as_mut() {
+            let clamped = caret.min(draft.body.chars().count());
+            std::mem::replace(&mut draft.caret, clamped) != clamped
+        } else {
+            false
+        };
+        if moved {
+            self.dirty = true;
+            self.rebuild(viewport, true);
+        }
     }
 
     pub fn cancel_ask_draft(&mut self, viewport: Viewport) {
@@ -1082,6 +1103,7 @@ impl ReviewController {
             target,
             remote_target: Some(remote_target.clone()),
             body: String::new(),
+            caret: 0,
             editing: None,
         });
         self.dirty = true;
@@ -1125,6 +1147,7 @@ impl ReviewController {
             return false;
         };
         draft.body = sanitize_terminal_text(body, false);
+        draft.caret = draft.caret.min(draft.body.chars().count());
         self.dirty = true;
         self.rebuild(viewport, true);
         true
@@ -1174,11 +1197,14 @@ impl ReviewController {
         let Some(note) = self.human_notes.iter().find(|note| note.id == id).cloned() else {
             return false;
         };
+        // Reopening a saved note puts the caret at the end, where a reviewer resumes typing.
+        let caret = note.body.chars().count();
         self.human_note_draft = Some(HumanNoteDraft {
             id: format!("draft:{id}"),
             target: note.target,
             remote_target: note.remote_target,
             body: note.body,
+            caret,
             editing: Some(note.id),
         });
         self.dirty = true;

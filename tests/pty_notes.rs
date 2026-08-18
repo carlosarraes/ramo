@@ -354,3 +354,58 @@ fn stdout_export_is_printed_after_the_tui_restores_the_terminal() {
     let output = String::from_utf8_lossy(&process.raw);
     assert!(output.contains("stdout note"));
 }
+
+#[test]
+fn readline_shortcuts_edit_the_draft_in_a_real_terminal() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_home = temp.path().join("config");
+    disable_save_prompt(&config_home);
+    let output = temp.path().join("review.md");
+    let fixture = fixture();
+    let mut process = PtyProcess::spawn(
+        temp.path(),
+        &[
+            "--output",
+            output.to_str().unwrap(),
+            "patch",
+            &fixture,
+            "--mode",
+            "stack",
+        ],
+        &[("XDG_CONFIG_HOME", config_home.to_str().unwrap())],
+    );
+    process.read_until("println!");
+    process.send("c");
+    process.read_screen_until("Draft note");
+
+    process.send("alpha bravo charlie");
+    process.read_screen_until("alpha bravo charlie");
+
+    // Ctrl-W (0x17) drops the last whitespace-delimited word.
+    process.send("\x17");
+    std::thread::sleep(Duration::from_millis(150));
+    let after_kill = process.screen_text();
+    assert!(
+        !after_kill.contains("charlie"),
+        "Ctrl-W must remove the last word: {after_kill}"
+    );
+
+    // Ctrl-A (0x01) then typing inserts at the START, which needs a real caret.
+    process.send("\x01>> ");
+    process.read_screen_until(">> alpha bravo");
+
+    process.send("\r");
+    process.read_screen_until("Your note");
+    process.send("q");
+    assert_eq!(process.wait(), 0);
+
+    let markdown = std::fs::read_to_string(output).unwrap();
+    assert!(
+        markdown.contains(">> alpha bravo"),
+        "the saved note keeps the mid-string insert: {markdown}"
+    );
+    assert!(
+        !markdown.contains("charlie"),
+        "the killed word must not come back: {markdown}"
+    );
+}

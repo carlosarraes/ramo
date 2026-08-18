@@ -39,10 +39,11 @@ use crate::startup_notice::{RemoteUpdatePoll, RemoteUpdateRuntime};
 use crate::terminal::TerminalSession;
 use crate::ui::dialogs::{DialogOverlay, ThemeSelection};
 use crate::ui::highlight::HighlightCache;
-use crate::ui::input::{AppAction, InputMode, PrScroll, map_key_event, map_mouse_event};
+use crate::ui::input::{AppAction, InputMode, PrScroll, TextEdit, map_key_event, map_mouse_event};
 use crate::ui::pr_description::{PrDescription, PrDescriptionWidget};
 use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
 use crate::ui::review_map::{ReviewMapHitTarget, ReviewMapWidget, review_map_hits};
+use crate::ui::text_input::TextInput;
 use crate::ui::themes::{AppTheme, ThemeRegistry};
 use crate::vim::mode::Mode;
 use crate::watch::{WatchRuntime, WatchUpdate};
@@ -254,7 +255,7 @@ pub struct App {
     review_selection: Option<(SelectionPoint, SelectionPoint)>,
     review_keyboard_anchor: Option<SelectionPoint>,
     input_mode: InputMode,
-    filter_buffer: String,
+    filter_buffer: TextInput,
     theme_registry: ThemeRegistry,
     theme_selection: Option<ThemeSelection>,
     active_theme_id: String,
@@ -263,7 +264,7 @@ pub struct App {
     initial_view_preferences: ViewPreferences,
     preference_path: Option<PathBuf>,
     pub should_quit: bool,
-    pub comment_buf: String,
+    pub comment_buf: TextInput,
     pub search_query: String,
     pub search_matches: Vec<usize>,
     pub pending_keys: Vec<char>,
@@ -434,7 +435,7 @@ impl App {
             review_selection: None,
             review_keyboard_anchor: None,
             input_mode: InputMode::Normal,
-            filter_buffer: String::new(),
+            filter_buffer: TextInput::new(),
             theme_registry,
             theme_selection: None,
             active_theme_id,
@@ -443,7 +444,7 @@ impl App {
             initial_view_preferences: ViewPreferences::from(config),
             preference_path,
             should_quit: false,
-            comment_buf: String::new(),
+            comment_buf: TextInput::new(),
             search_query: String::new(),
             search_matches: Vec::new(),
             pending_keys: Vec::new(),
@@ -1091,7 +1092,7 @@ impl App {
         };
         let snapshot = self.review_controller.snapshot(viewport).clone();
         let status = if self.input_mode == InputMode::Filter || !self.filter_buffer.is_empty() {
-            Some(format!(" Filter: {}", self.filter_buffer))
+            Some(format!(" Filter: {}", self.filter_buffer.value()))
         } else if let Some(toast) = &self.toast {
             Some(format!(" {toast}"))
         } else {
@@ -1139,7 +1140,7 @@ impl App {
             InputMode::Note => {
                 if area.width < 48 {
                     frame.render_widget(
-                        DialogOverlay::note(&self.review_theme, &self.comment_buf),
+                        DialogOverlay::note(&self.review_theme, self.comment_buf.value()),
                         area,
                     );
                 }
@@ -1147,7 +1148,7 @@ impl App {
             InputMode::Ask => {
                 if area.width < 48 {
                     frame.render_widget(
-                        DialogOverlay::ask(&self.review_theme, &self.comment_buf),
+                        DialogOverlay::ask(&self.review_theme, self.comment_buf.value()),
                         area,
                     );
                 }
@@ -1181,7 +1182,7 @@ impl App {
             }
             InputMode::OverallComment => {
                 frame.render_widget(
-                    DialogOverlay::overall_comment(&self.review_theme, &self.comment_buf),
+                    DialogOverlay::overall_comment(&self.review_theme, self.comment_buf.value()),
                     area,
                 );
             }
@@ -1314,10 +1315,11 @@ impl App {
                         self.review_controller
                             .apply(ReviewAction::SelectNote(id.clone()), viewport);
                         if self.review_controller.edit_human_note(&id, viewport) {
-                            self.comment_buf = self
-                                .review_controller
-                                .human_note_draft()
-                                .map_or_else(String::new, |draft| draft.body.clone());
+                            self.comment_buf = TextInput::with_value(
+                                self.review_controller
+                                    .human_note_draft()
+                                    .map_or_else(String::new, |draft| draft.body.clone()),
+                            );
                             self.input_mode = InputMode::Note;
                         }
                     }
@@ -1428,71 +1430,28 @@ impl App {
             AppAction::FocusReviewMapFilter => {
                 self.input_mode = InputMode::Filter;
             }
-            AppAction::Insert(character) => match self.input_mode {
-                InputMode::Filter => {
-                    self.filter_buffer.push(character);
-                    if self.screen == AppScreen::ReviewMap {
-                        if let Some(controller) = self.review_map.as_mut() {
-                            controller
-                                .apply(ReviewMapAction::SetFilter(self.filter_buffer.clone()));
-                        }
-                    } else {
-                        self.review_controller.apply(
-                            ReviewAction::SetFilter(self.filter_buffer.clone()),
-                            viewport,
-                        );
-                    }
+            AppAction::Insert(character) => {
+                // The only edit that can be refused, so it does not go through the shared path.
+                if self.input_mode == InputMode::Ask
+                    && self.comment_buf.char_count() >= crate::ask::MAX_QUESTION_CHARS
+                {
+                    self.toast = Some(format!(
+                        "Questions are limited to {} characters",
+                        crate::ask::MAX_QUESTION_CHARS
+                    ));
+                } else {
+                    self.edit_focused_buffer(viewport, |input| {
+                        input.insert(character);
+                        true
+                    });
                 }
-                InputMode::Note => {
-                    self.comment_buf.push(character);
-                    self.review_controller
-                        .update_human_note_draft(&self.comment_buf, viewport);
-                }
-                InputMode::Ask => {
-                    if self.comment_buf.chars().count() >= crate::ask::MAX_QUESTION_CHARS {
-                        self.toast = Some(format!(
-                            "Questions are limited to {} characters",
-                            crate::ask::MAX_QUESTION_CHARS
-                        ));
-                    } else {
-                        self.comment_buf.push(character);
-                        self.review_controller
-                            .update_ask_draft(&self.comment_buf, viewport);
-                    }
-                }
-                InputMode::OverallComment => self.comment_buf.push(character),
-                _ => {}
-            },
-            AppAction::Backspace => match self.input_mode {
-                InputMode::Filter => {
-                    self.filter_buffer.pop();
-                    if self.screen == AppScreen::ReviewMap {
-                        if let Some(controller) = self.review_map.as_mut() {
-                            controller
-                                .apply(ReviewMapAction::SetFilter(self.filter_buffer.clone()));
-                        }
-                    } else {
-                        self.review_controller.apply(
-                            ReviewAction::SetFilter(self.filter_buffer.clone()),
-                            viewport,
-                        );
-                    }
-                }
-                InputMode::Note => {
-                    self.comment_buf.pop();
-                    self.review_controller
-                        .update_human_note_draft(&self.comment_buf, viewport);
-                }
-                InputMode::Ask => {
-                    self.comment_buf.pop();
-                    self.review_controller
-                        .update_ask_draft(&self.comment_buf, viewport);
-                }
-                InputMode::OverallComment => {
-                    self.comment_buf.pop();
-                }
-                _ => {}
-            },
+            }
+            AppAction::Backspace => {
+                self.edit_focused_buffer(viewport, TextInput::backspace);
+            }
+            AppAction::Edit(edit) => {
+                self.edit_focused_buffer(viewport, |input| apply_text_edit(input, edit));
+            }
             AppAction::Cancel => self.cancel_input(viewport),
             AppAction::Confirm => self.confirm_input(viewport),
             AppAction::MoveChoice(delta) => {
@@ -1552,7 +1511,7 @@ impl App {
                     self.tmux_last_target = None;
                 }
                 self.review_controller
-                    .update_human_note_draft(&self.comment_buf, viewport);
+                    .update_human_note_draft(self.comment_buf.value(), viewport);
                 if let Some(annotation) = self.review_controller.human_note_draft_annotation() {
                     self.request_tmux_send(
                         format_annotation_for_tmux(&annotation),
@@ -1596,13 +1555,13 @@ impl App {
             AppAction::EditOverallComment => {
                 if let Some(session) = &mut self.remote_review {
                     session.overall_edit_original = Some(session.overall_body.clone());
-                    self.comment_buf.clone_from(&session.overall_body);
+                    self.comment_buf = TextInput::with_value(session.overall_body.clone());
                     self.input_mode = InputMode::OverallComment;
                 }
             }
             AppAction::SaveOverallComment => {
                 if let Some(session) = &mut self.remote_review {
-                    session.overall_body.clone_from(&self.comment_buf);
+                    session.overall_body = self.comment_buf.value().to_owned();
                     session.overall_body_edited = true;
                     session.overall_edit_original = None;
                 }
@@ -2136,6 +2095,52 @@ impl App {
         }
     }
 
+    /// Applies one edit to whichever buffer the current mode owns, then pushes the whole string
+    /// back to the controller when the text actually changed. Pure caret motions skip the sync —
+    /// every key already forces a redraw, so the caret moves without re-filtering or re-wrapping.
+    fn edit_focused_buffer(
+        &mut self,
+        viewport: Viewport,
+        edit: impl FnOnce(&mut TextInput) -> bool,
+    ) {
+        match self.input_mode {
+            InputMode::Filter => {
+                if edit(&mut self.filter_buffer) {
+                    let filter = self.filter_buffer.value().to_owned();
+                    if self.screen == AppScreen::ReviewMap {
+                        if let Some(controller) = self.review_map.as_mut() {
+                            controller.apply(ReviewMapAction::SetFilter(filter));
+                        }
+                    } else {
+                        self.review_controller
+                            .apply(ReviewAction::SetFilter(filter), viewport);
+                    }
+                }
+            }
+            InputMode::Note => {
+                if edit(&mut self.comment_buf) {
+                    let body = self.comment_buf.value().to_owned();
+                    self.review_controller
+                        .update_human_note_draft(&body, viewport);
+                }
+                self.review_controller
+                    .set_draft_caret(self.comment_buf.caret(), viewport);
+            }
+            InputMode::Ask => {
+                if edit(&mut self.comment_buf) {
+                    let question = self.comment_buf.value().to_owned();
+                    self.review_controller.update_ask_draft(&question, viewport);
+                }
+                self.review_controller
+                    .set_draft_caret(self.comment_buf.caret(), viewport);
+            }
+            InputMode::OverallComment => {
+                edit(&mut self.comment_buf);
+            }
+            _ => {}
+        }
+    }
+
     fn cancel_input(&mut self, viewport: Viewport) {
         match self.input_mode {
             InputMode::Filter if !self.filter_buffer.is_empty() => {
@@ -2218,7 +2223,7 @@ impl App {
             }
             InputMode::Note => {
                 self.review_controller
-                    .update_human_note_draft(&self.comment_buf, viewport);
+                    .update_human_note_draft(self.comment_buf.value(), viewport);
                 self.review_controller.save_human_note_draft(viewport);
                 self.comment_buf.clear();
                 self.input_mode = InputMode::Normal;
@@ -2226,7 +2231,7 @@ impl App {
             }
             InputMode::Ask => {
                 self.review_controller
-                    .update_ask_draft(&self.comment_buf, viewport);
+                    .update_ask_draft(self.comment_buf.value(), viewport);
                 if let Some(note) = self.review_controller.commit_ask_draft(viewport) {
                     self.dispatch_ask(note, viewport);
                 }
@@ -2368,7 +2373,7 @@ impl App {
                     .iter()
                     .position(|ann| ann.flat_start == range.0 && ann.flat_end == range.1);
                 if let Some(idx) = existing {
-                    self.comment_buf = self.annotations[idx].comment.clone();
+                    self.comment_buf = TextInput::with_value(self.annotations[idx].comment.clone());
                     self.comment_selection = Some((
                         self.annotations[idx].flat_start,
                         self.annotations[idx].flat_end,
@@ -2422,16 +2427,16 @@ impl App {
                 self.request_tmux_send(text, TmuxSendCompletion::SaveLegacyAnnotation);
             }
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.comment_buf.push('\n');
+                self.comment_buf.insert('\n');
             }
             KeyCode::Enter => {
                 self.submit_comment();
                 self.mode = Mode::Normal;
             }
             KeyCode::Backspace => {
-                self.comment_buf.pop();
+                self.comment_buf.backspace();
             }
-            KeyCode::Char(c) => self.comment_buf.push(c),
+            KeyCode::Char(c) => self.comment_buf.insert(c),
             _ => {}
         }
     }
@@ -2473,7 +2478,7 @@ impl App {
     }
 
     fn submit_comment(&mut self) {
-        if self.comment_buf.trim().is_empty() {
+        if self.comment_buf.value().trim().is_empty() {
             // If editing and user cleared the comment, delete the annotation
             if let Some(idx) = self.editing_annotation.take()
                 && idx < self.annotations.len()
@@ -2488,7 +2493,7 @@ impl App {
         if let Some(idx) = self.editing_annotation.take()
             && idx < self.annotations.len()
         {
-            self.annotations[idx].comment = self.comment_buf.clone();
+            self.annotations[idx].comment = self.comment_buf.value().to_owned();
             self.comment_buf.clear();
             return;
         }
@@ -2538,7 +2543,7 @@ impl App {
             flat_end: clamped_end,
             display_range: build_display_range(&old_lines, &new_lines),
             diff_context: context_lines.join("\n"),
-            comment: self.comment_buf.clone(),
+            comment: self.comment_buf.value().to_owned(),
         });
 
         self.comment_buf.clear();
@@ -2813,11 +2818,11 @@ impl App {
     // Falls back to raw comment_buf if no selection range is available.
     fn build_comment_context(&self) -> String {
         let Some((start, end)) = self.comment_selection else {
-            return self.comment_buf.clone();
+            return self.comment_buf.value().to_owned();
         };
         let end = end.min(self.flat_lines.len().saturating_sub(1));
         let Some(start_fl) = self.flat_lines.get(start).copied() else {
-            return self.comment_buf.clone();
+            return self.comment_buf.value().to_owned();
         };
         let file_path = self
             .files
@@ -2863,7 +2868,11 @@ impl App {
 
         format!(
             "`{}{}`:\n\n```{}\n{}```\n\n{}",
-            file_path, range, ext, code, self.comment_buf,
+            file_path,
+            range,
+            ext,
+            code,
+            self.comment_buf.value(),
         )
     }
 
@@ -2980,6 +2989,40 @@ fn build_file_starts(flat_lines: &[FlatLine]) -> Vec<usize> {
         }
     }
     starts
+}
+
+/// Returns whether the text changed, so the caller knows if the controller needs re-syncing.
+fn apply_text_edit(input: &mut TextInput, edit: TextEdit) -> bool {
+    match edit {
+        TextEdit::Home => {
+            input.move_home();
+            false
+        }
+        TextEdit::End => {
+            input.move_end();
+            false
+        }
+        TextEdit::Left => {
+            input.move_left();
+            false
+        }
+        TextEdit::Right => {
+            input.move_right();
+            false
+        }
+        TextEdit::WordLeft => {
+            input.move_word_left();
+            false
+        }
+        TextEdit::WordRight => {
+            input.move_word_right();
+            false
+        }
+        TextEdit::DeleteForward => input.delete_forward(),
+        TextEdit::KillToStart => input.kill_to_start(),
+        TextEdit::KillToEnd => input.kill_to_end(),
+        TextEdit::DeleteWordBack => input.delete_word_back(),
+    }
 }
 
 #[cfg(test)]

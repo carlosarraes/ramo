@@ -119,6 +119,8 @@ pub(crate) struct NoteCard {
     pub author: Option<String>,
     pub placement: NoteBoxLayout,
     pub kind: NoteCardKind,
+    /// `(row, column)` of the edit caret within `lines`, for draft cards only.
+    pub caret: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -531,6 +533,7 @@ fn github_note_card(
             .comments
             .first()
             .map(|comment| comment.author.clone()),
+        caret: None,
         placement,
         kind: NoteCardKind::Github,
     }
@@ -1049,6 +1052,7 @@ fn external_card(
         }),
         tags: note.tags.clone(),
         author: note.author.clone(),
+        caret: None,
         placement,
         source,
         kind: NoteCardKind::External,
@@ -1076,6 +1080,7 @@ fn human_card(
         markup: None,
         tags: Vec::new(),
         author: None,
+        caret: None,
         placement,
         kind: NoteCardKind::Human,
     }
@@ -1088,10 +1093,12 @@ fn draft_card(
     width: u16,
 ) -> NoteCard {
     let placement = note_box_layout(layout, draft.target.anchor_side, width);
-    let body = if draft.body.is_empty() {
-        "Write a note".to_owned()
+    // The placeholder is not editable text, so the caret sits at the start of an empty draft.
+    let (body, caret) = if draft.body.is_empty() {
+        ("Write a note".to_owned(), Some((0, 0)))
     } else {
-        draft.body.clone()
+        let wrapped = wrap_note_text_indexed(&draft.body, usize::from(placement.content_width));
+        (draft.body.clone(), Some(caret_cell(&wrapped, draft.caret)))
     };
     NoteCard {
         id: draft.id.clone(),
@@ -1106,6 +1113,7 @@ fn draft_card(
         markup: None,
         tags: Vec::new(),
         author: None,
+        caret,
         placement,
         kind: NoteCardKind::Human,
     }
@@ -1145,6 +1153,7 @@ fn ask_card(
         markup: None,
         tags: Vec::new(),
         author: None,
+        caret: None,
         placement,
         kind: NoteCardKind::Ask,
     }
@@ -1158,12 +1167,16 @@ fn ask_draft_card(
 ) -> NoteCard {
     let placement = note_box_layout(layout, draft.target.anchor_side, width);
     let follow_up = draft.is_follow_up();
-    let body = if !draft.question.is_empty() {
-        draft.question.clone()
+    let (body, caret) = if !draft.question.is_empty() {
+        let wrapped = wrap_note_text_indexed(&draft.question, usize::from(placement.content_width));
+        (
+            draft.question.clone(),
+            Some(caret_cell(&wrapped, draft.caret)),
+        )
     } else if follow_up {
-        "Ask a follow-up about this change".to_owned()
+        ("Ask a follow-up about this change".to_owned(), Some((0, 0)))
     } else {
-        "Ask about this change".to_owned()
+        ("Ask about this change".to_owned(), Some((0, 0)))
     };
     NoteCard {
         id: draft.id.clone(),
@@ -1179,6 +1192,7 @@ fn ask_draft_card(
         markup: None,
         tags: Vec::new(),
         author: None,
+        caret,
         placement,
         kind: NoteCardKind::Ask,
     }
@@ -1211,13 +1225,32 @@ fn target_location(file: &DiffFile, target: &NoteTarget) -> String {
     )
 }
 
+/// One wrapped output line plus, for each rendered character, the index of the source
+/// character it came from. The mapping is what lets a caret be placed after wrapping, which
+/// plain wrapping cannot support because whitespace runs are collapsed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WrappedLine {
+    pub text: String,
+    pub sources: Vec<usize>,
+}
+
 /// Word-wraps to `width`, preserving each source line's leading whitespace and hanging
 /// continuations under it. The indentation matters for anything Markdown-shaped — nested
 /// list items and fenced code lose their structure without it.
 pub(crate) fn wrap_note_text(text: &str, width: usize) -> Vec<String> {
+    wrap_note_text_indexed(text, width)
+        .into_iter()
+        .map(|line| line.text)
+        .collect()
+}
+
+pub(crate) fn wrap_note_text_indexed(text: &str, width: usize) -> Vec<WrappedLine> {
     let width = width.max(1);
-    let mut output = Vec::new();
+    let mut output: Vec<WrappedLine> = Vec::new();
+    // Index of the first character of the current source line, in chars over the whole text.
+    let mut line_origin = 0usize;
     for source_line in text.lines() {
+        let line_chars = source_line.chars().count();
         let trimmed = source_line.trim_start();
         let indent = &source_line[..source_line.len() - trimmed.len()];
         // Deep indentation on a narrow pane would leave no room for the text itself.
@@ -1227,46 +1260,101 @@ pub(crate) fn wrap_note_text(text: &str, width: usize) -> Vec<String> {
             ""
         };
         let indent_width = UnicodeWidthStr::width(indent);
+        let indent_chars = indent.chars().count();
         let mut current = indent.to_owned();
+        let mut sources: Vec<usize> = vec![line_origin; indent_chars];
         let mut current_width = indent_width;
-        for word in trimmed.split_whitespace() {
+        // Char offset of each word within the source line, so every emitted character can
+        // name the source character it came from.
+        let mut cursor = source_line.chars().count() - trimmed.chars().count();
+        let mut rest = trimmed;
+        while let Some(word_start) = rest.find(|c: char| !c.is_whitespace()) {
+            let leading = rest[..word_start].chars().count();
+            cursor += leading;
+            rest = &rest[word_start..];
+            let word_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            let word = &rest[..word_end];
             let word_width = UnicodeWidthStr::width(word);
             if current_width > indent_width && current_width.saturating_add(1 + word_width) <= width
             {
                 current.push(' ');
-                current.push_str(word);
-                current_width += 1 + word_width;
-                continue;
-            }
-            if current_width > indent_width {
-                output.push(std::mem::take(&mut current));
+                // The rendered separator stands for the whitespace run it replaced, so it must
+                // carry the index of that run's first character rather than the next word's.
+                sources.push(line_origin + cursor - leading);
+                current_width += 1;
+            } else if current_width > indent_width {
+                output.push(WrappedLine {
+                    text: std::mem::take(&mut current),
+                    sources: std::mem::take(&mut sources),
+                });
                 current = indent.to_owned();
+                sources = vec![line_origin; indent_chars];
                 current_width = indent_width;
             }
             // A single word longer than the pane is broken across lines.
-            for character in word.chars() {
+            for (offset, character) in word.chars().enumerate() {
                 let character_width = character.width().unwrap_or(0);
                 if current_width > indent_width
                     && current_width.saturating_add(character_width) > width
                 {
-                    output.push(std::mem::take(&mut current));
+                    output.push(WrappedLine {
+                        text: std::mem::take(&mut current),
+                        sources: std::mem::take(&mut sources),
+                    });
                     current = indent.to_owned();
+                    sources = vec![line_origin; indent_chars];
                     current_width = indent_width;
                 }
                 current.push(character);
+                sources.push(line_origin + cursor + offset);
                 current_width = current_width.saturating_add(character_width);
             }
+            cursor += word.chars().count();
+            rest = &rest[word_end..];
         }
         if current_width > indent_width {
-            output.push(current);
+            output.push(WrappedLine {
+                text: current,
+                sources,
+            });
         } else if source_line.is_empty() {
-            output.push(String::new());
+            output.push(WrappedLine {
+                text: String::new(),
+                sources: Vec::new(),
+            });
         }
+        // +1 for the newline that `lines()` stripped.
+        line_origin += line_chars + 1;
     }
     if output.is_empty() {
-        output.push(String::new());
+        output.push(WrappedLine {
+            text: String::new(),
+            sources: Vec::new(),
+        });
     }
     output
+}
+
+/// Where a caret sitting at source char index `caret` lands once the text is wrapped, as
+/// `(row, display column)`. Rows past the end clamp to the last line's end.
+pub(crate) fn caret_cell(lines: &[WrappedLine], caret: usize) -> (usize, usize) {
+    for (row, line) in lines.iter().enumerate() {
+        if let Some(position) = line.sources.iter().position(|&source| source >= caret) {
+            let column = line
+                .text
+                .chars()
+                .take(position)
+                .map(|c| c.width().unwrap_or(0))
+                .sum();
+            return (row, column);
+        }
+    }
+    let row = lines.len().saturating_sub(1);
+    let column = lines
+        .last()
+        .map(|line| UnicodeWidthStr::width(line.text.as_str()))
+        .unwrap_or(0);
+    (row, column)
 }
 
 fn max_line_number_digits(file: &DiffFile) -> usize {
@@ -1631,5 +1719,79 @@ mod tests {
             &plan.rows[0],
             ReviewRow::Collapsed { text, .. } if text == "Loading 3 unchanged lines…"
         ));
+    }
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    use super::*;
+
+    #[test]
+    fn caret_maps_through_wrapping_including_collapsed_whitespace() {
+        // Two spaces between words: the rendered line is NOT a contiguous slice of the source,
+        // which is exactly the case a naive offset walk gets wrong.
+        let text = "alpha  beta gamma";
+        let lines = wrap_note_text_indexed(text, 40);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "alpha beta gamma");
+
+        // Caret just before `beta` in the SOURCE (index 7) must land before `beta` on screen.
+        let (row, column) = caret_cell(&lines, 7);
+        assert_eq!((row, column), (0, 6));
+
+        // Caret at the very start and past the end.
+        assert_eq!(caret_cell(&lines, 0), (0, 0));
+        assert_eq!(caret_cell(&lines, 999), (0, 16));
+    }
+
+    #[test]
+    fn caret_lands_on_the_right_row_after_a_wrap() {
+        let lines = wrap_note_text_indexed("aaa bbb ccc ddd", 7);
+        assert_eq!(
+            lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+            ["aaa bbb", "ccc ddd"]
+        );
+        // Source index 12 is the first char of `ddd`.
+        assert_eq!(caret_cell(&lines, 12), (1, 4));
+    }
+
+    #[test]
+    fn caret_tracks_across_explicit_newlines() {
+        let lines = wrap_note_text_indexed("one\ntwo", 20);
+        assert_eq!(
+            lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+            ["one", "two"]
+        );
+        // "one" is 0..3, the newline is 3, so "two" starts at source index 4.
+        assert_eq!(caret_cell(&lines, 4), (1, 0));
+    }
+
+    #[test]
+    fn indexed_wrapping_matches_the_plain_wrapper_it_replaced() {
+        for (text, width) in [
+            ("- top level\n    - a nested item long enough to wrap", 20),
+            ("supercalifragilistic", 6),
+            ("", 10),
+            ("a\n\nb", 10),
+            (
+                "  indented continuation that must hang under its indent",
+                24,
+            ),
+        ] {
+            let plain = wrap_note_text(text, width);
+            let indexed: Vec<String> = wrap_note_text_indexed(text, width)
+                .into_iter()
+                .map(|l| l.text)
+                .collect();
+            assert_eq!(plain, indexed, "{text:?} @ {width}");
+        }
+    }
+
+    #[test]
+    fn wide_characters_advance_the_caret_column_by_two_cells() {
+        let lines = wrap_note_text_indexed("日本 語", 20);
+        assert_eq!(lines[0].text, "日本 語");
+        // Source index 3 is `語`; two wide chars plus a space precede it.
+        assert_eq!(caret_cell(&lines, 3), (0, 5));
     }
 }

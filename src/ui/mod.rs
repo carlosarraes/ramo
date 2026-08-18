@@ -5,4 +5,5 @@ pub mod input;
 pub mod pr_description;
 pub mod review;
 pub mod review_map;
+pub mod text_input;
 pub mod themes;

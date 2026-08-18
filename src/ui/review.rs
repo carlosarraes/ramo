@@ -734,6 +734,43 @@ fn render_note_card(
         };
         buffer.set_stringn(x, draw_y, text, usize::from(width), style);
     }
+    render_card_caret(area, x, y, width, first_line, card, buffer, theme);
+}
+
+/// Paints the edit caret as a reversed cell. Card body lines start two rows in (border, then
+/// location) and two columns in (`│ `), which is what maps a `(row, column)` onto the buffer.
+#[allow(clippy::too_many_arguments)]
+fn render_card_caret(
+    area: Rect,
+    x: u16,
+    y: u16,
+    width: u16,
+    first_line: usize,
+    card: &crate::review::row::NoteCard,
+    buffer: &mut Buffer,
+    theme: &AppTheme,
+) {
+    let Some((row, column)) = card.caret else {
+        return;
+    };
+    let line = row.saturating_add(2);
+    if line < first_line {
+        return;
+    }
+    let draw_y = y.saturating_add((line - first_line) as u16);
+    let draw_x = x.saturating_add(2).saturating_add(column as u16);
+    // The caret may sit one cell past the last character, so allow the full inner width.
+    if draw_y >= area.bottom() || draw_x >= x.saturating_add(width).saturating_sub(1) {
+        return;
+    }
+    if let Some(cell) = buffer.cell_mut((draw_x, draw_y)) {
+        cell.set_style(
+            Style::default()
+                .fg(theme.note_background)
+                .bg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
 }
 
 fn render_markup_note_line(

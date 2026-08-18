@@ -344,6 +344,7 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `Enter` / click | Expand one compacted file; on a viewed file this also clears its viewed mark |
 | `/` | Focus the file filter; `Tab` returns to review; Escape clears and exits |
 | `t`, `?` | Theme selector and controls help |
+| `Ctrl-A`/`Ctrl-E`, `Ctrl-U`/`Ctrl-K`, `Ctrl-W`, `Alt-B`/`Alt-F` | Readline editing in every text input: start/end of line, kill to start/end, delete previous word, move by word. `Ctrl-U` kills to the start of the line as it does in bash |
 | `V`, `y` | Select lines and copy through OSC 52 |
 | `Ctrl-t`, `Ctrl-Shift-t` | Send the current line/selection to tmux / choose a new target |
 | `c` | Create an inline human review note; Enter saves, Shift-Enter adds a line, `Ctrl-s` also saves |

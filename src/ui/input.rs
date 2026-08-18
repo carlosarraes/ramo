@@ -23,6 +23,22 @@ pub enum InputMode {
     PrDescription,
 }
 
+/// Readline-style editing applied to whichever text buffer currently has focus. Kept as one
+/// action with a payload rather than nine variants so every text mode routes them identically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextEdit {
+    Home,
+    End,
+    Left,
+    Right,
+    WordLeft,
+    WordRight,
+    DeleteForward,
+    KillToStart,
+    KillToEnd,
+    DeleteWordBack,
+}
+
 /// Scroll steps for the PR description. `Line`/`Page` deltas are in units; `Top` and
 /// `Bottom` clamp, so the screen needs no notion of content height to dispatch them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +61,7 @@ pub enum AppAction {
     FocusReviewMapFilter,
     Insert(char),
     Backspace,
+    Edit(TextEdit),
     Cancel,
     Confirm,
     MoveChoice(i32),
@@ -160,10 +177,13 @@ fn map_overall_comment(event: KeyEvent) -> Option<AppAction> {
             AppAction::SaveOverallComment
         });
     }
+    if let Some(edit) = map_readline(event) {
+        return Some(edit);
+    }
     match event.code {
         KeyCode::Esc => Some(AppAction::Cancel),
         KeyCode::Backspace => Some(AppAction::Backspace),
-        KeyCode::Char(character) if !event.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Char(character) if !has_control_or_alt(event) => {
             Some(AppAction::Insert(character))
         }
         _ => None,
@@ -352,15 +372,62 @@ fn map_text(event: KeyEvent, mode: InputMode) -> Option<AppAction> {
             });
         }
     }
+    if let Some(edit) = map_readline(event) {
+        return Some(edit);
+    }
     match event.code {
         KeyCode::Tab if mode == InputMode::Filter => Some(AppAction::ToggleFocus),
         KeyCode::Esc => Some(AppAction::Cancel),
         KeyCode::Backspace => Some(AppAction::Backspace),
-        KeyCode::Char(character) if !event.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Char(character) if !has_control_or_alt(event) => {
             Some(AppAction::Insert(character))
         }
         _ => None,
     }
+}
+
+/// Readline motions and kills, shared by every text mode. Callers must consult this *after*
+/// their own Ctrl bindings (`Ctrl-S` save, `Ctrl-T` tmux) so those keep priority.
+fn map_readline(event: KeyEvent) -> Option<AppAction> {
+    let edit = |edit| Some(AppAction::Edit(edit));
+    if event.modifiers.contains(KeyModifiers::CONTROL) {
+        return match event.code {
+            KeyCode::Char('a') => edit(TextEdit::Home),
+            KeyCode::Char('e') => edit(TextEdit::End),
+            KeyCode::Char('b') => edit(TextEdit::Left),
+            KeyCode::Char('f') => edit(TextEdit::Right),
+            KeyCode::Char('u') => edit(TextEdit::KillToStart),
+            KeyCode::Char('k') => edit(TextEdit::KillToEnd),
+            KeyCode::Char('w') => edit(TextEdit::DeleteWordBack),
+            KeyCode::Char('d') => edit(TextEdit::DeleteForward),
+            KeyCode::Char('h') => Some(AppAction::Backspace),
+            _ => None,
+        };
+    }
+    if event.modifiers.contains(KeyModifiers::ALT) {
+        return match event.code {
+            KeyCode::Char('b') => edit(TextEdit::WordLeft),
+            KeyCode::Char('f') => edit(TextEdit::WordRight),
+            KeyCode::Backspace => edit(TextEdit::DeleteWordBack),
+            _ => None,
+        };
+    }
+    match event.code {
+        KeyCode::Home => edit(TextEdit::Home),
+        KeyCode::End => edit(TextEdit::End),
+        KeyCode::Left => edit(TextEdit::Left),
+        KeyCode::Right => edit(TextEdit::Right),
+        KeyCode::Delete => edit(TextEdit::DeleteForward),
+        _ => None,
+    }
+}
+
+/// A literal character requires neither modifier. ALT was previously unchecked, so `Alt-b`
+/// typed a bare `b` instead of moving a word.
+fn has_control_or_alt(event: KeyEvent) -> bool {
+    event
+        .modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
 fn map_theme(event: KeyEvent) -> Option<AppAction> {
@@ -395,6 +462,7 @@ fn pager_action(action: &AppAction) -> bool {
                 | ReviewAction::Quit
         ) | AppAction::Insert(_)
             | AppAction::Backspace
+            | AppAction::Edit(_)
             | AppAction::Cancel
             | AppAction::Confirm
             | AppAction::BeginSelection

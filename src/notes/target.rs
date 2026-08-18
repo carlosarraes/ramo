@@ -52,6 +52,8 @@ pub struct HumanNoteDraft {
     pub target: NoteTarget,
     pub remote_target: Option<crate::remote_review::InlineCommentTarget>,
     pub body: String,
+    /// Caret position in `body`, as a char index, so the card can draw it after wrapping.
+    pub caret: usize,
     pub editing: Option<String>,
 }
 
@@ -88,6 +90,8 @@ pub struct AskDraft {
     pub thread_id: String,
     pub target: NoteTarget,
     pub question: String,
+    /// Caret position in `question`, as a char index.
+    pub caret: usize,
 }
 
 impl AskDraft {

@@ -25,6 +25,10 @@ fn controlled(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::CONTROL)
 }
 
+fn alted(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::ALT)
+}
+
 #[test]
 fn direct_hunk_keymap_has_no_menu_binding() {
     let cases = [
@@ -812,4 +816,152 @@ fn p_opens_the_pr_description_and_that_mode_owns_its_scroll_keys() {
         map_key_event(key(KeyCode::Char('c')), InputMode::PrDescription, false),
         None
     );
+}
+
+#[test]
+fn every_text_mode_accepts_the_readline_shortcuts() {
+    use ramo::ui::input::TextEdit;
+
+    for mode in [
+        InputMode::Filter,
+        InputMode::Note,
+        InputMode::Ask,
+        InputMode::OverallComment,
+    ] {
+        for (event, expected) in [
+            (controlled(KeyCode::Char('a')), TextEdit::Home),
+            (controlled(KeyCode::Char('e')), TextEdit::End),
+            (controlled(KeyCode::Char('b')), TextEdit::Left),
+            (controlled(KeyCode::Char('f')), TextEdit::Right),
+            (controlled(KeyCode::Char('u')), TextEdit::KillToStart),
+            (controlled(KeyCode::Char('k')), TextEdit::KillToEnd),
+            (controlled(KeyCode::Char('w')), TextEdit::DeleteWordBack),
+            (controlled(KeyCode::Char('d')), TextEdit::DeleteForward),
+            (alted(KeyCode::Char('b')), TextEdit::WordLeft),
+            (alted(KeyCode::Char('f')), TextEdit::WordRight),
+            (key(KeyCode::Home), TextEdit::Home),
+            (key(KeyCode::End), TextEdit::End),
+            (key(KeyCode::Left), TextEdit::Left),
+            (key(KeyCode::Delete), TextEdit::DeleteForward),
+        ] {
+            assert_eq!(
+                map_key_event(event, mode, false),
+                Some(AppAction::Edit(expected)),
+                "{mode:?} {event:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn readline_never_shadows_the_existing_save_and_send_bindings() {
+    // Ctrl-S saves in Note/Ask and the overall comment; Ctrl-T is the tmux send.
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('s')), InputMode::Note, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('s')), InputMode::Ask, false),
+        Some(AppAction::Confirm)
+    );
+    assert_eq!(
+        map_key_event(
+            controlled(KeyCode::Char('s')),
+            InputMode::OverallComment,
+            false
+        ),
+        Some(AppAction::SaveOverallComment)
+    );
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('t')), InputMode::Note, false),
+        Some(AppAction::SendNote {
+            reset_target: false
+        })
+    );
+}
+
+#[test]
+fn alt_chords_no_longer_type_a_literal_character() {
+    // Alt-b used to fall through to Insert('b') because only CONTROL was excluded.
+    for mode in [InputMode::Note, InputMode::Ask, InputMode::OverallComment] {
+        assert_ne!(
+            map_key_event(alted(KeyCode::Char('b')), mode, false),
+            Some(AppAction::Insert('b')),
+            "{mode:?}"
+        );
+    }
+    // An unbound Alt chord is inert rather than inserting.
+    assert_eq!(
+        map_key_event(alted(KeyCode::Char('z')), InputMode::Note, false),
+        None
+    );
+}
+
+#[test]
+fn editing_still_works_in_pager_mode() {
+    // The pager allow-list drops anything not whitelisted, so edits must be listed there.
+    assert_eq!(
+        map_key_event(controlled(KeyCode::Char('a')), InputMode::Note, true),
+        Some(AppAction::Edit(ramo::ui::input::TextEdit::Home))
+    );
+}
+
+#[test]
+fn readline_editing_mutates_the_filter_through_the_real_key_path() {
+    let mut app = App::new_with_config(vec![review_file()], &ResolvedConfig::default(), false);
+    let view = Viewport {
+        width: 100,
+        height: 24,
+    };
+
+    app.handle_ui_key(key(KeyCode::Char('/')), view);
+    for character in "src lib".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), view);
+    }
+    assert_eq!(app.review_controller.snapshot(view).filter, "src lib");
+
+    // Ctrl-W drops one whitespace-delimited word.
+    app.handle_ui_key(controlled(KeyCode::Char('w')), view);
+    assert_eq!(app.review_controller.snapshot(view).filter, "src ");
+
+    // Ctrl-A then typing inserts at the START, proving the caret is real.
+    app.handle_ui_key(controlled(KeyCode::Char('a')), view);
+    app.handle_ui_key(key(KeyCode::Char('x')), view);
+    assert_eq!(app.review_controller.snapshot(view).filter, "xsrc ");
+
+    // Ctrl-E returns to the end; Ctrl-U then clears everything before it.
+    app.handle_ui_key(controlled(KeyCode::Char('e')), view);
+    app.handle_ui_key(controlled(KeyCode::Char('u')), view);
+    assert_eq!(app.review_controller.snapshot(view).filter, "");
+}
+
+#[test]
+fn readline_editing_drives_the_note_draft_and_its_caret() {
+    let mut app = App::new_with_config(vec![review_file()], &ResolvedConfig::default(), false);
+    let view = Viewport {
+        width: 100,
+        height: 24,
+    };
+    app.review_controller.snapshot(view);
+
+    app.handle_ui_key(key(KeyCode::Char('c')), view);
+    assert_eq!(app.input_mode(), InputMode::Note);
+    for character in "needs a test".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), view);
+    }
+
+    let draft = |app: &App| {
+        app.review_controller
+            .human_note_draft()
+            .map(|draft| (draft.body.clone(), draft.caret))
+            .expect("draft open")
+    };
+    assert_eq!(draft(&app), ("needs a test".to_owned(), 12));
+
+    app.handle_ui_key(controlled(KeyCode::Char('a')), view);
+    assert_eq!(draft(&app).1, 0, "Ctrl-A moves the caret without editing");
+    assert_eq!(draft(&app).0, "needs a test", "and leaves the text alone");
+
+    app.handle_ui_key(controlled(KeyCode::Char('k')), view);
+    assert_eq!(draft(&app), (String::new(), 0));
 }
