@@ -107,24 +107,29 @@ pub fn save_view_preferences(
             path: path.to_path_buf(),
             source,
         })?;
+    // A file still in the flat shape gets sectioned first, so persisting one preference can
+    // never leave a stale root key silently shadowed by its own sectioned copy.
+    let migrated = !super::migrate::move_legacy_keys(&mut document).is_empty();
     if let Some(mode) = changes.mode {
-        set_value(&mut document, "mode", layout_name(mode));
+        set_value(&mut document, "view", "mode", layout_name(mode));
     }
     if let Some(theme) = &changes.theme {
-        set_value(&mut document, "theme", theme.clone());
+        set_value(&mut document, "theme", "name", theme.clone());
     }
-    set_optional_bool(&mut document, "show_sidebar", changes.show_sidebar);
-    set_optional_bool(&mut document, "line_numbers", changes.line_numbers);
-    set_optional_bool(&mut document, "wrap_lines", changes.wrap_lines);
-    set_optional_bool(&mut document, "hunk_headers", changes.hunk_headers);
-    set_optional_bool(&mut document, "agent_notes", changes.agent_notes);
+    set_optional_bool(&mut document, "view", "show_sidebar", changes.show_sidebar);
+    set_optional_bool(&mut document, "view", "line_numbers", changes.line_numbers);
+    set_optional_bool(&mut document, "view", "wrap_lines", changes.wrap_lines);
+    set_optional_bool(&mut document, "view", "hunk_headers", changes.hunk_headers);
+    set_optional_bool(&mut document, "view", "agent_notes", changes.agent_notes);
     set_optional_bool(
         &mut document,
+        "view",
         "transparent_background",
         changes.transparent_background,
     );
     set_optional_bool(
         &mut document,
+        "general",
         "prompt_save_view_preferences",
         changes.prompt_save_view_preferences,
     );
@@ -137,25 +142,45 @@ pub fn save_view_preferences(
             source,
         })?;
     }
-    fs::write(path, document.to_string()).map_err(|source| ConfigSaveError::Write {
+    // Sectioning the file detaches the heading comment from the first key it belonged to.
+    let rendered = if migrated {
+        format!(
+            "{}{}",
+            super::migrate::leading_comments(&source),
+            document.to_string().trim_start_matches('\n')
+        )
+    } else {
+        document.to_string()
+    };
+    fs::write(path, rendered).map_err(|source| ConfigSaveError::Write {
         path: path.to_path_buf(),
         source,
     })
 }
 
-fn set_optional_bool(document: &mut DocumentMut, key: &str, value: Option<bool>) {
+fn set_optional_bool(document: &mut DocumentMut, section: &str, key: &str, value: Option<bool>) {
     if let Some(value) = value {
-        set_value(document, key, value);
+        set_value(document, section, key, value);
     }
 }
 
-fn set_value(document: &mut DocumentMut, key: &str, value: impl Into<Value>) {
+/// Writes `section.key`, creating the table when absent and preserving any comment already
+/// attached to the value. Writing into a table rather than at the document root also avoids
+/// the trap where a bare key appended to a file that starts with `[diff]` lands inside it.
+fn set_value(document: &mut DocumentMut, section: &str, key: &str, value: impl Into<Value>) {
     let mut replacement = value.into();
-    if let Some(existing) = document.get_mut(key).and_then(Item::as_value_mut) {
+    let entry = document
+        .entry(section)
+        .or_insert_with(|| Item::Table(toml_edit::Table::new()));
+    let Some(table) = entry.as_table_mut() else {
+        return;
+    };
+    table.set_implicit(false);
+    if let Some(existing) = table.get_mut(key).and_then(Item::as_value_mut) {
         *replacement.decor_mut() = existing.decor().clone();
         *existing = replacement;
     } else {
-        document[key] = Item::Value(replacement);
+        table[key] = Item::Value(replacement);
     }
 }
 

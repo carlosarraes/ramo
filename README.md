@@ -73,9 +73,10 @@ chmod 600 "${XDG_CONFIG_HOME:-$HOME/.config}/ramo/review-map-client.json"
 Add this to `~/.config/ramo/config.toml` using the resulting absolute path:
 
 ```toml
-review_map_server = "http://127.0.0.1:47831"
-review_map_token_file = "/home/you/.config/ramo/review-map-client.json"
-ai_summaries = true
+[map]
+enabled = true
+server = "http://127.0.0.1:47831"
+token_file = "/home/you/.config/ramo/review-map-client.json"
 ```
 
 Without a token, server, or Ollama, the exact tree remains usable and the failure notice can be dismissed. Existing comments and publication state survive every map/code transition.
@@ -367,11 +368,12 @@ Press `a` again anywhere inside a question's lines — or on its answer card, af
 Turn it on deliberately:
 
 ```toml
-ask_enabled = true
-ask_provider = "opencode-go"
-ask_model = "deepseek-v4-flash"
-ask_thinking = "max"
-ask_timeout_secs = 180
+[ask]
+enabled = true
+provider = "openai-codex"
+model = "gpt-5.6-luna"
+effort = "max"
+timeout_secs = 180
 ```
 
 `--no-ask` disables it for a single run; `--ask` enables it for one run without editing the config. Setting `ask_provider`/`ask_model` alone does nothing: only `ask_enabled = true` grants consent. Asking is unavailable in pager mode. If the provider rejects the model, the failure card names the model and the `pi --list-models` command that lists valid ids, so a stale `ask_model` is obvious rather than silent.
@@ -385,8 +387,11 @@ The mouse wheel scrolls vertically; Shift-wheel and native horizontal-wheel even
 User preferences live at the platform config path (for example `~/.config/ramo/config.toml` on Linux); repository overrides live in the nearest `.ramo/config.toml`:
 
 ```toml
+[general]
+prompt_save_view_preferences = true
+
+[view]
 mode = "unified"
-theme = "auto"
 show_sidebar = true
 line_numbers = true
 wrap_lines = false
@@ -394,12 +399,27 @@ hunk_headers = true
 agent_notes = false
 copy_decorations = false
 transparent_background = false
-prompt_save_view_preferences = true
-test_file_patterns = ["qa/**", "**/*_snapshot.*"]
+
+[theme]
+name = "auto"
+
+[review]
+message = "approved"        # optional; replaces the generated PR review body
 tests_last = true
-ask_enabled = false # opt in to remote AI questions; see Ask AI about the diff
-review_message = "approved" # optional; replaces the generated PR review body
+test_file_patterns = ["qa/**", "**/*_snapshot.*"]
+
+[ask]
+enabled = false             # opt in; see Ask AI about the diff
+
+[map]
+enabled = false             # opt in; sends whole patches to a remote provider
 ```
+
+Configuration is organized into sections. A pre-0.1.0 flat config is **migrated automatically on
+first run**: the user config is rewritten into sections, the original is kept beside it as
+`config.toml.bak`, and a startup notice lists exactly what moved. A repository `.ramo/config.toml`
+is version-controlled and shared with your team, so it is read in either shape and never rewritten.
+Both spellings keep working, so an un-migrated file never blocks startup.
 
 Press `t` to preview embedded or custom themes. When interactive view settings change, `q` offers save, discard, never-ask, and cancel choices. Saving edits only changed user-global keys and preserves unrelated TOML comments, command sections, and custom-theme tables. Pager mode never persists view changes.
 

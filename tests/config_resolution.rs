@@ -326,8 +326,8 @@ fn ask_ai_is_off_by_default_and_layers_like_other_preferences() {
         .resolve(&patch_input(CommonOptions::default()))
         .unwrap();
     assert!(!defaults.ask_enabled, "remote inference must be opt-in");
-    assert_eq!(defaults.ask_provider, "opencode-go");
-    assert_eq!(defaults.ask_model, "deepseek-v4-flash");
+    assert_eq!(defaults.ask_provider, "openai-codex");
+    assert_eq!(defaults.ask_model, "gpt-5.6-luna");
     assert_eq!(defaults.ask_thinking, "max");
     assert_eq!(defaults.ask_timeout_secs, 180);
 
@@ -480,7 +480,10 @@ fn review_map_configuration_is_local_optional_and_validated() {
         .unwrap();
     assert_eq!(defaults.review_map_server, "http://127.0.0.1:47831");
     assert!(defaults.review_map_token_file.is_none());
-    assert!(defaults.ai_summaries);
+    assert!(
+        !defaults.ai_summaries,
+        "the map sends whole patches to a remote provider, so it opts in like Ask"
+    );
 
     let temp = tempfile::tempdir().unwrap();
     let valid = temp.path().join("valid.toml");

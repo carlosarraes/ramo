@@ -398,7 +398,10 @@ fn changed_layout_and_theme_can_be_saved_from_the_centered_prompt() {
 
     let saved = std::fs::read_to_string(config_home.join("ramo/config.toml")).unwrap();
     assert!(saved.contains("mode = \"split\""));
-    assert!(saved.contains("theme = "));
+    assert!(
+        saved.contains("[theme]") && saved.contains("name = "),
+        "{saved}"
+    );
     assert_eq!(
         process
             .raw
@@ -591,9 +594,11 @@ fn deprecated_theme_syntax_surfaces_a_native_startup_notice() {
     std::fs::write(
         path,
         concat!(
-            "theme = \"custom\"\n",
+            "[theme]\n",
+            "name = \"custom\"\n",
+            "[general]\n",
             "prompt_save_view_preferences = false\n",
-            "[custom_theme.syntax]\n",
+            "[theme.custom.syntax]\n",
             "keyword = \"#112233\"\n",
         ),
     )
@@ -746,9 +751,11 @@ fn local_and_remote_startup_notices_are_shown_in_order() {
     std::fs::write(
         config,
         concat!(
-            "theme = \"custom\"\n",
+            "[theme]\n",
+            "name = \"custom\"\n",
+            "[general]\n",
             "prompt_save_view_preferences = false\n",
-            "[custom_theme.syntax]\n",
+            "[theme.custom.syntax]\n",
             "keyword = \"#112233\"\n",
         ),
     )

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::input::{CommonOptions, InputKind, ReviewInput};
 
-use super::model::{ConfigFile, ConfigLayer, ResolvedConfig};
+use super::model::{AgentSection, ConfigFile, ConfigLayer, ResolvedConfig, ThemeSetting};
 
 const PREFERENCE_KEYS: &[&str] = &[
     "mode",
@@ -38,6 +38,58 @@ const PREFERENCE_KEYS: &[&str] = &[
 ];
 
 const COMMAND_SECTIONS: &[&str] = &["diff", "show", "stash_show", "patch", "pager", "difftool"];
+
+/// Setting sections and the keys each one owns. Deliberately separate from `COMMAND_SECTIONS`:
+/// these are not per-command overrides, so `command_layer` must never see them.
+const SETTING_SECTIONS: &[(&str, &[&str])] = &[
+    (
+        "general",
+        &[
+            "vcs",
+            "watch",
+            "exclude_untracked",
+            "prompt_save_view_preferences",
+        ],
+    ),
+    (
+        "view",
+        &[
+            "mode",
+            "show_sidebar",
+            "line_numbers",
+            "wrap_lines",
+            "hunk_headers",
+            "agent_notes",
+            "transparent_background",
+            "color_moved",
+            "copy_decorations",
+        ],
+    ),
+    ("theme", &["name", "custom"]),
+    ("review", &["message", "tests_last", "test_file_patterns"]),
+    (
+        "ask",
+        &["enabled", "provider", "model", "effort", "timeout_secs"],
+    ),
+    (
+        "map",
+        &[
+            "enabled",
+            "provider",
+            "model",
+            "effort",
+            "timeout_secs",
+            "start_on",
+            "server",
+            "token_file",
+        ],
+    ),
+    (
+        "chat",
+        &["enabled", "provider", "model", "effort", "timeout_secs"],
+    ),
+    ("linear", &["enabled", "command"]),
+];
 const CUSTOM_THEME_COLOR_KEYS: &[&str] = &[
     "background",
     "panel",
@@ -129,20 +181,26 @@ impl ConfigResolver {
 
         if let Some(config) = &user {
             resolved.apply_layer(&config.global);
+            resolved.apply_sections(config);
         }
         if let Some(config) = &repo {
             resolved.apply_layer(&config.global);
+            resolved.apply_sections(config);
         }
-        if let Some(custom_theme) = user
-            .as_ref()
-            .and_then(|config| config.custom_theme.as_ref())
-        {
+        if let Some(custom_theme) = user.as_ref().and_then(|config| {
+            config
+                .custom_theme
+                .as_ref()
+                .or(config.theme.as_ref().and_then(ThemeSetting::custom))
+        }) {
             resolved.custom_theme = Some(custom_theme.clone());
         }
-        if let Some(custom_theme) = repo
-            .as_ref()
-            .and_then(|config| config.custom_theme.as_ref())
-        {
+        if let Some(custom_theme) = repo.as_ref().and_then(|config| {
+            config
+                .custom_theme
+                .as_ref()
+                .or(config.theme.as_ref().and_then(ThemeSetting::custom))
+        }) {
             match &mut resolved.custom_theme {
                 Some(base) => base.merge(custom_theme),
                 None => resolved.custom_theme = Some(custom_theme.clone()),
@@ -199,32 +257,39 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
             path: path.to_path_buf(),
             source: source.to_string(),
         })?;
-    if let Some(base) = config
-        .custom_theme
-        .as_mut()
-        .and_then(|custom| custom.base.as_mut())
+    // `[theme.custom]` is the sectioned home of `[custom_theme]`, so both need the same
+    // base-id normalization and deprecated-syntax translation.
+    let mut uses_legacy_syntax = false;
+    for custom in [
+        config.custom_theme.as_mut(),
+        config.theme.as_mut().and_then(ThemeSetting::custom_mut),
+    ]
+    .into_iter()
+    .flatten()
     {
-        let Some(canonical) = crate::ui::themes::normalize_builtin_theme_id(base) else {
-            return Err(ConfigError::Parse {
-                path: path.to_path_buf(),
-                source: format!("custom_theme.base is not a known built-in theme id: {base}"),
-            });
-        };
-        *base = canonical.to_owned();
+        if let Some(base) = custom.base.as_mut() {
+            let Some(canonical) = crate::ui::themes::normalize_builtin_theme_id(base) else {
+                return Err(ConfigError::Parse {
+                    path: path.to_path_buf(),
+                    source: format!("custom_theme.base is not a known built-in theme id: {base}"),
+                });
+            };
+            *base = canonical.to_owned();
+        }
+        if !custom.legacy_syntax.is_empty() {
+            uses_legacy_syntax = true;
+            let exact = std::mem::take(&mut custom.syntax_scopes);
+            custom.syntax_scopes = legacy_syntax_scopes(&custom.legacy_syntax);
+            custom.syntax_scopes.extend(exact);
+            custom.legacy_syntax.clear();
+        }
     }
-    if let Some(custom) = config.custom_theme.as_mut()
-        && !custom.legacy_syntax.is_empty()
-    {
-        config.uses_legacy_syntax = true;
-        let exact = std::mem::take(&mut custom.syntax_scopes);
-        custom.syntax_scopes = legacy_syntax_scopes(&custom.legacy_syntax);
-        custom.syntax_scopes.extend(exact);
-        custom.legacy_syntax.clear();
-    }
+    config.uses_legacy_syntax = uses_legacy_syntax;
     validate_test_file_patterns(path, &config)?;
     validate_review_map_config(path, &config)?;
     validate_ask_config(path, &config)?;
     validate_review_message(path, &config)?;
+    validate_sections(path, &config)?;
     Ok(Some(config))
 }
 
@@ -233,37 +298,33 @@ fn read_config(path: Option<&Path>) -> Result<Option<ConfigFile>, ConfigError> {
 const MAX_REVIEW_MESSAGE_BYTES: usize = 2 * 1024;
 
 fn validate_review_message(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
-    for layer in [
-        &config.global,
-        &config.diff,
-        &config.show,
-        &config.stash_show,
-        &config.patch,
-        &config.pager,
-        &config.difftool,
-    ] {
-        let Some(message) = &layer.review_message else {
-            continue;
-        };
-        if message.len() > MAX_REVIEW_MESSAGE_BYTES {
-            return Err(ConfigError::Parse {
-                path: path.to_path_buf(),
-                source: format!(
-                    "review_message must be at most {MAX_REVIEW_MESSAGE_BYTES} bytes: got {}",
-                    message.len()
-                ),
-            });
+    for layer in config.layers() {
+        if let Some(message) = &layer.review_message {
+            check_review_message(path, message)?;
         }
-        // A review body is Markdown, so newlines and tabs are legitimate; nothing else is.
-        if let Some(control) = message
-            .chars()
-            .find(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
-        {
-            return Err(ConfigError::Parse {
-                path: path.to_path_buf(),
-                source: format!("review_message must not contain control characters: {control:?}"),
-            });
-        }
+    }
+    Ok(())
+}
+
+fn check_review_message(path: &Path, message: &str) -> Result<(), ConfigError> {
+    if message.len() > MAX_REVIEW_MESSAGE_BYTES {
+        return Err(ConfigError::Parse {
+            path: path.to_path_buf(),
+            source: format!(
+                "review_message must be at most {MAX_REVIEW_MESSAGE_BYTES} bytes: got {}",
+                message.len()
+            ),
+        });
+    }
+    // A review body is Markdown, so newlines and tabs are legitimate; nothing else is.
+    if let Some(control) = message
+        .chars()
+        .find(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+    {
+        return Err(ConfigError::Parse {
+            path: path.to_path_buf(),
+            source: format!("review_message must not contain control characters: {control:?}"),
+        });
     }
     Ok(())
 }
@@ -277,15 +338,7 @@ fn validate_ask_config(path: &Path, config: &ConfigFile) -> Result<(), ConfigErr
         path: path.to_path_buf(),
         source,
     };
-    for layer in [
-        &config.global,
-        &config.diff,
-        &config.show,
-        &config.stash_show,
-        &config.patch,
-        &config.pager,
-        &config.difftool,
-    ] {
+    for layer in config.layers() {
         // Provider and model become argv for the pi CLI, so they must be single bare words.
         for (key, value) in [
             ("ask_provider", &layer.ask_provider),
@@ -322,16 +375,78 @@ fn validate_ask_config(path: &Path, config: &ConfigFile) -> Result<(), ConfigErr
     Ok(())
 }
 
+/// The sectioned equivalents of the flat validators. Provider and model still become argv for
+/// the pi CLI, so they keep the bare-word rule.
+fn validate_sections(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
+    let invalid = |source: String| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    };
+    let agents = [("ask", &config.ask), ("chat", &config.chat)];
+    let map_agent = AgentSection {
+        enabled: config.map.enabled,
+        provider: config.map.provider.clone(),
+        model: config.map.model.clone(),
+        effort: config.map.effort.clone(),
+        timeout_secs: config.map.timeout_secs,
+    };
+    for (section, agent) in agents.into_iter().chain([("map", &map_agent)]) {
+        for (key, value) in [("provider", &agent.provider), ("model", &agent.model)] {
+            let Some(value) = value else { continue };
+            if value.trim().is_empty() {
+                return Err(invalid(format!("[{section}] {key} must not be empty")));
+            }
+            if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+                return Err(invalid(format!(
+                    "[{section}] {key} must not contain whitespace or control characters: {value:?}"
+                )));
+            }
+        }
+        if let Some(effort) = &agent.effort
+            && !ASK_THINKING_LEVELS.contains(&effort.as_str())
+        {
+            return Err(invalid(format!(
+                "[{section}] effort must be one of {}: got {effort:?}",
+                ASK_THINKING_LEVELS.join(", ")
+            )));
+        }
+        if let Some(timeout) = agent.timeout_secs
+            && !ASK_TIMEOUT_RANGE.contains(&timeout)
+        {
+            return Err(invalid(format!(
+                "[{section}] timeout_secs must be between {} and {}: got {timeout}",
+                ASK_TIMEOUT_RANGE.start(),
+                ASK_TIMEOUT_RANGE.end()
+            )));
+        }
+    }
+    if let Some(endpoint) = &config.map.server {
+        crate::review_map::validate_loopback_endpoint(endpoint)
+            .map_err(|error| invalid(error.to_string()))?;
+    }
+    if let Some(token_file) = &config.map.token_file
+        && !token_file.is_absolute()
+    {
+        return Err(invalid("[map] token_file must be an absolute path".into()));
+    }
+    if let Some(message) = &config.review.message {
+        check_review_message(path, message)?;
+    }
+    for pattern in config.review.test_file_patterns.iter().flatten() {
+        crate::review::validate_test_file_pattern(pattern).map_err(invalid)?;
+    }
+    if let Some(command) = &config.linear.command
+        && (command.trim().is_empty() || command.chars().any(char::is_whitespace))
+    {
+        return Err(invalid(format!(
+            "[linear] command must be a single executable name: {command:?}"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_review_map_config(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
-    for layer in [
-        &config.global,
-        &config.diff,
-        &config.show,
-        &config.stash_show,
-        &config.patch,
-        &config.pager,
-        &config.difftool,
-    ] {
+    for layer in config.layers() {
         if let Some(endpoint) = &layer.review_map_server {
             crate::review_map::validate_loopback_endpoint(endpoint).map_err(|error| {
                 ConfigError::Parse {
@@ -353,15 +468,7 @@ fn validate_review_map_config(path: &Path, config: &ConfigFile) -> Result<(), Co
 }
 
 fn validate_test_file_patterns(path: &Path, config: &ConfigFile) -> Result<(), ConfigError> {
-    for layer in [
-        &config.global,
-        &config.diff,
-        &config.show,
-        &config.stash_show,
-        &config.patch,
-        &config.pager,
-        &config.difftool,
-    ] {
+    for layer in config.layers() {
         for pattern in layer.test_file_patterns.iter().flatten() {
             crate::review::validate_test_file_pattern(pattern).map_err(|source| {
                 ConfigError::Parse {
@@ -404,6 +511,33 @@ fn validate_keys(path: &Path, value: &toml::Value) -> Result<(), ConfigError> {
         }
         if key == "custom_theme" {
             validate_custom_theme(path, value)?;
+            continue;
+        }
+        if let Some((_, allowed)) = SETTING_SECTIONS
+            .iter()
+            .find(|(section, _)| section == &key.as_str())
+        {
+            // `theme = "name"` is the legacy scalar spelling of `[theme] name`.
+            if key == "theme" && value.as_str().is_some() {
+                continue;
+            }
+            let Some(section) = value.as_table() else {
+                return Err(ConfigError::Parse {
+                    path: path.to_path_buf(),
+                    source: format!("{key} must be a TOML table"),
+                });
+            };
+            for (section_key, section_value) in section {
+                if !allowed.contains(&section_key.as_str()) {
+                    return Err(ConfigError::UnknownKey {
+                        path: path.to_path_buf(),
+                        key: format!("{key}.{section_key}"),
+                    });
+                }
+                if key == "theme" && section_key == "custom" {
+                    validate_custom_theme(path, section_value)?;
+                }
+            }
             continue;
         }
         return Err(ConfigError::UnknownKey {

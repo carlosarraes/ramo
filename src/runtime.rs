@@ -144,7 +144,20 @@ fn run_server_companion(arguments: &[OsString]) -> Result<ExitCode, AppError> {
 fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCode, AppError> {
     let cwd = std::env::current_dir()?;
     let config_paths = ConfigPaths::discover(&cwd);
+    // Rewrite a pre-0.1.0 user config into sections before resolving, so the notice can name
+    // exactly what moved. The loader reads either shape, so a failure here is never fatal.
+    let migration = config_paths
+        .user
+        .as_deref()
+        .and_then(|path| crate::config::migrate_user_config(path).ok().flatten());
     let mut resolved_config = ConfigResolver::new(config_paths.clone()).resolve(&input)?;
+    if let Some(migration) = migration {
+        resolved_config.startup_notices.push(format!(
+            "Config migrated to sections • backup at {} • {}",
+            migration.backup.display(),
+            migration.moved.join(" • ")
+        ));
+    }
     let runner = SystemCommandRunner;
     let load_context = LoadContext {
         cwd: &cwd,

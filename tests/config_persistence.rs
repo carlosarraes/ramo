@@ -77,7 +77,7 @@ fn saving_stack_layout_uses_unified_vocabulary() {
 
     assert_eq!(
         std::fs::read_to_string(path).unwrap(),
-        "mode = \"unified\"\n"
+        "[view]\nmode = \"unified\"\n"
     );
 }
 
@@ -102,11 +102,13 @@ fn targeted_save_changes_only_owned_global_keys_and_preserves_toml_text() {
 
     save_view_preferences(&path, &ViewPreferenceChanges::between(&initial, &current)).unwrap();
     let saved = std::fs::read_to_string(&path).unwrap();
+    // `[custom_theme]` is now `[theme.custom]`; its contents must survive the move.
+    assert!(saved.contains("[theme.custom]"), "{saved}");
     for untouched in [
         "# keep this heading",
         "watch = true",
         "[diff]\nwrap_lines = false # command stays",
-        "[custom_theme]\nbase = \"github-dark-default\"\naccent = \"#112233\"",
+        "base = \"github-dark-default\"\naccent = \"#112233\"",
     ] {
         assert!(
             saved.contains(untouched),
@@ -115,7 +117,7 @@ fn targeted_save_changes_only_owned_global_keys_and_preserves_toml_text() {
     }
     for changed in [
         "mode = \"split\" # mode note",
-        "theme = \"dracula\"",
+        "name = \"dracula\"",
         "show_sidebar = false",
         "line_numbers = false",
         "wrap_lines = true",
@@ -218,7 +220,10 @@ fn theme_confirm_writes_immediately_and_quit_stops_prompting() {
     app.handle_ui_key(key(KeyCode::Enter), viewport);
     assert_eq!(app.input_mode(), InputMode::Normal);
     let saved = std::fs::read_to_string(&path).unwrap();
-    assert!(saved.contains("theme = "), "{saved}");
+    assert!(
+        saved.contains("[theme]") && saved.contains("name = "),
+        "{saved}"
+    );
 
     app.handle_ui_key(key(KeyCode::Char('q')), viewport);
     assert!(app.should_quit);

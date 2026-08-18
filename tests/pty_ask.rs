@@ -173,7 +173,9 @@ fn config_home(root: &Path, ask_enabled: bool) -> std::path::PathBuf {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         path,
-        format!("prompt_save_view_preferences = false\nask_enabled = {ask_enabled}\n"),
+        format!(
+            "[general]\nprompt_save_view_preferences = false\n\n[ask]\nenabled = {ask_enabled}\n"
+        ),
     )
     .unwrap();
     home
@@ -214,7 +216,7 @@ fn asking_shows_a_pending_card_then_the_answer_and_o_jumps_to_it() {
     let calls = std::fs::read_to_string(&log).unwrap();
     assert!(calls.contains("--no-tools"), "{calls}");
     assert!(calls.contains("--no-session"), "{calls}");
-    assert!(calls.contains("--provider opencode-go"), "{calls}");
+    assert!(calls.contains("--provider openai-codex"), "{calls}");
 }
 
 #[test]
