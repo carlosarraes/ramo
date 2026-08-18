@@ -45,20 +45,50 @@ pub struct ReviewAreas {
     pub header: Rect,
     pub content: Rect,
     pub footer: Rect,
+    /// The chat pane, when it is open and the terminal is wide enough for it.
+    pub chat: Option<Rect>,
 }
 
+/// Below this the diff would be squeezed past usefulness, so the chat pane yields rather than
+/// shrinking the code — the same discipline the sidebar already follows.
+pub const CHAT_MIN_TOTAL_WIDTH: u16 = 100;
+const CHAT_PERCENT: u16 = 40;
+
 pub fn review_areas(area: Rect) -> ReviewAreas {
+    review_areas_with_chat(area, false)
+}
+
+pub fn review_areas_with_chat(area: Rect, chat: bool) -> ReviewAreas {
     let rows = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(1),
     ])
     .split(area);
+    let (content, chat) = if chat && area.width >= CHAT_MIN_TOTAL_WIDTH {
+        let columns = Layout::horizontal([
+            Constraint::Percentage(100 - CHAT_PERCENT),
+            Constraint::Percentage(CHAT_PERCENT),
+        ])
+        .split(rows[1]);
+        (columns[0], Some(columns[1]))
+    } else {
+        (rows[1], None)
+    };
     ReviewAreas {
         header: rows[0],
-        content: rows[1],
+        content,
         footer: rows[2],
+        chat,
     }
+}
+
+/// The width the diff gets once the chat pane has taken its column. Needed wherever the
+/// controller viewport is computed, or rows are planned wider than they are drawn.
+pub fn review_content_width(total_width: u16, chat: bool) -> u16 {
+    review_areas_with_chat(Rect::new(0, 0, total_width, 3), chat)
+        .content
+        .width
 }
 
 pub struct ReviewHeader<'a> {

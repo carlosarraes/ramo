@@ -1,4 +1,5 @@
 pub mod appearance;
+pub mod chat;
 pub mod dialogs;
 pub mod document;
 pub mod highlight;

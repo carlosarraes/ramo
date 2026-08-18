@@ -1,6 +1,7 @@
 pub mod annotations;
 pub mod app;
 pub mod ask;
+pub mod chat;
 pub mod cli;
 pub mod clipboard;
 pub mod config;

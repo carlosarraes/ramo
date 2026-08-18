@@ -22,6 +22,7 @@ pub enum InputMode {
     ReviewMap,
     PrDescription,
     LinearTicket,
+    Chat,
 }
 
 /// Readline-style editing applied to whichever text buffer currently has focus. Kept as one
@@ -60,6 +61,7 @@ pub enum AppAction {
     ScrollPrDescription(PrScroll),
     ToggleLinearTicket,
     ScrollLinearTicket(PrScroll),
+    ToggleChat,
     JumpAskAnswer,
     FocusReviewMapFilter,
     Insert(char),
@@ -126,6 +128,7 @@ pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Opti
         },
         InputMode::PrDescription => map_pr_description(event),
         InputMode::LinearTicket => map_linear_ticket(event),
+        InputMode::Chat => map_chat(event),
         InputMode::OverallComment => map_overall_comment(event),
         InputMode::Message => match event.code {
             KeyCode::Enter | KeyCode::Esc => Some(AppAction::DismissMessage),
@@ -183,6 +186,34 @@ fn map_linear_ticket(event: KeyEvent) -> Option<AppAction> {
         AppAction::ScrollPrDescription(step) => AppAction::ScrollLinearTicket(step),
         other => other,
     })
+}
+
+/// The chat pane is a text field that lives beside the diff, so it owns ordinary characters
+/// while `C` and Escape hand focus back.
+fn map_chat(event: KeyEvent) -> Option<AppAction> {
+    if event.code == KeyCode::Enter {
+        return Some(if event.modifiers.contains(KeyModifiers::SHIFT) {
+            AppAction::Insert('\n')
+        } else {
+            AppAction::Confirm
+        });
+    }
+    if event.code == KeyCode::Esc {
+        return Some(AppAction::ToggleChat);
+    }
+    if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
+        return Some(AppAction::ToggleChat);
+    }
+    if let Some(edit) = map_readline(event) {
+        return Some(edit);
+    }
+    match event.code {
+        KeyCode::Backspace => Some(AppAction::Backspace),
+        KeyCode::Char(character) if !has_control_or_alt(event) => {
+            Some(AppAction::Insert(character))
+        }
+        _ => None,
+    }
 }
 
 fn map_overall_comment(event: KeyEvent) -> Option<AppAction> {
@@ -334,6 +365,7 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
         KeyCode::Char('P') => Some(AppAction::TogglePrDescription),
         KeyCode::Char('L') => Some(AppAction::ToggleLinearTicket),
+        KeyCode::Char('C') => Some(AppAction::ToggleChat),
         KeyCode::Char('e') => review(ReviewAction::EditSelectedFile),
         KeyCode::Char('r') => review(ReviewAction::Reload),
         KeyCode::Char('/') => review(ReviewAction::FocusFilter),

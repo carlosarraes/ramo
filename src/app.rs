@@ -43,7 +43,7 @@ use crate::ui::highlight::HighlightCache;
 use crate::ui::input::{AppAction, InputMode, PrScroll, TextEdit, map_key_event, map_mouse_event};
 use crate::ui::linear_ticket::LinearTicketWidget;
 use crate::ui::pr_description::PrDescriptionWidget;
-use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget, review_areas};
+use crate::ui::review::{ReviewFooter, ReviewHeader, ReviewHeading, ReviewWidget};
 use crate::ui::review_map::{ReviewMapHitTarget, ReviewMapWidget, review_map_hits};
 use crate::ui::text_input::TextInput;
 use crate::ui::themes::{AppTheme, ThemeRegistry};
@@ -313,6 +313,7 @@ pub struct App {
     linear_origin: AppScreen,
     linear_settings: LinearSettings,
     linear_runner: LinearRunner,
+    chat: ChatPaneState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,6 +367,39 @@ fn apply_scroll(document: &mut ScrollableDocument, step: PrScroll) {
         PrScroll::Page(delta) => document.scroll_pages(delta),
         PrScroll::Top => document.scroll_to_top(),
         PrScroll::Bottom => document.scroll_to_bottom(),
+    }
+}
+
+/// The chat pane's own state. Kept in one struct so the pane can be opened, focused, and
+/// dispatched to without spreading five fields across `App`.
+struct ChatPaneState {
+    settings: crate::chat::ChatSettings,
+    open: bool,
+    turns: Vec<crate::chat::ChatTurn>,
+    draft: TextInput,
+    session_id: Option<String>,
+    runtime: AskRuntime,
+    jobs: HashMap<AskId, usize>,
+}
+
+impl ChatPaneState {
+    fn new(config: &ResolvedConfig, pager_mode: bool) -> Self {
+        Self {
+            settings: crate::chat::ChatSettings {
+                // A `git` pager is not a context where a reviewer expects a chat session.
+                enabled: config.chat_enabled && !pager_mode,
+                provider: config.chat_provider.clone(),
+                model: config.chat_model.clone(),
+                effort: config.chat_effort.clone(),
+                timeout: Duration::from_secs(config.chat_timeout_secs),
+            },
+            open: false,
+            turns: Vec::new(),
+            draft: TextInput::new(),
+            session_id: None,
+            runtime: AskRuntime::new(),
+            jobs: HashMap::new(),
+        }
     }
 }
 
@@ -530,6 +564,7 @@ impl App {
                 command: config.linear_command.clone(),
             },
             linear_runner: linear_runner(),
+            chat: ChatPaneState::new(config, pager_mode),
         }
     }
 
@@ -608,6 +643,10 @@ impl App {
     {
         self.ask_runner = Box::new(move |request| Box::new(runner(request)));
         self
+    }
+
+    pub fn poll_chat_for_tests(&mut self) -> bool {
+        self.poll_chat()
     }
 
     pub fn poll_ask_for_tests(&mut self, viewport: Viewport) -> bool {
@@ -799,19 +838,27 @@ impl App {
                     needs_redraw = false;
                 }
                 let size = terminal.terminal().size()?;
-                let viewport = terminal_review_viewport(size.width, size.height);
+                let viewport = terminal_review_viewport(
+                    crate::ui::review::review_content_width(size.width, self.chat.open),
+                    size.height,
+                );
                 self.publish_session_snapshot(viewport);
                 needs_redraw |= self.apply_session_requests(viewport, watch.as_deref_mut());
                 needs_redraw |= self.poll_startup_notices(Instant::now());
                 needs_redraw |= self.poll_review_map();
                 needs_redraw |= self.poll_ask(viewport);
+                needs_redraw |= self.poll_chat();
                 if event::poll(Duration::from_millis(50))? {
                     match event::read()? {
                         Event::Key(key) => self.handle_key(key, viewport),
                         Event::Mouse(mouse) => {
                             if self.screen == AppScreen::ReviewMap {
                                 self.handle_review_map_mouse(mouse, size.width, size.height);
-                            } else if let Some(mouse) = translate_review_mouse(mouse, size.height) {
+                            } else if mouse.column < viewport.width
+                                && let Some(mouse) = translate_review_mouse(mouse, size.height)
+                            {
+                                // Past `viewport.width` is the chat column, where the diff's
+                                // scrollbar and row hit-testing no longer apply.
                                 self.handle_mouse(mouse, viewport);
                             }
                         }
@@ -1174,7 +1221,7 @@ impl App {
             }
             return;
         }
-        let areas = review_areas(area);
+        let areas = crate::ui::review::review_areas_with_chat(area, self.chat.open);
         let viewport = Viewport {
             width: areas.content.width,
             height: areas.content.height,
@@ -1207,6 +1254,17 @@ impl App {
                 .ask_badge(Some(self.ask_unseen.len())),
             areas.footer,
         );
+        if let Some(chat) = areas.chat {
+            frame.render_widget(
+                crate::ui::chat::ChatPane::new(
+                    &self.chat.turns,
+                    &self.chat.draft,
+                    self.input_mode == InputMode::Chat,
+                    &self.review_theme,
+                ),
+                chat,
+            );
+        }
         match self.input_mode {
             InputMode::Help => {
                 frame.render_widget(DialogOverlay::help(&self.review_theme, true), area);
@@ -1292,7 +1350,8 @@ impl App {
             | InputMode::Filter
             | InputMode::ReviewMap
             | InputMode::PrDescription
-            | InputMode::LinearTicket => {}
+            | InputMode::LinearTicket
+            | InputMode::Chat => {}
         }
         if matches!(self.mode, Mode::TmuxPanePick) {
             frame.render_widget(
@@ -1518,11 +1577,21 @@ impl App {
             AppAction::ScrollPrDescription(step) => self.scroll_pr_description(step),
             AppAction::ToggleLinearTicket => self.toggle_linear_ticket(viewport),
             AppAction::ScrollLinearTicket(step) => self.scroll_linear_ticket(step),
+            AppAction::ToggleChat => self.toggle_chat(),
             AppAction::JumpAskAnswer => self.jump_to_ask_answer(viewport),
             AppAction::FocusReviewMapFilter => {
                 self.input_mode = InputMode::Filter;
             }
             AppAction::Insert(character) => {
+                // `C` returns to the diff when there is nothing typed, which is the flow after
+                // sending a question. Mid-message it stays an ordinary capital C.
+                if self.input_mode == InputMode::Chat
+                    && character == 'C'
+                    && self.chat.draft.is_empty()
+                {
+                    self.toggle_chat();
+                    return;
+                }
                 // The only edit that can be refused, so it does not go through the shared path.
                 if self.input_mode == InputMode::Ask
                     && self.comment_buf.char_count() >= crate::ask::MAX_QUESTION_CHARS
@@ -1793,6 +1862,113 @@ impl App {
             }
             Err(error) => self.toast = Some(format!("{id}: {error}")),
         }
+    }
+
+    /// `C` opens the pane and focuses it; pressing it again hands focus back to the diff
+    /// while leaving the pane on screen, so a reply can land while you keep reading.
+    fn toggle_chat(&mut self) {
+        if !self.chat.settings.enabled {
+            self.toast = Some("Chat is off; set enabled = true under [chat]".into());
+            return;
+        }
+        if self.input_mode == InputMode::Chat {
+            self.input_mode = InputMode::Normal;
+            return;
+        }
+        self.chat.open = true;
+        self.input_mode = InputMode::Chat;
+    }
+
+    /// Sends the drafted question. The first turn carries the PR, ticket, and current file;
+    /// later turns ride pi's session, which also remembers what the model has already read.
+    fn send_chat_turn(&mut self, viewport: Viewport) {
+        let question = self.chat.draft.value().trim().to_owned();
+        if question.is_empty() {
+            return;
+        }
+        let session_id = match &self.chat.session_id {
+            Some(id) => id.clone(),
+            None => {
+                let seed = self.remote_review.as_ref().map_or_else(
+                    || "local".to_owned(),
+                    |session| format!("{}#{}", session.context.repository, session.context.number),
+                );
+                let id = crate::chat::new_session_id(&seed);
+                self.chat.session_id = Some(id.clone());
+                id
+            }
+        };
+        let first_turn = self.chat.turns.is_empty();
+        let prompt =
+            crate::chat::compose_prompt(&self.chat_context(viewport), &question, first_turn);
+        let request = crate::chat::request(&self.chat.settings, &session_id, prompt);
+        let index = self.chat.turns.len();
+        self.chat.turns.push(crate::chat::ChatTurn {
+            question,
+            state: crate::chat::ChatState::Pending,
+        });
+        self.chat.draft.clear();
+        let job = (self.ask_runner)(request);
+        match self.chat.runtime.start(job) {
+            Ok(id) => {
+                self.chat.jobs.insert(id, index);
+            }
+            Err(busy) => {
+                self.chat.turns[index].state = crate::chat::ChatState::Failed(busy.to_string());
+            }
+        }
+    }
+
+    fn chat_context(&mut self, viewport: Viewport) -> crate::chat::ChatContext {
+        let selected = self
+            .review_controller
+            .snapshot(viewport)
+            .selected_file_id
+            .clone();
+        let file = selected.and_then(|id| {
+            self.review_controller
+                .files()
+                .iter()
+                .find(|file| file.id == id)
+                .map(|file| file.path.clone())
+        });
+        crate::chat::ChatContext {
+            pull_request: self.remote_review.as_ref().map(|session| {
+                format!(
+                    "PR #{} · {}\n{}",
+                    session.context.number, session.context.title, session.context.body
+                )
+            }),
+            ticket: self.linear.as_ref().map(|screen| {
+                format!(
+                    "{} · {}\n{}",
+                    screen.ticket.identifier, screen.ticket.title, screen.ticket.description
+                )
+            }),
+            file,
+        }
+    }
+
+    /// Drains finished chat turns. Mirrors `poll_ask`, including the bounded per-frame drain.
+    fn poll_chat(&mut self) -> bool {
+        let mut changed = false;
+        for _ in 0..8 {
+            let Some(update) = self.chat.runtime.try_recv() else {
+                break;
+            };
+            let (id, state) = match update {
+                AskUpdate::Answered { id, body } => (id, crate::chat::ChatState::Answered(body)),
+                AskUpdate::Failed { id, message } => (id, crate::chat::ChatState::Failed(message)),
+            };
+            if let Some(index) = self.chat.jobs.remove(&id)
+                && let Some(turn) = self.chat.turns.get_mut(index)
+            {
+                turn.state = state;
+                changed = true;
+            }
+        }
+        self.chat.runtime.reap();
+        changed
     }
 
     fn toggle_review_map(&mut self, viewport: Viewport) {
@@ -2286,6 +2462,9 @@ impl App {
             InputMode::OverallComment => {
                 edit(&mut self.comment_buf);
             }
+            InputMode::Chat => {
+                edit(&mut self.chat.draft);
+            }
             _ => {}
         }
     }
@@ -2350,6 +2529,7 @@ impl App {
             InputMode::ReviewMap => self.show_review_screen(),
             InputMode::PrDescription => self.toggle_pr_description(viewport),
             InputMode::LinearTicket => self.toggle_linear_ticket(viewport),
+            InputMode::Chat => self.toggle_chat(),
         }
     }
 
@@ -2362,6 +2542,10 @@ impl App {
     }
 
     fn confirm_input(&mut self, viewport: Viewport) {
+        if self.input_mode == InputMode::Chat {
+            self.send_chat_turn(viewport);
+            return;
+        }
         match self.input_mode {
             InputMode::Theme => {
                 if let Some(selection) = &self.theme_selection {
