@@ -2049,7 +2049,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "ramo"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2077,7 +2077,7 @@ dependencies = [
 
 [[package]]
 name = "ramo-core"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "globset",
  "proptest",
@@ -2090,7 +2090,7 @@ dependencies = [
 
 [[package]]
 name = "ramo-github"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "httpmock",
  "percent-encoding",
@@ -2104,7 +2104,7 @@ dependencies = [
 
 [[package]]
 name = "ramo-mobile"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "jni",
  "ramo-core",
@@ -2118,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "ramo-server"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -3351,7 +3351,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "uniffi",
 ]
