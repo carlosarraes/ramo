@@ -8,7 +8,7 @@ use std::fmt;
 use std::io;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::process::command::{CaptureLimits, CommandExecutor, CommandRequest};
 
@@ -144,19 +144,39 @@ fn first_line(text: &str) -> &str {
         .unwrap_or("no error output")
 }
 
+/// `#[serde(default)]` covers only *absent* keys. Linear sends an explicit `null` for every unset
+/// relation — half a real board is unassigned — and a null is a type error against the field's own
+/// type. This collapses both cases to the default, which is what the struct already promises.
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// Sampled from a real `linear issue view MON-2799 --json`. Everything is defaulted so an
 /// unexpected or absent field degrades the card rather than failing the fetch.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LinearTicket {
+    #[serde(deserialize_with = "null_as_default")]
     pub identifier: String,
+    #[serde(deserialize_with = "null_as_default")]
     pub title: String,
+    #[serde(deserialize_with = "null_as_default")]
     pub description: String,
+    #[serde(deserialize_with = "null_as_default")]
     pub url: String,
+    #[serde(deserialize_with = "null_as_default")]
     pub branch_name: String,
+    #[serde(deserialize_with = "null_as_default")]
     pub state: NamedField,
+    #[serde(deserialize_with = "null_as_default")]
     pub assignee: Assignee,
+    #[serde(deserialize_with = "null_as_default")]
     pub project: NamedField,
+    #[serde(deserialize_with = "null_as_default")]
     pub attachments: Attachments,
 }
 
@@ -176,6 +196,7 @@ pub struct Assignee {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Attachments {
+    #[serde(deserialize_with = "null_as_default")]
     pub nodes: Vec<Attachment>,
 }
 
@@ -183,6 +204,7 @@ pub struct Attachments {
 #[serde(default, rename_all = "camelCase")]
 pub struct Attachment {
     pub source_type: Option<String>,
+    #[serde(deserialize_with = "null_as_default")]
     pub metadata: AttachmentMetadata,
 }
 
@@ -364,6 +386,33 @@ mod tests {
         assert_eq!(ticket.assignee.display_name.as_deref(), Some("carlos"));
         assert_eq!(ticket.linked_pull_request(), Some(2289));
         assert_eq!(ticket.subtitle(), "Done · @carlos · Deal Hub port");
+    }
+
+    #[test]
+    fn explicit_nulls_degrade_the_card_instead_of_failing_the_fetch() {
+        // Linear sends `null`, not an absent key, for every unset relation. Half the tickets on a
+        // real board are unassigned, so this is the common case rather than an edge one.
+        let ticket: LinearTicket = serde_json::from_str(
+            r##"{
+                "identifier": "MON-2822",
+                "title": "t",
+                "description": null,
+                "url": null,
+                "branchName": null,
+                "state": null,
+                "assignee": null,
+                "project": null,
+                "attachments": null
+            }"##,
+        )
+        .unwrap();
+
+        assert_eq!(ticket.identifier, "MON-2822");
+        assert!(ticket.description.is_empty());
+        assert_eq!(ticket.assignee.display_name, None);
+        assert_eq!(ticket.project.name, None);
+        assert_eq!(ticket.linked_pull_request(), None);
+        assert_eq!(ticket.subtitle(), "");
     }
 
     #[test]
