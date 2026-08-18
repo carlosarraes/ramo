@@ -17,6 +17,19 @@ pub struct ServerConfig {
     pub ollama_url: String,
     pub model: String,
     pub selected_model: Option<SelectedModelConfig>,
+    /// Which backend enriches the map. pi is the default from 0.1.0; the loopback Ollama path
+    /// remains selectable for anyone who wants private source to stay on the machine.
+    pub analyzer: AnalyzerKind,
+    pub pi_provider: String,
+    pub pi_model: String,
+    pub pi_effort: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnalyzerKind {
+    #[default]
+    Pi,
+    Ollama,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -65,6 +78,10 @@ impl ServerConfig {
             ollama_url: "http://127.0.0.1:11434".into(),
             model,
             selected_model,
+            analyzer: AnalyzerKind::default(),
+            pi_provider: "openai-codex".into(),
+            pi_model: "gpt-5.6-luna".into(),
+            pi_effort: "max".into(),
         })
     }
 

@@ -23,6 +23,8 @@ impl CaptureLimits {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandRequest {
     pub argv: Vec<OsString>,
+    /// Extra environment for the child, on top of the inherited environment.
+    pub env: Vec<(OsString, OsString)>,
     pub stdin: Option<Vec<u8>>,
     pub inherit_stdio: bool,
     pub limits: Option<CaptureLimits>,
@@ -59,6 +61,9 @@ impl CommandExecutor for SystemCommandExecutor {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty command argv"))?;
         let mut command = Command::new(program);
         command.args(arguments);
+        for (key, value) in &request.env {
+            command.env(key, value);
+        }
         if request.stdin.is_some() {
             command.stdin(Stdio::piped());
         } else if request.inherit_stdio {

@@ -75,6 +75,7 @@ impl<E: CommandExecutor> EditorLauncher<E> {
             .executor
             .execute(CommandRequest {
                 argv: command.argv.clone(),
+                env: Vec::new(),
                 stdin: None,
                 inherit_stdio: true,
                 limits: None,

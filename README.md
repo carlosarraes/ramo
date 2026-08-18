@@ -44,7 +44,11 @@ After a successful Unix install, the script checks for the legacy binary in the 
 
 ### Private local-AI Review Maps
 
-Ramo can build a review-first map of a GitHub PR: exact file/addition/deletion facts appear immediately, while a local Ollama model adds bounded summaries, risk cues, logical groups, and recommended review order. Private source stays on your laptop. The companion binds only to loopback; Android reaches it through authenticated Tailscale Serve.
+Ramo can build a review-first map of a GitHub PR: exact file/addition/deletion facts appear immediately and entirely locally, while an AI model adds bounded summaries, risk cues, logical groups, and recommended review order.
+
+**From 0.1.0 the enrichment runs through the `pi` CLI against a remote provider, and it is off by default.** Enabling `[map] enabled = true` means every changed file's patch is sent to the configured provider when you open a pull request. The exact map — paths, counts, groups, order — is computed on your machine and still renders instantly with no network at all, so a disabled map costs you only the summaries.
+
+The loopback Ollama path has not been deleted: `ramo-server` still speaks it, and it remains the option for private source that must not leave the machine. The companion binds only to loopback either way; Android reaches it through authenticated Tailscale Serve, and keeps working unchanged because only the server's backend changed.
 
 ```bash
 ramo server setup --dry-run
@@ -363,7 +367,7 @@ Press `a` on any hunk to ask a question about it. The request runs in the backgr
 
 Press `a` again anywhere inside a question's lines — or on its answer card, after `o` — to ask a follow-up. The card is titled `Ask AI · follow-up` and the earlier questions and answers travel with the new one, so "why not?" works without restating anything. Asking on any other line starts a fresh conversation. A follow-up is refused while the previous answer is still pending, since there would be nothing to build on.
 
-**This is the one part of Ramo that sends your code off this machine, and it is off by default.** Enabling it means your question, the file path, and the anchored diff hunk are sent to the configured remote provider through the `pi` CLI. Ramo never sends the rest of the repository, other files, your environment, or credentials, and it never reads or handles API keys — `pi` owns `~/.pi/agent/auth.json`. Ramo runs `pi` with `--no-tools --no-session`, so nothing executes on your machine and no transcript is stored. Follow-ups keep that guarantee: each call is still a fresh, stateless `pi -p`, and the conversation is replayed from Ramo's own in-memory cards rather than from a session file on disk. This path is separate from the Review Map, which stays local-only against loopback Ollama.
+**This is the one part of Ramo that sends your code off this machine, and it is off by default.** Enabling it means your question, the file path, and the anchored diff hunk are sent to the configured remote provider through the `pi` CLI. Ramo never sends the rest of the repository, other files, your environment, or credentials, and it never reads or handles API keys — `pi` owns `~/.pi/agent/auth.json`. Ramo runs `pi` with `--no-tools --no-session`, so nothing executes on your machine and no transcript is stored. Follow-ups keep that guarantee: each call is still a fresh, stateless `pi -p`, and the conversation is replayed from Ramo's own in-memory cards rather than from a session file on disk. The Review Map is a separate path with its own switch, `[map] enabled`, which is also off by default from 0.1.0.
 
 Turn it on deliberately:
 

@@ -7,6 +7,7 @@ pub mod config;
 pub mod error;
 pub mod github;
 pub mod ollama;
+pub mod pi;
 pub mod setup;
 
 pub use error::ReviewMapFailure;
@@ -77,13 +78,24 @@ pub async fn serve(config: config::ServerConfig) -> Result<(), ReviewMapFailure>
         },
     )?;
     let tokens = ReviewMapClientTokenStore::open(config.state_dir.join("clients.json"))?;
-    let coordinator = AnalysisCoordinator::new(
-        Arc::new(github::GithubPullRequestProvider::new()),
-        Arc::new(ollama::OllamaAnalyzer::new(
+    // One trait, two backends: swapping the analyzer leaves the cache, batching, repair pass,
+    // quality gate, and the Android-facing API untouched.
+    let analyzer: Arc<dyn ollama::Analyzer> = match config.analyzer {
+        config::AnalyzerKind::Pi => Arc::new(pi::PiAnalyzer::new(
+            &config.pi_provider,
+            &config.pi_model,
+            &config.pi_effort,
+            Duration::from_secs(180),
+        )),
+        config::AnalyzerKind::Ollama => Arc::new(ollama::OllamaAnalyzer::new(
             &config.ollama_url,
             &config.model,
             Duration::from_secs(90),
         )),
+    };
+    let coordinator = AnalysisCoordinator::new(
+        Arc::new(github::GithubPullRequestProvider::new()),
+        analyzer,
         cache,
         CoordinatorConfig::default(),
     );
@@ -91,7 +103,10 @@ pub async fn serve(config: config::ServerConfig) -> Result<(), ReviewMapFailure>
         coordinator,
         pairing: PairingState::open(tokens.clone(), config.state_dir.join("pairing.json")),
         tokens,
-        health: HealthStatus::healthy(&config.model),
+        health: HealthStatus::healthy(&match config.analyzer {
+            config::AnalyzerKind::Pi => format!("{}/{}", config.pi_provider, config.pi_model),
+            config::AnalyzerKind::Ollama => config.model.clone(),
+        }),
     };
     let listener = tokio::net::TcpListener::bind(config.bind_address)
         .await

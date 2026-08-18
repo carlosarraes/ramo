@@ -6,7 +6,13 @@
 
 - The HTTP server binds to `127.0.0.1:47831`, never `0.0.0.0`.
 - Tailscale Serve is the only supported remote exposure path and remains private to your tailnet.
-- Ollama is accepted only on a loopback URL. Proxies and redirects are disabled for model requests.
+- The analyzer backend is selectable. The default from 0.1.0 is the `pi` CLI against a remote
+  provider, which **sends changed-file patches off the machine** and is why `[map] enabled`
+  defaults to false. Selecting the Ollama backend keeps enrichment local.
+- Ollama, when selected, is accepted only on a loopback URL. Proxies and redirects are disabled
+  for model requests.
+- The terminal-to-server and phone-to-server hops remain loopback and tailnet respectively,
+  whichever backend is in use.
 - GitHub credentials come from `gh auth token`, remain in memory, and are never copied into Ramo configuration.
 - Cache files contain validated maps and version identities only. Raw patches, prompts, model responses, GitHub tokens, pairing codes, and bearer tokens are not cached or logged.
 - Paired-client files store SHA-256 token digests, labels, IDs, and creation times with user-only permissions. Pairing-code files store only digests and expiry times.

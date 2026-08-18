@@ -430,7 +430,7 @@ impl AnalysisRejection {
     }
 }
 
-fn validation_map(request: &EnrichmentRequest) -> ReviewMap {
+pub(crate) fn validation_map(request: &EnrichmentRequest) -> ReviewMap {
     let files = request
         .files
         .iter()

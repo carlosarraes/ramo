@@ -2008,6 +2008,7 @@ impl App {
             // Ask's guarantee: nothing executes and no transcript is stored.
             tools: crate::ask::PiTools::None,
             session: crate::ask::PiSession::Ephemeral,
+            env: Vec::new(),
         };
         let job = (self.ask_runner)(request);
         match self.ask_runtime.start(job) {

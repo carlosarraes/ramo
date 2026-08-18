@@ -208,6 +208,7 @@ impl<E: CommandExecutor> GithubCli<E> {
             .executor
             .execute(CommandRequest {
                 argv,
+                env: Vec::new(),
                 stdin,
                 inherit_stdio: false,
                 limits: Some(limits),

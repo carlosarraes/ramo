@@ -20,6 +20,7 @@ fn captured_streams_are_drained_but_retained_only_to_the_requested_limit() {
             .into_iter()
             .map(OsString::from)
             .collect(),
+            env: Vec::new(),
             stdin: None,
             inherit_stdio: false,
             limits: Some(CaptureLimits::new(1024, 1024, Duration::from_secs(2))),
@@ -44,6 +45,7 @@ fn a_timed_out_child_is_killed_and_reported() {
                 .into_iter()
                 .map(OsString::from)
                 .collect(),
+            env: Vec::new(),
             stdin: None,
             inherit_stdio: false,
             limits: Some(CaptureLimits::new(1024, 1024, Duration::from_millis(25))),
@@ -66,6 +68,7 @@ fn stdin_reaches_the_child_without_appearing_in_argv() {
     let result = executor
         .execute(CommandRequest {
             argv: argv.clone(),
+            env: Vec::new(),
             stdin: Some(sentinel.clone()),
             inherit_stdio: false,
             limits: Some(CaptureLimits::new(1024, 1024, Duration::from_secs(1))),
@@ -74,4 +77,27 @@ fn stdin_reaches_the_child_without_appearing_in_argv() {
 
     assert_eq!(result.stdout, sentinel);
     assert!(!argv.iter().any(|argument| argument == "secret-review-body"));
+}
+
+#[test]
+fn extra_environment_reaches_the_child() {
+    let argv: Vec<std::ffi::OsString> = ["sh", "-c", "printf '%s' \"$RAMO_TEST_VALUE\""]
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect();
+    let result = SystemCommandExecutor
+        .execute(CommandRequest {
+            argv,
+            env: vec![(
+                std::ffi::OsString::from("RAMO_TEST_VALUE"),
+                std::ffi::OsString::from("from-parent"),
+            )],
+            stdin: None,
+            inherit_stdio: false,
+            limits: Some(CaptureLimits::new(1024, 1024, Duration::from_secs(5))),
+        })
+        .unwrap();
+
+    assert_eq!(result.code, Some(0));
+    assert_eq!(String::from_utf8(result.stdout).unwrap(), "from-parent");
 }

@@ -39,6 +39,7 @@ fn request() -> AskRequest {
         system_prompt: "Answer briefly.".into(),
         tools: ramo::ask::PiTools::None,
         session: ramo::ask::PiSession::Ephemeral,
+        env: Vec::new(),
     }
 }
 

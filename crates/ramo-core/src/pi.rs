@@ -44,6 +44,9 @@ pub struct PiRequest {
     pub system_prompt: String,
     pub tools: PiTools,
     pub session: PiSession,
+    /// Extra environment for the child. The Review Map uses it to tell its extension where to
+    /// find the response schema and where to write the validated result.
+    pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
 }
 
 #[derive(Debug)]
@@ -138,6 +141,7 @@ impl<E: CommandExecutor> PiCli<E> {
             .executor
             .execute(CommandRequest {
                 argv,
+                env: request.env.clone(),
                 stdin: Some(request.prompt.clone().into_bytes()),
                 inherit_stdio: false,
                 limits: Some(limits),
@@ -285,6 +289,7 @@ mod tests {
             system_prompt: "be brief".into(),
             tools: PiTools::None,
             session: PiSession::Ephemeral,
+            env: Vec::new(),
         }
     }
 

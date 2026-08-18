@@ -59,6 +59,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
                 "-F",
                 "#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{window_name}\t#{pane_current_command}",
             ]),
+            env: Vec::new(),
             stdin: None,
             inherit_stdio: false,
             limits: None,
@@ -86,6 +87,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
     pub fn pane_exists(&mut self, id: &str) -> io::Result<bool> {
         let output = self.executor.execute(CommandRequest {
             argv: self.argv(&["display-message", "-p", "-t", id, "#{pane_id}"]),
+            env: Vec::new(),
             stdin: None,
             inherit_stdio: false,
             limits: None,
@@ -96,6 +98,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
     pub fn send_to_pane(&mut self, target: &str, text: &str, mode: PasteMode) -> io::Result<()> {
         let load = self.executor.execute(CommandRequest {
             argv: self.argv(&["load-buffer", "-b", "ramo-send", "-"]),
+            env: Vec::new(),
             stdin: Some(text.as_bytes().to_vec()),
             inherit_stdio: false,
             limits: None,
@@ -109,6 +112,7 @@ impl<E: CommandExecutor> TmuxClient<E> {
         argv.extend(strings(&["-b", "ramo-send", "-t", target, "-d"]));
         let paste = self.executor.execute(CommandRequest {
             argv,
+            env: Vec::new(),
             stdin: None,
             inherit_stdio: false,
             limits: None,
