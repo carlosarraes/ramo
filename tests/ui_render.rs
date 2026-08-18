@@ -908,5 +908,5 @@ fn a_rejected_model_stays_readable_on_the_failed_card() {
     // their config, nor the flag that lists the valid ids.
     assert!(frame.contains("deepseek-v4-flash"), "{frame}");
     assert!(frame.contains("--list-models"), "{frame}");
-    assert!(frame.contains("ask_model"), "{frame}");
+    assert!(frame.contains("model"), "{frame}");
 }

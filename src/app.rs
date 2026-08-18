@@ -334,7 +334,7 @@ impl AskSettings {
 type AskRunner = Box<dyn Fn(AskRequest) -> Box<dyn FnOnce() -> Result<String, AskError> + Send>>;
 
 fn pi_ask_runner() -> AskRunner {
-    Box::new(|request| Box::new(move || PiCli::new(SystemCommandExecutor).ask(&request)))
+    Box::new(|request| Box::new(move || PiCli::new(SystemCommandExecutor).run(&request)))
 }
 
 impl App {
@@ -2005,6 +2005,9 @@ impl App {
             timeout: self.ask_settings.timeout,
             prompt: crate::ask::compose_prompt(file, &note.target, &note.question, &history),
             system_prompt: crate::ask::SYSTEM_PROMPT.to_owned(),
+            // Ask's guarantee: nothing executes and no transcript is stored.
+            tools: crate::ask::PiTools::None,
+            session: crate::ask::PiSession::Ephemeral,
         };
         let job = (self.ask_runner)(request);
         match self.ask_runtime.start(job) {

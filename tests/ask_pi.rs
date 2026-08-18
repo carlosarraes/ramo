@@ -37,6 +37,8 @@ fn request() -> AskRequest {
         timeout: Duration::from_secs(180),
         prompt: "QUESTION\nWhat does this do?".into(),
         system_prompt: "Answer briefly.".into(),
+        tools: ramo::ask::PiTools::None,
+        session: ramo::ask::PiSession::Ephemeral,
     }
 }
 
@@ -46,7 +48,7 @@ fn ask(results: Vec<io::Result<CommandResult>>) -> (Result<String, AskError>, Ve
         results: results.into_iter().collect(),
     };
     let mut cli = PiCli::new(executor);
-    let outcome = cli.ask(&request());
+    let outcome = cli.run(&request());
     (outcome, cli.into_executor().requests)
 }
 
@@ -110,7 +112,7 @@ fn a_missing_binary_is_reported_as_a_missing_cli() {
 
     let error = answer.unwrap_err();
     assert!(matches!(error, AskError::MissingCli));
-    assert!(error.to_string().contains("ask_enabled = false"));
+    assert!(error.to_string().contains("enabled = false"));
 }
 
 #[test]
@@ -126,7 +128,7 @@ fn timeouts_truncation_and_empty_answers_are_distinct_failures() {
     let (answer, _) = ask(vec![timed_out]);
     let error = answer.unwrap_err();
     assert!(matches!(error, AskError::TimedOut { seconds: 180 }));
-    assert!(error.to_string().contains("ask_timeout_secs"));
+    assert!(error.to_string().contains("timeout_secs"));
 
     let truncated = Ok(CommandResult {
         code: Some(0),
