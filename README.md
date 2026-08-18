@@ -63,16 +63,28 @@ Setup is explicit and currently automated on Linux. It checks `gh`, a running Ol
 
 The terminal enrichment client accepts only loopback HTTP and a paired-client token file. Exchange a five-minute pairing code locally, then point Ramo at the saved credential:
 
+Ramo reads its configuration from the platform config directory, which is **not** `~/.config` on
+macOS. Resolve it once and reuse it:
+
 ```bash
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ramo"
-ramo server pair
+# Linux: ~/.config/ramo · macOS: ~/Library/Application Support/ramo
+case "$(uname -s)" in
+  Darwin) RAMO_CONFIG="$HOME/Library/Application Support/ramo" ;;
+  *)      RAMO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/ramo" ;;
+esac
+mkdir -p "$RAMO_CONFIG"
+
+ramo-server pair
 # Replace PAIRING_CODE below with the printed code.
 curl -fsS http://127.0.0.1:47831/v1/pair/exchange \
   -H 'Content-Type: application/json' \
   -d '{"code":"PAIRING_CODE","label":"Ramo terminal"}' \
-  > "${XDG_CONFIG_HOME:-$HOME/.config}/ramo/review-map-client.json"
-chmod 600 "${XDG_CONFIG_HOME:-$HOME/.config}/ramo/review-map-client.json"
+  > "$RAMO_CONFIG/review-map-client.json"
+chmod 600 "$RAMO_CONFIG/review-map-client.json"
 ```
+
+`ramo server setup` installs a **systemd** user unit and is Linux-only. On macOS run the service
+directly with `ramo-server serve` and pair as above; pairing works without the setup step.
 
 Add this to `~/.config/ramo/config.toml` using the resulting absolute path:
 
@@ -81,7 +93,11 @@ Add this to `~/.config/ramo/config.toml` using the resulting absolute path:
 enabled = true
 server = "http://127.0.0.1:47831"
 token_file = "/home/you/.config/ramo/review-map-client.json"
+# backend = "ollama"   # keep enrichment on this machine instead of the pi provider
 ```
+
+`backend`, `provider`, `model`, and `effort` are read by `ramo-server`, which owns the model call.
+Restart the service after changing them.
 
 Without a token, server, or Ollama, the exact tree remains usable and the failure notice can be dismissed. Existing comments and publication state survive every map/code transition.
 
