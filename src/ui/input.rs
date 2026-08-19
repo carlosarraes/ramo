@@ -62,6 +62,8 @@ pub enum AppAction {
     ToggleLinearTicket,
     ScrollLinearTicket(PrScroll),
     ToggleChat,
+    CloseChat,
+    ScrollChat(i32),
     JumpAskAnswer,
     FocusReviewMapFilter,
     Insert(char),
@@ -189,8 +191,20 @@ fn map_linear_ticket(event: KeyEvent) -> Option<AppAction> {
 }
 
 /// The chat pane is a text field that lives beside the diff, so it owns ordinary characters
-/// while `C` and Escape hand focus back.
+/// while `C` and Escape hand focus back and `Ctrl-Q` closes it outright.
 fn map_chat(event: KeyEvent) -> Option<AppAction> {
+    // Ahead of `map_readline`, which owns the rest of the control range — `Ctrl-W` in particular
+    // is delete-word-back and must stay that way while a draft is being written.
+    if event.modifiers.contains(KeyModifiers::CONTROL) && event.code == KeyCode::Char('q') {
+        return Some(AppAction::CloseChat);
+    }
+    if matches!(event.code, KeyCode::PageUp | KeyCode::PageDown) {
+        return Some(AppAction::ScrollChat(if event.code == KeyCode::PageUp {
+            1
+        } else {
+            -1
+        }));
+    }
     if event.code == KeyCode::Enter {
         return Some(if event.modifiers.contains(KeyModifiers::SHIFT) {
             AppAction::Insert('\n')

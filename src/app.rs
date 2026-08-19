@@ -380,6 +380,9 @@ struct ChatPaneState {
     session_id: Option<String>,
     runtime: AskRuntime,
     jobs: HashMap<AskId, usize>,
+    /// Transcript lines held back from the bottom. Reset whenever the conversation moves, so
+    /// reading history never leaves the pane stuck away from the newest reply.
+    scroll: usize,
 }
 
 impl ChatPaneState {
@@ -399,6 +402,7 @@ impl ChatPaneState {
             session_id: None,
             runtime: AskRuntime::new(),
             jobs: HashMap::new(),
+            scroll: 0,
         }
     }
 }
@@ -1260,6 +1264,7 @@ impl App {
                     &self.chat.turns,
                     &self.chat.draft,
                     self.input_mode == InputMode::Chat,
+                    self.chat.scroll,
                     &self.review_theme,
                 ),
                 chat,
@@ -1578,6 +1583,8 @@ impl App {
             AppAction::ToggleLinearTicket => self.toggle_linear_ticket(viewport),
             AppAction::ScrollLinearTicket(step) => self.scroll_linear_ticket(step),
             AppAction::ToggleChat => self.toggle_chat(),
+            AppAction::CloseChat => self.close_chat(),
+            AppAction::ScrollChat(pages) => self.scroll_chat(pages, viewport),
             AppAction::JumpAskAnswer => self.jump_to_ask_answer(viewport),
             AppAction::FocusReviewMapFilter => {
                 self.input_mode = InputMode::Filter;
@@ -1866,6 +1873,27 @@ impl App {
 
     /// `C` opens the pane and focuses it; pressing it again hands focus back to the diff
     /// while leaving the pane on screen, so a reply can land while you keep reading.
+    /// Hides the pane without touching the conversation: an in-flight turn keeps running and its
+    /// reply is waiting in the transcript when the pane is opened again.
+    fn close_chat(&mut self) {
+        self.chat.open = false;
+        self.chat.scroll = 0;
+        if self.input_mode == InputMode::Chat {
+            self.input_mode = InputMode::Normal;
+        }
+    }
+
+    /// Moves by a screenful. The page is measured from the real layout rather than guessed, so it
+    /// stays right if the pane's proportions ever change. The renderer clamps the top.
+    fn scroll_chat(&mut self, pages: i32, viewport: Viewport) {
+        let area = ratatui::layout::Rect::new(0, 0, viewport.width, viewport.height);
+        let page = crate::ui::review::review_areas_with_chat(area, true)
+            .chat
+            .map_or(1, |chat| usize::from(chat.height.saturating_sub(3)).max(1));
+        let delta = (pages as isize).saturating_mul(page as isize);
+        self.chat.scroll = self.chat.scroll.saturating_add_signed(delta);
+    }
+
     fn toggle_chat(&mut self) {
         if !self.chat.settings.enabled {
             self.toast = Some("Chat is off; set enabled = true under [chat]".into());
@@ -1908,6 +1936,7 @@ impl App {
             state: crate::chat::ChatState::Pending,
         });
         self.chat.draft.clear();
+        self.chat.scroll = 0;
         let job = (self.ask_runner)(request);
         match self.chat.runtime.start(job) {
             Ok(id) => {

@@ -4,7 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::Widget;
 
 use crate::chat::{ChatState, ChatTurn};
-use crate::review::row::wrap_note_text;
+use crate::review::row::{wrap_note_text, wrap_note_text_indexed};
 
 use super::text_input::TextInput;
 use super::themes::AppTheme;
@@ -12,10 +12,15 @@ use super::themes::AppTheme;
 const EMPTY: &str =
     "Ask about this pull request. The model can read the repository, but cannot change anything.";
 
+/// A draft can grow to this many rows before the input scrolls internally; past it the pane
+/// would be all composer and no conversation.
+const MAX_INPUT_ROWS: u16 = 6;
+
 pub struct ChatPane<'a> {
     turns: &'a [ChatTurn],
     draft: &'a TextInput,
     focused: bool,
+    scroll: usize,
     theme: &'a AppTheme,
 }
 
@@ -24,12 +29,14 @@ impl<'a> ChatPane<'a> {
         turns: &'a [ChatTurn],
         draft: &'a TextInput,
         focused: bool,
+        scroll: usize,
         theme: &'a AppTheme,
     ) -> Self {
         Self {
             turns,
             draft,
             focused,
+            scroll,
             theme,
         }
     }
@@ -66,9 +73,16 @@ impl Widget for ChatPane<'_> {
         }
         let width = usize::from(inner.width);
 
-        // The input owns the last two rows; the transcript fills what is left, scrolled to the
-        // end so the newest exchange is always the one on screen.
-        let input_top = inner.bottom().saturating_sub(2);
+        // The composer grows with the draft and the transcript takes what is left, so a second
+        // line of typing pushes the conversation up rather than falling off the pane.
+        let content = width.saturating_sub(2).max(1);
+        let draft_lines = wrapped_draft(self.draft.value(), content);
+        let input_rows = (draft_lines.len() as u16).clamp(1, MAX_INPUT_ROWS);
+        let input_top = inner.bottom().saturating_sub(input_rows.saturating_add(1));
+        if input_top <= inner.y {
+            return;
+        }
+
         let mut lines: Vec<(String, Style)> = Vec::new();
         let question_style = Style::default()
             .fg(self.theme.accent)
@@ -96,33 +110,58 @@ impl Widget for ChatPane<'_> {
             lines.push((String::new(), body_style));
         }
         let visible = usize::from(input_top.saturating_sub(inner.y));
-        let start = lines.len().saturating_sub(visible);
+        let held_back = self.scroll.min(lines.len().saturating_sub(visible));
+        let start = lines.len().saturating_sub(visible + held_back);
         for (row, (line, style)) in lines.iter().skip(start).take(visible).enumerate() {
             buffer.set_stringn(inner.x, inner.y + row as u16, line, width, *style);
         }
 
+        let rule = if held_back == 0 {
+            "─".repeat(width)
+        } else {
+            // Only shown while scrolled back, so the pane never looks stuck away from the newest
+            // reply without saying why.
+            let note = format!(" ↑ {held_back} more ");
+            let bar = width.saturating_sub(note.chars().count());
+            format!("{}{note}", "─".repeat(bar))
+        };
         buffer.set_stringn(
             inner.x,
             input_top,
-            "─".repeat(width),
+            &rule,
             width,
             Style::default().fg(self.theme.border).bg(self.theme.panel),
         );
-        let prompt = format!("> {}", self.draft.value());
+
         let input_style = if self.focused { body_style } else { muted };
-        buffer.set_stringn(
-            inner.x,
-            input_top.saturating_add(1),
-            &prompt,
-            width,
-            input_style,
-        );
-        if self.focused {
-            // The caret sits after "> " plus however many characters precede it.
-            let column = 2 + self.draft.caret().min(self.draft.char_count());
+        let caret = caret_position(self.draft, &draft_lines);
+        // With more draft than rows, follow the caret rather than pinning to the top.
+        let first = caret
+            .0
+            .saturating_sub(usize::from(input_rows).saturating_sub(1));
+        for row in 0..usize::from(input_rows) {
+            let Some(line) = draft_lines.get(first + row) else {
+                break;
+            };
+            let prefix = if first + row == 0 { "> " } else { "  " };
+            buffer.set_stringn(
+                inner.x,
+                input_top.saturating_add(1 + row as u16),
+                format!("{prefix}{line}"),
+                width,
+                input_style,
+            );
+        }
+        if self.focused
+            && let Some(row) = caret.0.checked_sub(first)
+            && row < usize::from(input_rows)
+        {
+            let column = 2 + caret.1;
             if column < width
-                && let Some(cell) =
-                    buffer.cell_mut((inner.x.saturating_add(column as u16), input_top + 1))
+                && let Some(cell) = buffer.cell_mut((
+                    inner.x.saturating_add(column as u16),
+                    input_top.saturating_add(1 + row as u16),
+                ))
             {
                 cell.set_style(
                     Style::default()
@@ -133,4 +172,36 @@ impl Widget for ChatPane<'_> {
             }
         }
     }
+}
+
+/// Wraps the draft for display. A trailing newline has to survive as its own empty row, or the
+/// caret would sit on a line the reviewer cannot see after pressing Shift-Enter.
+fn wrapped_draft(value: &str, width: usize) -> Vec<String> {
+    let mut lines: Vec<String> = wrap_note_text_indexed(value, width)
+        .into_iter()
+        .map(|line| line.text)
+        .collect();
+    if value.is_empty() || value.ends_with('\n') {
+        lines.push(String::new());
+    }
+    lines
+}
+
+/// Maps the caret's character offset onto a (row, column) in the wrapped draft.
+fn caret_position(draft: &TextInput, lines: &[String]) -> (usize, usize) {
+    let caret = draft.caret().min(draft.char_count());
+    let mut seen = 0;
+    for (row, line) in lines.iter().enumerate() {
+        let count = line.chars().count();
+        // `<=` so a caret at the end of a line lands after its last character rather than
+        // jumping to the start of the next one.
+        if caret <= seen + count {
+            return (row, caret - seen);
+        }
+        // The wrap consumed either a newline or the space it broke on.
+        seen += count + 1;
+    }
+    lines
+        .last()
+        .map_or((0, 0), |line| (lines.len() - 1, line.chars().count()))
 }

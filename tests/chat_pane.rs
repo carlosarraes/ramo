@@ -194,3 +194,115 @@ fn the_pane_is_refused_when_disabled_and_suppressed_on_a_narrow_terminal() {
     assert!(narrow.contains("let backoff"), "{narrow}");
     assert!(!narrow.contains("Ask about this pull request"), "{narrow}");
 }
+
+fn shift(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::SHIFT)
+}
+
+fn ctrl(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::CONTROL)
+}
+
+#[test]
+fn ctrl_q_closes_the_pane_and_gives_the_width_back_to_the_diff() {
+    let (mut app, _) = recording_app("answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    assert!(app.render_to_string(120, 24).contains("Ask about this"));
+
+    app.handle_ui_key(ctrl(KeyCode::Char('q')), VIEW);
+
+    assert_eq!(app.input_mode(), InputMode::Normal);
+    let frame = app.render_to_string(120, 24);
+    assert!(
+        !frame.contains("Ask about this"),
+        "pane still drawn:\n{frame}"
+    );
+    assert!(frame.contains("let backoff"), "{frame}");
+}
+
+#[test]
+fn a_turn_keeps_running_while_the_pane_is_closed_and_is_there_on_reopen() {
+    let (mut app, _) = recording_app("because the upstream 429s");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    for character in "why?".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+
+    // Closing is a display decision; the request must not be cancelled with it.
+    app.handle_ui_key(ctrl(KeyCode::Char('q')), VIEW);
+    settle(&mut app);
+
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    let frame = app.render_to_string(120, 24);
+    assert!(frame.contains("upstream 429s"), "reply lost:\n{frame}");
+}
+
+#[test]
+fn a_multi_line_draft_stays_on_screen_while_typing() {
+    let (mut app, _) = recording_app("answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+
+    for character in "first line here".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+    app.handle_ui_key(shift(KeyCode::Enter), VIEW);
+    for character in "second line here".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+
+    let frame = app.render_to_string(120, 24);
+    let first = row_of(&frame, "first line here").expect("first line missing");
+    let second = row_of(&frame, "second line here").expect("second line fell out of view");
+    assert!(
+        second > first,
+        "both lines rendered onto row {first}; the input never grew:\n{frame}"
+    );
+}
+
+/// Which rendered row a fragment lands on, so a test can tell "visible" from "on its own line".
+fn row_of(frame: &str, needle: &str) -> Option<usize> {
+    frame.lines().position(|line| line.contains(needle))
+}
+
+#[test]
+fn a_long_draft_wraps_instead_of_running_off_the_pane() {
+    let (mut app, _) = recording_app("answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+
+    let long = "why does the retry backoff double on every attempt instead of staying flat";
+    for character in long.chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+
+    let frame = app.render_to_string(120, 24);
+    assert!(
+        frame.contains("staying flat"),
+        "the tail of the draft is unreachable:\n{frame}"
+    );
+}
+
+#[test]
+fn page_up_scrolls_back_through_the_transcript() {
+    let (mut app, _) = recording_app("answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    for turn in 0..8 {
+        for character in format!("question number {turn} about the retry code").chars() {
+            app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+        }
+        app.handle_ui_key(key(KeyCode::Enter), VIEW);
+        settle(&mut app);
+    }
+
+    let bottom = app.render_to_string(120, 24);
+    assert!(!bottom.contains("question number 0"), "{bottom}");
+
+    app.handle_ui_key(key(KeyCode::PageUp), VIEW);
+    app.handle_ui_key(key(KeyCode::PageUp), VIEW);
+    app.handle_ui_key(key(KeyCode::PageUp), VIEW);
+    let scrolled = app.render_to_string(120, 24);
+    assert!(
+        scrolled.contains("question number 0"),
+        "cannot reach the oldest turn:\n{scrolled}"
+    );
+}
