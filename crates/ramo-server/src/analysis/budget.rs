@@ -23,7 +23,10 @@ impl Default for AnalysisBudget {
     fn default() -> Self {
         Self {
             max_prompt_tokens: MAX_PROMPT_TOKENS,
-            max_files_per_batch: 24,
+            // Per-call latency tracks file count, not prompt size: every file costs its own
+            // summary and risk sentence. A request can sit well inside the token budget and still
+            // carry enough files to run the model past its timeout.
+            max_files_per_batch: 16,
         }
     }
 }
@@ -189,5 +192,58 @@ fn file_priority(kind: ReviewFileKind) -> u8 {
         ReviewFileKind::Other => 3,
         ReviewFileKind::Test => 4,
         ReviewFileKind::Generated => 5,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ramo_core::review_map::ReviewMapIdentity;
+
+    fn request_with_files(count: usize) -> EnrichmentRequest {
+        EnrichmentRequest {
+            schema_version: 1,
+            identity: ReviewMapIdentity {
+                repository: "owner/name".into(),
+                pull_request: 2410,
+                base_sha: "base".into(),
+                head_sha: "head".into(),
+            },
+            groups: Vec::new(),
+            files: (0..count)
+                .map(|index| EnrichmentInputFile {
+                    path: format!("frontend/src/module{index}.ts"),
+                    kind: ReviewFileKind::Authored,
+                    additions: 20,
+                    deletions: 3,
+                    coverage: PatchCoverage::Full,
+                    patch: Some("@@ -1 +1 @@\n-before\n+after\n".into()),
+                })
+                .collect(),
+            coverage: EnrichmentCoverage::default(),
+        }
+    }
+
+    #[test]
+    fn a_request_inside_the_token_budget_still_splits_on_file_count() {
+        // PR #2410 was 21 small frontend files at roughly 15k estimated tokens — comfortably under
+        // the token budget, so it became a single request and timed the model out. The per-call
+        // cost tracks file count, because every file needs its own summary and risk sentence.
+        let request = request_with_files(21);
+        let batches = budget_batches(&request, &AnalysisBudget::default(), |_| 15_000);
+
+        assert!(
+            batches.len() > 1,
+            "21 files became {} batch(es)",
+            batches.len()
+        );
+        let total: usize = batches.iter().map(|batch| batch.files.len()).sum();
+        assert_eq!(total, 21, "every file must still be analysed");
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.files.len() <= AnalysisBudget::default().max_files_per_batch),
+            "a batch exceeded the file cap"
+        );
     }
 }

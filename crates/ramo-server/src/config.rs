@@ -81,7 +81,10 @@ impl ServerConfig {
             analyzer: AnalyzerKind::default(),
             pi_provider: "openai-codex".into(),
             pi_model: "gpt-5.6-luna".into(),
-            pi_effort: "max".into(),
+            // `max` doubles the time a map takes without improving it: measured against the same
+            // pull request it ran past the 180s ceiling, where `high` finished in 97s and covered
+            // more files. Reviewers who want the extra reasoning can set `[map] effort`.
+            pi_effort: "high".into(),
         }
         .with_user_map_section(&config_root))
     }
