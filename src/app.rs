@@ -328,6 +328,12 @@ pub struct App {
     linear_runner: LinearRunner,
     chat: ChatPaneState,
     chat_layout: crate::config::ChatLayout,
+    /// Where the review is happening. pi scopes its sessions by directory, so this is part of a
+    /// conversation's identity rather than incidental.
+    project_root: Option<PathBuf>,
+    chat_store: Option<crate::chat::store::ChatStore>,
+    chat_key: Option<ramo_core::chat::ConversationKey>,
+    chat_dirty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -395,6 +401,9 @@ struct ChatPaneState {
     runtime: AskRuntime,
     jobs: HashMap<AskId, usize>,
     sent: crate::chat::ChatSent,
+    /// Set when a transcript was restored that pi cannot resume: the next prompt has to carry the
+    /// thread itself, because the model has no memory of it.
+    replay: bool,
     /// Transcript lines held back from the bottom. Reset whenever the conversation moves, so
     /// reading history never leaves the pane stuck away from the newest reply.
     scroll: usize,
@@ -418,6 +427,7 @@ impl ChatPaneState {
             runtime: AskRuntime::new(),
             jobs: HashMap::new(),
             sent: crate::chat::ChatSent::default(),
+            replay: false,
             scroll: 0,
         }
     }
@@ -584,6 +594,10 @@ impl App {
             linear_runner: linear_runner(),
             chat: ChatPaneState::new(config, pager_mode),
             chat_layout: config.chat_layout,
+            project_root: None,
+            chat_store: None,
+            chat_key: None,
+            chat_dirty: false,
         }
     }
 
@@ -923,6 +937,10 @@ impl App {
             }
             Ok(())
         })();
+        // `AskRuntime` does not join on drop, so a turn still in flight is about to be lost.
+        // Writing here is what records it as interrupted rather than leaving it pending forever.
+        self.chat_dirty = true;
+        self.persist_chat();
         let disable_result = terminal.disable_mouse_capture();
         run_result?;
         disable_result?;
@@ -1959,11 +1977,7 @@ impl App {
         let session_id = match &self.chat.session_id {
             Some(id) => id.clone(),
             None => {
-                let seed = self.remote_review.as_ref().map_or_else(
-                    || "local".to_owned(),
-                    |session| format!("{}#{}", session.context.repository, session.context.number),
-                );
-                let id = crate::chat::new_session_id(&seed);
+                let id = crate::chat::new_session_id(&self.chat_seed());
                 self.chat.session_id = Some(id.clone());
                 id
             }
@@ -1972,8 +1986,13 @@ impl App {
         // shared reads of the controller afterwards.
         let context = self.chat_context(viewport);
         let work = self.reviewer_work();
+        let replay = if self.chat.replay {
+            self.chat.turns.clone()
+        } else {
+            Vec::new()
+        };
         let (prompt, next_sent) =
-            crate::chat::compose_prompt(&context, &work, &self.chat.sent, &question);
+            crate::chat::compose_prompt(&context, &work, &self.chat.sent, &replay, &question);
         let request = crate::chat::request(&self.chat.settings, &session_id, prompt);
         let index = self.chat.turns.len();
         self.chat.turns.push(crate::chat::ChatTurn {
@@ -1988,11 +2007,82 @@ impl App {
                 self.chat.jobs.insert(id, index);
                 // Only a dispatched turn consumes the delta; a refusal must leave it to resend.
                 self.chat.sent = next_sent;
+                self.chat.replay = false;
+                self.chat_dirty = true;
             }
             Err(busy) => {
                 self.chat.turns[index].state = crate::chat::ChatState::Failed(busy.to_string());
             }
         }
+    }
+
+    /// Identifies the conversation. Every local diff used to seed the literal string "local",
+    /// which gave every review on the machine one shared pi session; scoping by directory keeps
+    /// unrelated repositories apart.
+    fn chat_seed(&self) -> String {
+        self.remote_review.as_ref().map_or_else(
+            || {
+                self.project_root.as_ref().map_or_else(
+                    || "local".to_owned(),
+                    |root| format!("local:{}", root.display()),
+                )
+            },
+            |session| format!("{}#{}", session.context.repository, session.context.number),
+        )
+    }
+
+    /// Attaches on-disk history. Called once the pull request is known, because that is what the
+    /// conversation is keyed on; without a project root persistence stays off rather than risk
+    /// merging unrelated reviews into one thread.
+    pub fn set_project_root(&mut self, root: PathBuf) {
+        self.project_root = Some(root);
+    }
+
+    pub fn restore_chat(&mut self, store: crate::chat::store::ChatStore, agent_sessions: &Path) {
+        let Some(project) = self.project_root.clone() else {
+            return;
+        };
+        let key = ramo_core::chat::ConversationKey {
+            project: project.display().to_string(),
+            identity: self.chat_seed(),
+            version: crate::chat::store::CHAT_STORE_VERSION,
+        };
+        if let Some(stored) = store.load(&key) {
+            let session_id = crate::chat::new_session_id(&self.chat_seed());
+            let resumable = stored.session_id == session_id
+                && crate::chat::session::session_exists(agent_sessions, &project, &session_id);
+            let count = stored.turns.len();
+            self.chat.turns = stored.turns;
+            self.chat.session_id = Some(session_id);
+            if !resumable {
+                // The transcript is still worth showing — it is the reviewer's own history — but
+                // the model has not seen it, so say so and replay it with the next question.
+                self.chat.replay = true;
+                self.toast = Some(format!(
+                    "Restored {count} messages; pi's session is gone, so the model is re-reading the thread"
+                ));
+            }
+        }
+        self.chat_key = Some(key);
+        self.chat_store = Some(store);
+    }
+
+    fn persist_chat(&mut self) {
+        if !self.chat_dirty {
+            return;
+        }
+        let (Some(store), Some(key), Some(session_id)) = (
+            self.chat_store.as_ref(),
+            self.chat_key.as_ref(),
+            self.chat.session_id.as_deref(),
+        ) else {
+            return;
+        };
+        // A failure here costs history, never the review in progress.
+        if let Err(error) = store.save(key, session_id, &self.chat.turns) {
+            self.toast = Some(format!("Could not save the conversation: {error}"));
+        }
+        self.chat_dirty = false;
     }
 
     /// What the reviewer has written so far, in the shape the prompt wants. Only answered Asks
@@ -2078,6 +2168,10 @@ impl App {
             }
         }
         self.chat.runtime.reap();
+        if changed {
+            self.chat_dirty = true;
+            self.persist_chat();
+        }
         changed
     }
 

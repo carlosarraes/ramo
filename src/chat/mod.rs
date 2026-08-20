@@ -5,6 +5,9 @@
 //! under `~/.pi/agent/sessions/`, which is a deliberate divergence from Ask's `--no-session`
 //! and is documented as such.
 
+pub mod session;
+pub mod store;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -19,13 +22,15 @@ from what you can see.";
 
 /// One exchange in the pane. A turn is `Pending` until its reply lands, so the pane can show
 /// the question immediately while the reviewer keeps reading the diff.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatTurn {
     pub question: String,
     pub state: ChatState,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ChatState {
     Pending,
     Answered(String),
@@ -80,6 +85,8 @@ pub struct ChatSent {
 const MAX_ENTRIES: usize = 40;
 const MAX_NOTE_CHARS: usize = 2_000;
 const MAX_ANSWER_CHARS: usize = 800;
+const MAX_REPLAY_TURNS: usize = 8;
+const MAX_REPLAY_CHARS: usize = 6_000;
 
 fn digest(value: &str) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
@@ -147,6 +154,7 @@ pub fn compose_prompt(
     context: &ChatContext,
     work: &ReviewerWork,
     sent: &ChatSent,
+    replay: &[ChatTurn],
     question: &str,
 ) -> (String, ChatSent) {
     let question = crate::input::sanitize_terminal_text(question, false);
@@ -156,6 +164,30 @@ pub fn compose_prompt(
     if !sent.header {
         out.push_str(&context.render());
         next.header = true;
+    }
+    // Only ever non-empty when pi's own session could not be resumed, so the thread has to be
+    // carried in the prompt instead. Newest turns first: the tail of a conversation is the part
+    // a follow-up actually depends on.
+    if !replay.is_empty() {
+        let mut lines = Vec::new();
+        let mut budget = MAX_REPLAY_CHARS;
+        for turn in replay.iter().rev().take(MAX_REPLAY_TURNS) {
+            let ChatState::Answered(answer) = &turn.state else {
+                continue;
+            };
+            let entry = format!(
+                "- asked: {}\n  answered: {}",
+                clamp(&turn.question, MAX_NOTE_CHARS),
+                clamp(answer, MAX_ANSWER_CHARS)
+            );
+            if entry.chars().count() > budget {
+                break;
+            }
+            budget -= entry.chars().count();
+            lines.push(entry);
+        }
+        lines.reverse();
+        section(&mut out, "PREVIOUS CONVERSATION", &lines, 0);
     }
 
     let mut fresh = Vec::new();
@@ -275,14 +307,14 @@ mod tests {
     #[test]
     fn the_first_dispatch_carries_the_context_and_later_ones_do_not() {
         let work = ReviewerWork::default();
-        let (first, sent) = compose_prompt(&context(), &work, &ChatSent::default(), "why?");
+        let (first, sent) = compose_prompt(&context(), &work, &ChatSent::default(), &[], "why?");
         assert!(first.contains("PULL REQUEST"), "{first}");
         assert!(first.contains("MON-2799"), "{first}");
         assert!(first.contains("src/retry.rs"), "{first}");
         assert!(first.contains("QUESTION\nwhy?"), "{first}");
 
         // The session carries the thread, so repeating the context would only burn tokens.
-        let (second, _) = compose_prompt(&context(), &work, &sent, "and the cap?");
+        let (second, _) = compose_prompt(&context(), &work, &sent, &[], "and the cap?");
         assert!(!second.contains("PULL REQUEST"), "{second}");
         assert_eq!(second, "QUESTION\nand the cap?\n");
     }
@@ -293,16 +325,16 @@ mod tests {
             notes: vec![note("n1", "this retry loop never terminates")],
             ..ReviewerWork::default()
         };
-        let (first, sent) = compose_prompt(&context(), &work, &ChatSent::default(), "why?");
+        let (first, sent) = compose_prompt(&context(), &work, &ChatSent::default(), &[], "why?");
         assert!(first.contains("never terminates"), "{first}");
 
         // Unchanged work must not ride along again.
-        let (second, sent) = compose_prompt(&context(), &work, &sent, "and?");
+        let (second, sent) = compose_prompt(&context(), &work, &sent, &[], "and?");
         assert!(!second.contains("never terminates"), "{second}");
 
         // A note written mid-conversation is new information and must reach the model.
         work.notes.push(note("n2", "this cap looks arbitrary"));
-        let (third, sent) = compose_prompt(&context(), &work, &sent, "what about the cap?");
+        let (third, sent) = compose_prompt(&context(), &work, &sent, &[], "what about the cap?");
         assert!(third.contains("NEW REVIEW NOTES"), "{third}");
         assert!(third.contains("arbitrary"), "{third}");
         assert!(!third.contains("never terminates"), "{third}");
@@ -310,7 +342,7 @@ mod tests {
         // Editing resends; deleting is named so the model stops relying on it.
         work.notes[0].2 = "actually it terminates on the third attempt".into();
         work.notes.remove(1);
-        let (fourth, _) = compose_prompt(&context(), &work, &sent, "so?");
+        let (fourth, _) = compose_prompt(&context(), &work, &sent, &[], "so?");
         assert!(fourth.contains("UPDATED REVIEW NOTES"), "{fourth}");
         assert!(fourth.contains("third attempt"), "{fourth}");
         assert!(fourth.contains("REMOVED REVIEW NOTES"), "{fourth}");
@@ -323,7 +355,7 @@ mod tests {
             asks: vec![("a1".into(), "why 429?".into(), "x".repeat(5_000))],
             ..ReviewerWork::default()
         };
-        let (prompt, _) = compose_prompt(&context(), &work, &ChatSent::default(), "and?");
+        let (prompt, _) = compose_prompt(&context(), &work, &ChatSent::default(), &[], "and?");
         assert!(prompt.contains("NEW AI ANSWERS"), "{prompt}");
         assert!(prompt.contains("why 429?"), "{prompt}");
         assert!(prompt.contains("(truncated)"), "{prompt}");
@@ -342,7 +374,7 @@ mod tests {
                 .collect(),
             ..ReviewerWork::default()
         };
-        let (prompt, _) = compose_prompt(&context(), &work, &ChatSent::default(), "summary?");
+        let (prompt, _) = compose_prompt(&context(), &work, &ChatSent::default(), &[], "summary?");
         assert!(prompt.contains("older not shown"), "{prompt}");
     }
 

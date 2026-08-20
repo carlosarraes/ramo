@@ -2,6 +2,7 @@ pub const CORE_CRATE_NAME: &str = "ramo-core";
 
 pub mod agent;
 pub mod changeset;
+pub mod chat;
 pub mod diff;
 pub mod drafts;
 pub mod github;

@@ -318,6 +318,16 @@ fn run_review(input: ReviewInput, review_output: ReviewOutput) -> Result<ExitCod
     if let Some((context, publisher)) = pull_request {
         app.attach_pull_request(context, publisher);
     }
+    // After the pull request, because that is what a conversation is keyed on.
+    app.set_project_root(cwd.clone());
+    if resolved_config.chat_enabled
+        && let (Some(store), Some(sessions)) = (
+            crate::chat::store::ChatStore::open(),
+            crate::chat::session_dir(),
+        )
+    {
+        app.restore_chat(store, &sessions);
+    }
     if let Some(remote_update) = remote_update {
         app.attach_remote_update(remote_update);
     }
