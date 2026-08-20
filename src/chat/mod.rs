@@ -5,6 +5,7 @@
 //! under `~/.pi/agent/sessions/`, which is a deliberate divergence from Ask's `--no-session`
 //! and is documented as such.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use ramo_core::pi::{PiError, PiRequest, PiSession, PiTools};
@@ -48,9 +49,78 @@ pub struct ChatContext {
     pub file: Option<String>,
 }
 
+/// What the reviewer has written, as chat should see it. Gathered fresh each turn; the watermark
+/// decides how much of it is actually new.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReviewerWork {
+    /// `(id, anchor, body)` for each inline note.
+    pub notes: Vec<(String, String, String)>,
+    /// `(id, question, answer)` for each answered Ask.
+    pub asks: Vec<(String, String, String)>,
+    pub overall: Option<String>,
+}
+
+/// How much of the conversation's context this process has already sent.
+///
+/// This replaces the old "is this the first turn?" test. That test asked whether the transcript
+/// was empty, which is the wrong question the moment a transcript can be restored from disk: a
+/// restored conversation would look like a continuation and silently skip the header, leaving the
+/// model with a bare question. Tracking what was *dispatched* rather than what is *displayed*
+/// keeps the two apart.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChatSent {
+    header: bool,
+    notes: BTreeMap<String, u64>,
+    asks: BTreeMap<String, u64>,
+    overall: Option<u64>,
+}
+
+/// Caps. A long review can hold hundreds of notes and Ask answers are model prose, so without
+/// these the prompt grows without bound and the request times out for reasons nobody can see.
+const MAX_ENTRIES: usize = 40;
+const MAX_NOTE_CHARS: usize = 2_000;
+const MAX_ANSWER_CHARS: usize = 800;
+
+fn digest(value: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn clamp(value: &str, limit: usize) -> String {
+    let value = crate::input::sanitize_terminal_text(value, false);
+    let value = value.trim();
+    if value.chars().count() <= limit {
+        return value.to_owned();
+    }
+    let kept: String = value.chars().take(limit).collect();
+    format!("{kept}… (truncated)")
+}
+
+fn section(out: &mut String, label: &str, lines: &[String], dropped: usize) {
+    if lines.is_empty() {
+        return;
+    }
+    out.push_str(label);
+    out.push('\n');
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    if dropped > 0 {
+        out.push_str(&format!(
+            "… {dropped} older not shown
+"
+        ));
+    }
+    out.push('\n');
+}
+
 impl ChatContext {
-    /// Rendered once, on the first turn only. Later turns ride the pi session, so repeating it
-    /// would just burn context.
+    /// The standing facts about what is being reviewed. Sent once per process — see `ChatSent`.
     pub fn render(&self) -> String {
         let mut out = String::new();
         for (label, value) in [
@@ -70,13 +140,88 @@ impl ChatContext {
     }
 }
 
-pub fn compose_prompt(context: &ChatContext, question: &str, first_turn: bool) -> String {
+/// Builds the prompt and the watermark that would follow from sending it. The caller commits the
+/// new watermark only once the request is actually dispatched, so a refused turn does not swallow
+/// the delta it never sent.
+pub fn compose_prompt(
+    context: &ChatContext,
+    work: &ReviewerWork,
+    sent: &ChatSent,
+    question: &str,
+) -> (String, ChatSent) {
     let question = crate::input::sanitize_terminal_text(question, false);
-    if first_turn {
-        format!("{}QUESTION\n{}\n", context.render(), question.trim())
-    } else {
-        format!("QUESTION\n{}\n", question.trim())
+    let mut out = String::new();
+    let mut next = sent.clone();
+
+    if !sent.header {
+        out.push_str(&context.render());
+        next.header = true;
     }
+
+    let mut fresh = Vec::new();
+    let mut changed = Vec::new();
+    for (id, anchor, body) in &work.notes {
+        let body = clamp(body, MAX_NOTE_CHARS);
+        let mark = digest(&body);
+        let line = format!("- {anchor}: {body}");
+        match sent.notes.get(id) {
+            Some(seen) if *seen == mark => {}
+            Some(_) => changed.push(line),
+            None => fresh.push(line),
+        }
+        next.notes.insert(id.clone(), mark);
+    }
+    let removed: Vec<String> = sent
+        .notes
+        .keys()
+        .filter(|id| !work.notes.iter().any(|(note, _, _)| note == *id))
+        .map(|id| format!("- {id}"))
+        .collect();
+    for id in sent.notes.keys() {
+        if !work.notes.iter().any(|(note, _, _)| note == id) {
+            next.notes.remove(id);
+        }
+    }
+
+    let mut answers = Vec::new();
+    for (id, ask_question, answer) in &work.asks {
+        let answer = clamp(answer, MAX_ANSWER_CHARS);
+        let mark = digest(&answer);
+        if sent.asks.get(id) != Some(&mark) {
+            answers.push(format!(
+                "- asked: {}\n  answered: {answer}",
+                clamp(ask_question, MAX_NOTE_CHARS)
+            ));
+        }
+        next.asks.insert(id.clone(), mark);
+    }
+
+    for (label, mut lines) in [
+        ("NEW REVIEW NOTES", fresh),
+        ("UPDATED REVIEW NOTES", changed),
+        ("REMOVED REVIEW NOTES", removed),
+        ("NEW AI ANSWERS", answers),
+    ] {
+        let dropped = lines.len().saturating_sub(MAX_ENTRIES);
+        lines.truncate(MAX_ENTRIES);
+        section(&mut out, label, &lines, dropped);
+    }
+
+    if let Some(overall) = work.overall.as_deref().filter(|v| !v.trim().is_empty()) {
+        let overall = clamp(overall, MAX_NOTE_CHARS);
+        let mark = digest(&overall);
+        if sent.overall != Some(mark) {
+            out.push_str("OVERALL COMMENT\n");
+            out.push_str(&overall);
+            out.push_str("\n\n");
+        }
+        next.overall = Some(mark);
+    }
+
+    out.push_str("QUESTION\n");
+    out.push_str(question.trim());
+    out.push('\n');
+    (out, next)
 }
 
 /// `--tools read` is read-only by construction: no write, no edit, no bash.
@@ -123,18 +268,82 @@ mod tests {
         }
     }
 
+    fn note(id: &str, body: &str) -> (String, String, String) {
+        (id.into(), "src/retry.rs:12".into(), body.into())
+    }
+
     #[test]
-    fn the_first_turn_carries_the_context_and_later_turns_do_not() {
-        let first = compose_prompt(&context(), "why the backoff?", true);
+    fn the_first_dispatch_carries_the_context_and_later_ones_do_not() {
+        let work = ReviewerWork::default();
+        let (first, sent) = compose_prompt(&context(), &work, &ChatSent::default(), "why?");
         assert!(first.contains("PULL REQUEST"), "{first}");
         assert!(first.contains("MON-2799"), "{first}");
         assert!(first.contains("src/retry.rs"), "{first}");
-        assert!(first.contains("QUESTION\nwhy the backoff?"), "{first}");
+        assert!(first.contains("QUESTION\nwhy?"), "{first}");
 
         // The session carries the thread, so repeating the context would only burn tokens.
-        let second = compose_prompt(&context(), "and the cap?", false);
+        let (second, _) = compose_prompt(&context(), &work, &sent, "and the cap?");
         assert!(!second.contains("PULL REQUEST"), "{second}");
         assert_eq!(second, "QUESTION\nand the cap?\n");
+    }
+
+    #[test]
+    fn only_work_added_since_the_previous_dispatch_is_resent() {
+        let mut work = ReviewerWork {
+            notes: vec![note("n1", "this retry loop never terminates")],
+            ..ReviewerWork::default()
+        };
+        let (first, sent) = compose_prompt(&context(), &work, &ChatSent::default(), "why?");
+        assert!(first.contains("never terminates"), "{first}");
+
+        // Unchanged work must not ride along again.
+        let (second, sent) = compose_prompt(&context(), &work, &sent, "and?");
+        assert!(!second.contains("never terminates"), "{second}");
+
+        // A note written mid-conversation is new information and must reach the model.
+        work.notes.push(note("n2", "this cap looks arbitrary"));
+        let (third, sent) = compose_prompt(&context(), &work, &sent, "what about the cap?");
+        assert!(third.contains("NEW REVIEW NOTES"), "{third}");
+        assert!(third.contains("arbitrary"), "{third}");
+        assert!(!third.contains("never terminates"), "{third}");
+
+        // Editing resends; deleting is named so the model stops relying on it.
+        work.notes[0].2 = "actually it terminates on the third attempt".into();
+        work.notes.remove(1);
+        let (fourth, _) = compose_prompt(&context(), &work, &sent, "so?");
+        assert!(fourth.contains("UPDATED REVIEW NOTES"), "{fourth}");
+        assert!(fourth.contains("third attempt"), "{fourth}");
+        assert!(fourth.contains("REMOVED REVIEW NOTES"), "{fourth}");
+        assert!(fourth.contains("n2"), "{fourth}");
+    }
+
+    #[test]
+    fn answered_asks_ride_along_and_long_answers_are_truncated() {
+        let work = ReviewerWork {
+            asks: vec![("a1".into(), "why 429?".into(), "x".repeat(5_000))],
+            ..ReviewerWork::default()
+        };
+        let (prompt, _) = compose_prompt(&context(), &work, &ChatSent::default(), "and?");
+        assert!(prompt.contains("NEW AI ANSWERS"), "{prompt}");
+        assert!(prompt.contains("why 429?"), "{prompt}");
+        assert!(prompt.contains("(truncated)"), "{prompt}");
+        assert!(
+            prompt.len() < 4_000,
+            "answer was not capped: {}",
+            prompt.len()
+        );
+    }
+
+    #[test]
+    fn a_long_review_caps_the_number_of_entries_and_says_so() {
+        let work = ReviewerWork {
+            notes: (0..60)
+                .map(|n| note(&format!("n{n}"), &format!("finding {n}")))
+                .collect(),
+            ..ReviewerWork::default()
+        };
+        let (prompt, _) = compose_prompt(&context(), &work, &ChatSent::default(), "summary?");
+        assert!(prompt.contains("older not shown"), "{prompt}");
     }
 
     #[test]

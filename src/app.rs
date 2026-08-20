@@ -394,6 +394,7 @@ struct ChatPaneState {
     session_id: Option<String>,
     runtime: AskRuntime,
     jobs: HashMap<AskId, usize>,
+    sent: crate::chat::ChatSent,
     /// Transcript lines held back from the bottom. Reset whenever the conversation moves, so
     /// reading history never leaves the pane stuck away from the newest reply.
     scroll: usize,
@@ -416,6 +417,7 @@ impl ChatPaneState {
             session_id: None,
             runtime: AskRuntime::new(),
             jobs: HashMap::new(),
+            sent: crate::chat::ChatSent::default(),
             scroll: 0,
         }
     }
@@ -1966,9 +1968,12 @@ impl App {
                 id
             }
         };
-        let first_turn = self.chat.turns.is_empty();
-        let prompt =
-            crate::chat::compose_prompt(&self.chat_context(viewport), &question, first_turn);
+        // Snapshot first: `chat_context` borrows mutably, and gathering the reviewer's work needs
+        // shared reads of the controller afterwards.
+        let context = self.chat_context(viewport);
+        let work = self.reviewer_work();
+        let (prompt, next_sent) =
+            crate::chat::compose_prompt(&context, &work, &self.chat.sent, &question);
         let request = crate::chat::request(&self.chat.settings, &session_id, prompt);
         let index = self.chat.turns.len();
         self.chat.turns.push(crate::chat::ChatTurn {
@@ -1981,10 +1986,46 @@ impl App {
         match self.chat.runtime.start(job) {
             Ok(id) => {
                 self.chat.jobs.insert(id, index);
+                // Only a dispatched turn consumes the delta; a refusal must leave it to resend.
+                self.chat.sent = next_sent;
             }
             Err(busy) => {
                 self.chat.turns[index].state = crate::chat::ChatState::Failed(busy.to_string());
             }
+        }
+    }
+
+    /// What the reviewer has written so far, in the shape the prompt wants. Only answered Asks
+    /// are included — a pending one has nothing to tell the model yet.
+    fn reviewer_work(&self) -> crate::chat::ReviewerWork {
+        crate::chat::ReviewerWork {
+            notes: self
+                .review_controller
+                .human_notes()
+                .iter()
+                .map(|note| {
+                    let anchor = note.remote_target.as_ref().map_or_else(
+                        || "general".to_owned(),
+                        crate::remote_review::InlineCommentTarget::display_label,
+                    );
+                    (note.id.clone(), anchor, note.body.clone())
+                })
+                .collect(),
+            asks: self
+                .review_controller
+                .ask_notes()
+                .iter()
+                .filter_map(|ask| match &ask.state {
+                    crate::notes::AskNoteState::Answered(answer) => {
+                        Some((ask.id.clone(), ask.question.clone(), answer.clone()))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            overall: self
+                .remote_review
+                .as_ref()
+                .map(|session| session.overall_body.clone()),
         }
     }
 

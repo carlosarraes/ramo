@@ -402,3 +402,43 @@ fn a_narrow_terminal_suppresses_the_side_pane_but_not_the_full_screen() {
     let frame = narrow_full.render_to_string(80, 24);
     assert!(frame.contains("Ask about this pull request"), "{frame}");
 }
+
+#[test]
+fn a_note_written_mid_conversation_reaches_the_next_question() {
+    let (mut app, seen) = recording_app("answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    for character in "why?".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+    settle(&mut app);
+
+    // Write an inline note on the diff, then ask a follow-up.
+    app.handle_ui_key(ctrl(KeyCode::Char('q')), VIEW);
+    app.handle_ui_key(key(KeyCode::Char('c')), VIEW);
+    for character in "this cap looks arbitrary".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+    app.handle_ui_key(ctrl(KeyCode::Char('s')), VIEW);
+
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    for character in "and now?".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+    app.handle_ui_key(key(KeyCode::Enter), VIEW);
+
+    let requests = seen.lock().unwrap();
+    assert_eq!(requests.len(), 2, "expected two dispatched turns");
+    assert!(
+        !requests[0].prompt.contains("arbitrary"),
+        "the note did not exist yet:\n{}",
+        requests[0].prompt
+    );
+    assert!(
+        requests[1].prompt.contains("arbitrary"),
+        "a note written mid-conversation never reached the model:\n{}",
+        requests[1].prompt
+    );
+    // The standing context rides only the first dispatch.
+    assert!(!requests[1].prompt.contains("CURRENTLY READING"));
+}
