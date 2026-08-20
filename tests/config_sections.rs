@@ -287,3 +287,32 @@ fn the_map_backend_selects_the_analyzer_and_rejects_anything_else() {
         "{error}"
     );
 }
+
+#[test]
+fn chat_layout_defaults_to_full_and_accepts_side() {
+    assert_eq!(
+        resolve("[chat]\nenabled = true\n").chat_layout,
+        ramo::config::ChatLayout::Full,
+        "a conversation is mostly margin at a side pane's width"
+    );
+    assert_eq!(
+        resolve("[chat]\nenabled = true\nlayout = \"side\"\n").chat_layout,
+        ramo::config::ChatLayout::Side
+    );
+}
+
+#[test]
+fn an_unknown_chat_key_is_still_rejected() {
+    // `SETTING_SECTIONS` is a hand-rolled allowlist, so adding `layout` to the struct without
+    // adding it there would have rejected the documented key. Guard both directions.
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("config.toml");
+    std::fs::write(&user, "[chat]\nlayuot = \"side\"\n").unwrap();
+    let error = ConfigResolver::new(ConfigPaths {
+        user: Some(user),
+        repo: None,
+    })
+    .resolve(&patch_input())
+    .unwrap_err();
+    assert!(format!("{error}").contains("layuot"), "{error}");
+}

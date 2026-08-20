@@ -87,10 +87,20 @@ const SETTING_SECTIONS: &[(&str, &[&str])] = &[
     ),
     (
         "chat",
-        &["enabled", "provider", "model", "effort", "timeout_secs"],
+        &[
+            "enabled",
+            "provider",
+            "model",
+            "effort",
+            "timeout_secs",
+            "layout",
+        ],
     ),
     ("linear", &["enabled", "command"]),
 ];
+const CHAT_FULL_SCREEN_NOTICE: &str =
+    "Chat is now full screen · set [chat] layout = \"side\" for the pane beside the diff";
+
 const CUSTOM_THEME_COLOR_KEYS: &[&str] = &[
     "background",
     "panel",
@@ -221,6 +231,21 @@ impl ConfigResolver {
                 .is_some_and(|config| config.uses_legacy_syntax)
         {
             resolved.startup_notices.push(LEGACY_SYNTAX_NOTICE.into());
+        }
+        // Chat used to be a side pane. Anyone who already had it on will find it covering the
+        // diff, so say once where the old layout went rather than letting them wonder.
+        if resolved.chat_enabled
+            && resolved.chat_layout == crate::config::ChatLayout::Full
+            && !user
+                .as_ref()
+                .is_some_and(|config| config.chat.layout.is_some())
+            && !repo
+                .as_ref()
+                .is_some_and(|config| config.chat.layout.is_some())
+        {
+            resolved
+                .startup_notices
+                .push(CHAT_FULL_SCREEN_NOTICE.into());
         }
 
         if input.kind() == InputKind::Pager || input.options().pager == Some(true) {
@@ -383,7 +408,7 @@ fn validate_sections(path: &Path, config: &ConfigFile) -> Result<(), ConfigError
         path: path.to_path_buf(),
         source,
     };
-    let agents = [("ask", &config.ask), ("chat", &config.chat)];
+    let agents = [("ask", &config.ask), ("chat", &config.chat.agent)];
     let map_agent = AgentSection {
         enabled: config.map.enabled,
         provider: config.map.provider.clone(),

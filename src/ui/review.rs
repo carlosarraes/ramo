@@ -1,5 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
+
+use crate::config::ChatLayout;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Widget;
@@ -56,6 +58,17 @@ const CHAT_PERCENT: u16 = 40;
 
 pub fn review_areas(area: Rect) -> ReviewAreas {
     review_areas_with_chat(area, false)
+}
+
+/// Where the chat pane goes, if anywhere. The single answer for both drawing and paging, so a
+/// PageUp cannot disagree with what is on screen about how tall a screenful is.
+pub fn chat_area(area: Rect, layout: ChatLayout, open: bool) -> Option<Rect> {
+    match layout {
+        // Full screen is the pane, so the minimum-width rule does not apply — enforcing it there
+        // would leave a chat screen that renders nothing at all.
+        ChatLayout::Full => open.then_some(area),
+        ChatLayout::Side => review_areas_with_chat(area, open).chat,
+    }
 }
 
 pub fn review_areas_with_chat(area: Rect, chat: bool) -> ReviewAreas {

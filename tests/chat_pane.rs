@@ -28,17 +28,36 @@ fn files() -> Vec<ramo::diff::model::DiffFile> {
     ))
 }
 
-fn enabled() -> ResolvedConfig {
+/// The side pane. Every test written before the layout became configurable asserts this shape:
+/// the diff and the pane visible in the same frame.
+fn side() -> ResolvedConfig {
     ResolvedConfig {
         chat_enabled: true,
+        chat_layout: ramo::config::ChatLayout::Side,
+        ..ResolvedConfig::default()
+    }
+}
+
+/// The shipped default.
+fn full() -> ResolvedConfig {
+    ResolvedConfig {
+        chat_enabled: true,
+        chat_layout: ramo::config::ChatLayout::Full,
         ..ResolvedConfig::default()
     }
 }
 
 fn recording_app(answer: &'static str) -> (App, Arc<Mutex<Vec<ramo::ask::AskRequest>>>) {
+    recording_app_with(side(), answer)
+}
+
+fn recording_app_with(
+    config: ResolvedConfig,
+    answer: &'static str,
+) -> (App, Arc<Mutex<Vec<ramo::ask::AskRequest>>>) {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&seen);
-    let app = App::new_with_config(files(), &enabled(), false).with_ask_runner(move |request| {
+    let app = App::new_with_config(files(), &config, false).with_ask_runner(move |request| {
         sink.lock().unwrap().push(request.clone());
         move || Ok(answer.to_owned())
     });
@@ -305,4 +324,81 @@ fn page_up_scrolls_back_through_the_transcript() {
         scrolled.contains("question number 0"),
         "cannot reach the oldest turn:\n{scrolled}"
     );
+}
+
+#[test]
+fn full_screen_chat_covers_the_diff_and_ctrl_q_brings_it_back() {
+    let (mut app, _) = recording_app_with(full(), "answer");
+    assert!(app.render_to_string(120, 24).contains("let backoff"));
+
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    let chat = app.render_to_string(120, 24);
+    assert!(chat.contains("Ask about this pull request"), "{chat}");
+    assert!(
+        !chat.contains("let backoff"),
+        "full screen should own the frame:\n{chat}"
+    );
+
+    app.handle_ui_key(ctrl(KeyCode::Char('q')), VIEW);
+    let back = app.render_to_string(120, 24);
+    assert!(back.contains("let backoff"), "{back}");
+    assert!(!back.contains("Ask about this pull request"), "{back}");
+}
+
+#[test]
+fn the_composer_still_grows_and_the_transcript_still_scrolls_at_full_screen() {
+    let (mut app, _) = recording_app_with(full(), "answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+
+    for character in "first line here".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+    app.handle_ui_key(shift(KeyCode::Enter), VIEW);
+    for character in "second line here".chars() {
+        app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+    }
+
+    let frame = app.render_to_string(120, 24);
+    let first = row_of(&frame, "first line here").expect("first line");
+    let second = row_of(&frame, "second line here").expect("second line");
+    assert!(
+        second > first,
+        "composer did not grow at full screen:\n{frame}"
+    );
+}
+
+#[test]
+fn page_up_scrolls_the_transcript_at_full_screen() {
+    let (mut app, _) = recording_app_with(full(), "answer");
+    app.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    for turn in 0..12 {
+        for character in format!("question number {turn} about the retry code").chars() {
+            app.handle_ui_key(key(KeyCode::Char(character)), VIEW);
+        }
+        app.handle_ui_key(key(KeyCode::Enter), VIEW);
+        settle(&mut app);
+    }
+    assert!(!app.render_to_string(120, 24).contains("question number 0"));
+
+    app.handle_ui_key(key(KeyCode::PageUp), VIEW);
+    let scrolled = app.render_to_string(120, 24);
+    assert!(
+        scrolled.contains("↑") && scrolled.contains("more"),
+        "no scroll indicator at full screen:\n{scrolled}"
+    );
+}
+
+#[test]
+fn a_narrow_terminal_suppresses_the_side_pane_but_not_the_full_screen() {
+    // The side pane yields rather than squeezing the diff; a full-screen chat has no diff to
+    // protect, so suppressing it there would render nothing at all.
+    let (mut narrow_side, _) = recording_app_with(side(), "answer");
+    narrow_side.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    let frame = narrow_side.render_to_string(80, 24);
+    assert!(!frame.contains("Ask about this pull request"), "{frame}");
+
+    let (mut narrow_full, _) = recording_app_with(full(), "answer");
+    narrow_full.handle_ui_key(key(KeyCode::Char('C')), VIEW);
+    let frame = narrow_full.render_to_string(80, 24);
+    assert!(frame.contains("Ask about this pull request"), "{frame}");
 }

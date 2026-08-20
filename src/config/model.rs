@@ -113,6 +113,25 @@ pub struct AgentSection {
     pub timeout_secs: Option<u64>,
 }
 
+/// `[chat]` is an `AgentSection` plus the one key the other AI sections have no use for: chat is
+/// the only one that owns screen space.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct ChatSection {
+    #[serde(flatten)]
+    pub agent: AgentSection,
+    pub layout: Option<ChatLayout>,
+}
+
+/// Full-screen by default: a conversation is a thing you read, and at a side pane's width it is
+/// mostly margin. `side` keeps the older split view for wide terminals.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatLayout {
+    #[default]
+    Full,
+    Side,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct MapSection {
     pub enabled: Option<bool>,
@@ -196,7 +215,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub map: MapSection,
     #[serde(default)]
-    pub chat: AgentSection,
+    pub chat: ChatSection,
     #[serde(default)]
     pub linear: LinearSection,
     #[serde(skip)]
@@ -256,6 +275,7 @@ pub struct ResolvedConfig {
     pub chat_model: String,
     pub chat_effort: String,
     pub chat_timeout_secs: u64,
+    pub chat_layout: ChatLayout,
     pub linear_enabled: bool,
     pub linear_command: String,
     /// `None` keeps the count-aware default body; `Some` replaces it verbatim, so an
@@ -303,8 +323,11 @@ impl Default for ResolvedConfig {
             chat_enabled: false,
             chat_provider: "openai-codex".into(),
             chat_model: "gpt-5.6-luna".into(),
-            chat_effort: "max".into(),
+            // `max` measured ~2x slower for no better output on the Review Map, and chat is
+            // interactive, so latency is felt more here. Set `[chat] effort` to override.
+            chat_effort: "high".into(),
             chat_timeout_secs: 300,
+            chat_layout: ChatLayout::Full,
             linear_enabled: true,
             linear_command: "linear".into(),
             review_message: None,
@@ -436,11 +459,14 @@ impl ResolvedConfig {
             self.review_map_token_file = Some(token_file.clone());
         }
 
-        apply(&mut self.chat_enabled, file.chat.enabled);
-        assign(&mut self.chat_provider, &file.chat.provider);
-        assign(&mut self.chat_model, &file.chat.model);
-        assign(&mut self.chat_effort, &file.chat.effort);
-        if let Some(timeout) = file.chat.timeout_secs {
+        apply(&mut self.chat_enabled, file.chat.agent.enabled);
+        assign(&mut self.chat_provider, &file.chat.agent.provider);
+        assign(&mut self.chat_model, &file.chat.agent.model);
+        assign(&mut self.chat_effort, &file.chat.agent.effort);
+        if let Some(layout) = file.chat.layout {
+            self.chat_layout = layout;
+        }
+        if let Some(timeout) = file.chat.agent.timeout_secs {
             self.chat_timeout_secs = timeout;
         }
 

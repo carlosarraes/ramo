@@ -16,11 +16,23 @@ const EMPTY: &str =
 /// would be all composer and no conversation.
 const MAX_INPUT_ROWS: u16 = 6;
 
+/// Only the chrome differs between the two layouts — the transcript, the growing composer and the
+/// scroll maths below are all pure functions of `area`, so they serve both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatPresentation {
+    /// Beside the diff: a vertical rule, and text inset past it.
+    Side,
+    /// The whole screen: no rule, symmetric inset, and a title row like the other overlays.
+    Full,
+}
+
 pub struct ChatPane<'a> {
     turns: &'a [ChatTurn],
     draft: &'a TextInput,
     focused: bool,
     scroll: usize,
+    presentation: ChatPresentation,
+    title: Option<&'a str>,
     theme: &'a AppTheme,
 }
 
@@ -37,8 +49,16 @@ impl<'a> ChatPane<'a> {
             draft,
             focused,
             scroll,
+            presentation: ChatPresentation::Side,
+            title: None,
             theme,
         }
+    }
+
+    pub fn presentation(mut self, presentation: ChatPresentation, title: Option<&'a str>) -> Self {
+        self.presentation = presentation;
+        self.title = title;
+        self
     }
 }
 
@@ -51,23 +71,54 @@ impl Widget for ChatPane<'_> {
             area,
             Style::default().fg(self.theme.text).bg(self.theme.panel),
         );
-        // A one-column rule separates the pane from the diff without stealing a whole column
-        // of text width from either side.
-        for y in area.y..area.bottom() {
+        let full = self.presentation == ChatPresentation::Full;
+        if !full {
+            // A one-column rule separates the pane from the diff without stealing a whole column
+            // of text width from either side.
+            for y in area.y..area.bottom() {
+                buffer.set_stringn(
+                    area.x,
+                    y,
+                    "│",
+                    1,
+                    Style::default().fg(self.theme.border).bg(self.theme.panel),
+                );
+            }
+        }
+        let mut inner = if full {
+            Rect::new(
+                area.x.saturating_add(1),
+                area.y,
+                area.width.saturating_sub(2),
+                area.height,
+            )
+        } else {
+            Rect::new(
+                area.x.saturating_add(2),
+                area.y,
+                area.width.saturating_sub(3),
+                area.height,
+            )
+        };
+        if full && inner.height > 2 {
+            // A title row, so a full-screen chat announces itself the way the other overlays do.
             buffer.set_stringn(
-                area.x,
-                y,
-                "│",
-                1,
-                Style::default().fg(self.theme.border).bg(self.theme.panel),
+                inner.x,
+                inner.y,
+                self.title.unwrap_or("Chat"),
+                usize::from(inner.width),
+                Style::default()
+                    .fg(self.theme.text)
+                    .bg(self.theme.panel)
+                    .add_modifier(Modifier::BOLD),
+            );
+            inner = Rect::new(
+                inner.x,
+                inner.y.saturating_add(1),
+                inner.width,
+                inner.height.saturating_sub(1),
             );
         }
-        let inner = Rect::new(
-            area.x.saturating_add(2),
-            area.y,
-            area.width.saturating_sub(3),
-            area.height,
-        );
         if inner.width == 0 || inner.height < 3 {
             return;
         }

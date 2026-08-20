@@ -327,6 +327,7 @@ pub struct App {
     linear_settings: LinearSettings,
     linear_runner: LinearRunner,
     chat: ChatPaneState,
+    chat_layout: crate::config::ChatLayout,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -580,6 +581,7 @@ impl App {
             },
             linear_runner: linear_runner(),
             chat: ChatPaneState::new(config, pager_mode),
+            chat_layout: config.chat_layout,
         }
     }
 
@@ -1225,6 +1227,24 @@ impl App {
             }
             return;
         }
+        if self.screen == AppScreen::Chat && self.chat_layout == crate::config::ChatLayout::Full {
+            let title = self.remote_review.as_ref().map_or_else(
+                || "Chat · Ctrl-Q back".to_owned(),
+                |session| format!("Chat · PR #{} · Ctrl-Q back", session.context.number),
+            );
+            frame.render_widget(
+                crate::ui::chat::ChatPane::new(
+                    &self.chat.turns,
+                    &self.chat.draft,
+                    true,
+                    self.chat.scroll,
+                    &self.review_theme,
+                )
+                .presentation(crate::ui::chat::ChatPresentation::Full, Some(&title)),
+                area,
+            );
+            return;
+        }
         if self.screen == AppScreen::ReviewMap {
             if let Some(controller) = &self.review_map {
                 let snapshot = controller.snapshot();
@@ -1272,7 +1292,10 @@ impl App {
                 .ask_badge(Some(self.ask_unseen.len())),
             areas.footer,
         );
-        if let Some(chat) = areas.chat {
+        if let Some(chat) = areas
+            .chat
+            .filter(|_| self.chat_layout == crate::config::ChatLayout::Side)
+        {
             frame.render_widget(
                 crate::ui::chat::ChatPane::new(
                     &self.chat.turns,
@@ -1903,8 +1926,7 @@ impl App {
     /// stays right if the pane's proportions ever change. The renderer clamps the top.
     fn scroll_chat(&mut self, pages: i32, viewport: Viewport) {
         let area = ratatui::layout::Rect::new(0, 0, viewport.width, viewport.height);
-        let page = crate::ui::review::review_areas_with_chat(area, true)
-            .chat
+        let page = crate::ui::review::chat_area(area, self.chat_layout, true)
             .map_or(1, |chat| usize::from(chat.height.saturating_sub(3)).max(1));
         let delta = (pages as isize).saturating_mul(page as isize);
         self.chat.scroll = self.chat.scroll.saturating_add_signed(delta);
