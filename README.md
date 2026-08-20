@@ -357,9 +357,12 @@ The review UI is a continuous file stream with an explicit highlighted cursor. E
 | `i` | Reveal/hide AI and agent notes |
 | `a` | Ask an AI about the change under the cursor; press it again inside the same lines to follow up (off by default; see Ask AI about the diff) |
 | `o` | Jump to the next ready AI answer |
+| `M` | Open the Review Map: the change grouped, ordered, and summarised. `M` again returns to the code |
 | `P` | In `ramo pr`, read the pull request description; `j`/`k`, `d`/`u`, `g`/`G` scroll and `P`, `q`, or Escape returns |
 | `L` | In `ramo pr`, read the Linear ticket the PR refers to. The identifier is inferred from the branch, title, or a Linear URL in the description; same scroll keys, `L` returns |
-| `C` | Open the chat pane beside the diff. Type a question and press Enter; press `C` again on an empty prompt to return to the diff while the reply arrives. Read-only: the model can read the repository but cannot change anything |
+| `C` | Open chat. Type a question and press Enter; press `C` again on an empty prompt to return to the diff while the reply arrives. Read-only: the model can read the repository but cannot change anything |
+| `M`/`L`/`P`/`C` | Switch straight between the map, the ticket, the PR body, and chat from any of them. Inside chat these switch only while the prompt is empty, so a half-written question still types |
+| `Ctrl-Q` | Back to the code from whatever is open |
 | `A` | Open the native agent-skill setup; `y`/Enter copies its prompt |
 | `z` | Expand/collapse unchanged context |
 | `T` | Compact or restore recognized test files |
@@ -387,15 +390,33 @@ Press `a` again anywhere inside a question's lines — or on its answer card, af
 
 **This is the one part of Ramo that sends your code off this machine, and it is off by default.** Enabling it means your question, the file path, and the anchored diff hunk are sent to the configured remote provider through the `pi` CLI. Ramo never sends the rest of the repository, other files, your environment, or credentials, and it never reads or handles API keys — `pi` owns `~/.pi/agent/auth.json`. Ramo runs `pi` with `--no-tools --no-session`, so nothing executes on your machine and no transcript is stored. Follow-ups keep that guarantee: each call is still a fresh, stateless `pi -p`, and the conversation is replayed from Ramo's own in-memory cards rather than from a session file on disk. ### Chat about the pull request
 
-Press `C` to open a chat pane beside the diff. It carries the pull request, the Linear ticket when
-one was opened, and the file you are reading, and pi's `read` tool lets the model follow code
-beyond the diff. It is read-only by construction — no write, no edit, no shell — and the pane keeps
-rendering while you review, so you can ask, press `C`, and go back to reading until the reply lands.
+Press `C` to open chat. It carries the pull request, the Linear ticket when one was opened, the
+file you are reading, **and the review you are writing** — your inline notes, the answers Ask has
+given you, and your overall comment. Only what changed since your last question is resent, so a
+long review does not resend itself every turn. pi's `read` tool lets the model follow code beyond
+the diff. It is read-only by construction: no write, no edit, no shell.
+
+Chat is full screen by default. For the older pane beside the diff:
+
+```toml
+[chat]
+layout = "side"
+```
 
 **Chat keeps a transcript, unlike Ask.** A conversation needs memory, so ramo names a pi session
 per review and pi stores it under `~/.pi/agent/sessions/`. That is what lets the model remember
 both the thread and the files it has already read; it also means the exchange and the code it read
-persist after you quit. Delete that directory to remove them. Chat is off by default:
+persist after you quit. Delete that directory to remove them.
+
+**The conversation survives closing ramo.** Reopening the same pull request restores the thread and
+resumes pi's session, so a follow-up still builds on what came before. Ramo keeps the transcript
+under its own state directory, capped at the 50 most recently used conversations. pi scopes its
+sessions by directory, so the same PR reviewed from two worktrees is two conversations. If pi's
+session is gone — pruned, upgraded away, or deleted by you — ramo says so and replays the thread
+into the next question rather than pretending the model still remembers it.
+
+Because chat now carries your notes and Ask answers, enabling it sends those to the provider too,
+alongside the code. Chat is off by default:
 
 ```toml
 [chat]
