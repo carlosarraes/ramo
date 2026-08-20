@@ -26,6 +26,7 @@ pub struct ReviewMapWidget<'a> {
     heading: &'a ReviewHeading,
     snapshot: &'a ReviewMapSnapshot,
     theme: &'a AppTheme,
+    notice: Option<&'a str>,
 }
 
 impl<'a> ReviewMapWidget<'a> {
@@ -38,7 +39,14 @@ impl<'a> ReviewMapWidget<'a> {
             heading,
             snapshot,
             theme,
+            notice: None,
         }
+    }
+
+    /// See `PrDescriptionWidget::notice` — the map covers the review footer too.
+    pub fn notice(mut self, notice: Option<&'a str>) -> Self {
+        self.notice = notice;
+        self
     }
 }
 
@@ -64,7 +72,13 @@ impl Widget for ReviewMapWidget<'_> {
         render_state(layout.state, buffer, self.snapshot, self.theme);
         render_rows(layout.content, buffer, self.snapshot, self.theme);
         render_detail(layout.detail, buffer, self.snapshot, self.theme);
-        render_footer(layout.footer, buffer, self.snapshot, self.theme);
+        render_footer(
+            layout.footer,
+            buffer,
+            self.snapshot,
+            self.notice,
+            self.theme,
+        );
     }
 }
 
@@ -454,7 +468,13 @@ fn render_row_with_stats(
     }
 }
 
-fn render_footer(area: Rect, buffer: &mut Buffer, snapshot: &ReviewMapSnapshot, theme: &AppTheme) {
+fn render_footer(
+    area: Rect,
+    buffer: &mut Buffer,
+    snapshot: &ReviewMapSnapshot,
+    notice: Option<&str>,
+    theme: &AppTheme,
+) {
     if area.is_empty() {
         return;
     }
@@ -465,7 +485,10 @@ fn render_footer(area: Rect, buffer: &mut Buffer, snapshot: &ReviewMapSnapshot, 
     buffer.set_stringn(
         area.x,
         area.y,
-        truncate("M code · Enter open · / filter · ? help", help_width),
+        truncate(
+            notice.unwrap_or("Enter open · / filter · M/L/P/C switch · Ctrl-Q code"),
+            help_width,
+        ),
         help_width,
         style,
     );

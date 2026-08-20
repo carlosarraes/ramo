@@ -8,7 +8,7 @@ use super::document::{ScrollableDocument, render_document};
 use super::themes::AppTheme;
 
 pub const EMPTY_DESCRIPTION: &str = "This ticket has no description.";
-const FOOTER_HELP: &str = "j/k scroll · d/u half page · g/G ends · L back";
+const FOOTER_HELP: &str = "j/k scroll · d/u half page · M/L/P/C switch · Ctrl-Q back";
 
 pub fn new_document(description: &str, width: u16) -> ScrollableDocument {
     ScrollableDocument::new(description, EMPTY_DESCRIPTION, width)
@@ -20,6 +20,7 @@ pub struct LinearTicketWidget<'a> {
     theme: &'a AppTheme,
     /// Set when Linear's own GitHub link names a different PR than the one under review.
     mismatch: Option<u64>,
+    notice: Option<&'a str>,
 }
 
 impl<'a> LinearTicketWidget<'a> {
@@ -34,7 +35,14 @@ impl<'a> LinearTicketWidget<'a> {
             document,
             theme,
             mismatch,
+            notice: None,
         }
+    }
+
+    /// See `PrDescriptionWidget::notice`.
+    pub fn notice(mut self, notice: Option<&'a str>) -> Self {
+        self.notice = notice;
+        self
     }
 }
 
@@ -59,7 +67,7 @@ impl Widget for LinearTicketWidget<'_> {
             self.theme,
             &format!("{} · {}", self.ticket.identifier, self.ticket.title),
             &subtitle,
-            FOOTER_HELP,
+            self.notice.unwrap_or(FOOTER_HELP),
             self.document,
         );
     }

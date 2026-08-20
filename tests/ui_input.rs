@@ -965,3 +965,89 @@ fn readline_editing_drives_the_note_draft_and_its_caret() {
     app.handle_ui_key(controlled(KeyCode::Char('k')), view);
     assert_eq!(draft(&app), (String::new(), 0));
 }
+
+const SCREEN_MODES: [InputMode; 4] = [
+    InputMode::Normal,
+    InputMode::ReviewMap,
+    InputMode::PrDescription,
+    InputMode::LinearTicket,
+];
+
+#[test]
+fn overlay_keys_switch_between_every_screen_from_every_screen() {
+    // The point of the change: an overlay is no longer an island.
+    for mode in SCREEN_MODES {
+        for (code, expected) in [
+            ('M', AppAction::ToggleReviewMap),
+            ('P', AppAction::TogglePrDescription),
+            ('L', AppAction::ToggleLinearTicket),
+            ('C', AppAction::ToggleChat),
+        ] {
+            assert_eq!(
+                map_key_event(key(KeyCode::Char(code)), mode, false),
+                Some(expected),
+                "{code} from {mode:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ctrl_q_returns_to_the_code_from_every_screen() {
+    for mode in SCREEN_MODES.iter().copied().chain([InputMode::Chat]) {
+        assert_eq!(
+            map_key_event(controlled(KeyCode::Char('q')), mode, false),
+            Some(AppAction::CloseOverlay),
+            "Ctrl-Q from {mode:?}"
+        );
+    }
+}
+
+#[test]
+fn ctrl_q_and_overlay_keys_stay_inert_in_pager_mode() {
+    for event in [
+        controlled(KeyCode::Char('q')),
+        key(KeyCode::Char('M')),
+        key(KeyCode::Char('P')),
+    ] {
+        assert_eq!(map_key_event(event, InputMode::Normal, true), None);
+    }
+}
+
+#[test]
+fn a_text_mode_still_types_capital_letters() {
+    // Switching must never steal a character from a field the reviewer is writing in.
+    for mode in [
+        InputMode::Note,
+        InputMode::Ask,
+        InputMode::Filter,
+        InputMode::OverallComment,
+        InputMode::Chat,
+    ] {
+        for code in ['M', 'P', 'L', 'C'] {
+            assert_eq!(
+                map_key_event(key(KeyCode::Char(code)), mode, false),
+                Some(AppAction::Insert(code)),
+                "{code} in {mode:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ctrl_w_is_still_delete_word_back_in_every_text_mode() {
+    // Ctrl-W was ruled out as the close key precisely to keep this.
+    for mode in [
+        InputMode::Note,
+        InputMode::Ask,
+        InputMode::Filter,
+        InputMode::OverallComment,
+        InputMode::Chat,
+    ] {
+        assert_eq!(
+            map_key_event(controlled(KeyCode::Char('w')), mode, false),
+            Some(AppAction::Edit(ramo::ui::input::TextEdit::DeleteWordBack)),
+            "{mode:?}"
+        );
+    }
+}

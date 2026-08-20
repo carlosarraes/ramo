@@ -8,7 +8,7 @@ use super::document::{ScrollableDocument, render_document};
 use super::themes::AppTheme;
 
 pub const EMPTY_DESCRIPTION: &str = "This pull request has no description.";
-const FOOTER_HELP: &str = "j/k scroll · d/u half page · g/G ends · P back";
+const FOOTER_HELP: &str = "j/k scroll · d/u half page · M/L/P/C switch · Ctrl-Q back";
 
 pub fn new_document(body: &str, width: u16) -> ScrollableDocument {
     ScrollableDocument::new(body, EMPTY_DESCRIPTION, width)
@@ -18,6 +18,7 @@ pub struct PrDescriptionWidget<'a> {
     context: &'a PullRequestReviewContext,
     document: &'a mut ScrollableDocument,
     theme: &'a AppTheme,
+    notice: Option<&'a str>,
 }
 
 impl<'a> PrDescriptionWidget<'a> {
@@ -30,7 +31,15 @@ impl<'a> PrDescriptionWidget<'a> {
             context,
             document,
             theme,
+            notice: None,
         }
+    }
+
+    /// Replaces the help footer with a message. Full-screen overlays cover the review footer, so
+    /// without this a refusal like "Linear tickets are off" would be reported to nobody.
+    pub fn notice(mut self, notice: Option<&'a str>) -> Self {
+        self.notice = notice;
+        self
     }
 }
 
@@ -51,7 +60,7 @@ impl Widget for PrDescriptionWidget<'_> {
                 "{} wants to merge {} into {}",
                 self.context.author_login, self.context.head_ref, self.context.base_ref
             ),
-            FOOTER_HELP,
+            self.notice.unwrap_or(FOOTER_HELP),
             self.document,
         );
     }

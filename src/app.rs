@@ -137,6 +137,21 @@ pub enum AppScreen {
     Review,
     PrDescription,
     LinearTicket,
+    Chat,
+}
+
+impl AppScreen {
+    /// Every screen owns exactly one input mode. That is what lets `screen` be the single source
+    /// of truth and `input_mode` be derived from it rather than tracked in parallel.
+    fn input_mode(self) -> InputMode {
+        match self {
+            Self::ReviewMap => InputMode::ReviewMap,
+            Self::Review => InputMode::Normal,
+            Self::PrDescription => InputMode::PrDescription,
+            Self::LinearTicket => InputMode::LinearTicket,
+            Self::Chat => InputMode::Chat,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -308,9 +323,7 @@ pub struct App {
     /// Built on first `P` and re-wrapped on resize; `None` until the screen is opened.
     pr_description: Option<ScrollableDocument>,
     /// The screen `P` was opened from, so closing returns exactly where it started.
-    pr_description_origin: AppScreen,
     linear: Option<LinearScreen>,
-    linear_origin: AppScreen,
     linear_settings: LinearSettings,
     linear_runner: LinearRunner,
     chat: ChatPaneState,
@@ -560,9 +573,7 @@ impl App {
             ask_unseen: VecDeque::new(),
             review_message: config.review_message.clone(),
             pr_description: None,
-            pr_description_origin: AppScreen::Review,
             linear: None,
-            linear_origin: AppScreen::Review,
             linear_settings: LinearSettings {
                 enabled: config.linear_enabled && !pager_mode,
                 command: config.linear_command.clone(),
@@ -1192,7 +1203,8 @@ impl App {
                 (self.remote_review.as_ref(), self.pr_description.as_mut())
             {
                 frame.render_widget(
-                    PrDescriptionWidget::new(&session.context, document, &self.review_theme),
+                    PrDescriptionWidget::new(&session.context, document, &self.review_theme)
+                        .notice(self.toast.as_deref()),
                     area,
                 );
             }
@@ -1206,7 +1218,8 @@ impl App {
                         &mut screen.document,
                         &self.review_theme,
                         screen.mismatch,
-                    ),
+                    )
+                    .notice(self.toast.as_deref()),
                     area,
                 );
             }
@@ -1216,7 +1229,8 @@ impl App {
             if let Some(controller) = &self.review_map {
                 let snapshot = controller.snapshot();
                 frame.render_widget(
-                    ReviewMapWidget::new(&self.review_heading, &snapshot, &self.review_theme),
+                    ReviewMapWidget::new(&self.review_heading, &snapshot, &self.review_theme)
+                        .notice(self.toast.as_deref()),
                     area,
                 );
                 if self.input_mode == InputMode::Help {
@@ -1583,7 +1597,7 @@ impl App {
             AppAction::ToggleLinearTicket => self.toggle_linear_ticket(viewport),
             AppAction::ScrollLinearTicket(step) => self.scroll_linear_ticket(step),
             AppAction::ToggleChat => self.toggle_chat(),
-            AppAction::CloseChat => self.close_chat(),
+            AppAction::CloseOverlay => self.close_overlay(),
             AppAction::ScrollChat(pages) => self.scroll_chat(pages, viewport),
             AppAction::JumpAskAnswer => self.jump_to_ask_answer(viewport),
             AppAction::FocusReviewMapFilter => {
@@ -1592,12 +1606,26 @@ impl App {
             AppAction::Insert(character) => {
                 // `C` returns to the diff when there is nothing typed, which is the flow after
                 // sending a question. Mid-message it stays an ordinary capital C.
-                if self.input_mode == InputMode::Chat
-                    && character == 'C'
-                    && self.chat.draft.is_empty()
-                {
-                    self.toggle_chat();
-                    return;
+                if self.input_mode == InputMode::Chat && self.chat.draft.is_empty() {
+                    match character {
+                        'C' => {
+                            self.toggle_chat();
+                            return;
+                        }
+                        'M' => {
+                            self.toggle_review_map(viewport);
+                            return;
+                        }
+                        'P' => {
+                            self.toggle_pr_description(viewport);
+                            return;
+                        }
+                        'L' => {
+                            self.toggle_linear_ticket(viewport);
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
                 // The only edit that can be refused, so it does not go through the shared path.
                 if self.input_mode == InputMode::Ask
@@ -1783,27 +1811,22 @@ impl App {
 
     fn toggle_pr_description(&mut self, viewport: Viewport) {
         if self.screen == AppScreen::PrDescription {
-            self.screen = self.pr_description_origin;
-            self.input_mode = if self.screen == AppScreen::ReviewMap {
-                InputMode::ReviewMap
-            } else {
-                InputMode::Normal
-            };
+            self.set_screen(AppScreen::Review);
             return;
         }
         let Some(session) = self.remote_review.as_ref() else {
             self.toast = Some("No pull request is open".into());
             return;
         };
-        // The viewport is the diff pane rather than the whole terminal, so the widget
-        // re-wraps to the real width on its first draw.
-        self.pr_description = Some(crate::ui::pr_description::new_document(
-            &session.context.body,
-            viewport.width,
-        ));
-        self.pr_description_origin = self.screen;
-        self.screen = AppScreen::PrDescription;
-        self.input_mode = InputMode::PrDescription;
+        // Built once and kept, so switching away and back keeps your place. The widget re-wraps
+        // through `document.fit`, so a resize needs no rebuild here.
+        if self.pr_description.is_none() {
+            self.pr_description = Some(crate::ui::pr_description::new_document(
+                &session.context.body,
+                viewport.width,
+            ));
+        }
+        self.set_screen(AppScreen::PrDescription);
     }
 
     fn scroll_pr_description(&mut self, step: PrScroll) {
@@ -1822,15 +1845,11 @@ impl App {
     /// the PR itself, so there is nothing to type.
     fn toggle_linear_ticket(&mut self, viewport: Viewport) {
         if self.screen == AppScreen::LinearTicket {
-            self.screen = self.linear_origin;
-            self.input_mode = self.base_input_mode();
+            self.set_screen(AppScreen::Review);
             return;
         }
-        if let Some(screen) = &self.linear {
-            self.linear_origin = self.screen;
-            self.screen = AppScreen::LinearTicket;
-            self.input_mode = InputMode::LinearTicket;
-            let _ = screen;
+        if self.linear.is_some() {
+            self.set_screen(AppScreen::LinearTicket);
             return;
         }
         if !self.linear_settings.enabled {
@@ -1863,24 +1882,21 @@ impl App {
                     ticket,
                     mismatch,
                 });
-                self.linear_origin = self.screen;
-                self.screen = AppScreen::LinearTicket;
-                self.input_mode = InputMode::LinearTicket;
+                self.set_screen(AppScreen::LinearTicket);
             }
             Err(error) => self.toast = Some(format!("{id}: {error}")),
         }
     }
 
-    /// `C` opens the pane and focuses it; pressing it again hands focus back to the diff
-    /// while leaving the pane on screen, so a reply can land while you keep reading.
-    /// Hides the pane without touching the conversation: an in-flight turn keeps running and its
-    /// reply is waiting in the transcript when the pane is opened again.
-    fn close_chat(&mut self) {
-        self.chat.open = false;
-        self.chat.scroll = 0;
-        if self.input_mode == InputMode::Chat {
-            self.input_mode = InputMode::Normal;
+    /// Returns to the code from whatever is open. For chat this also unpins the side pane, so the
+    /// diff gets its width back; the conversation itself is untouched and an in-flight turn keeps
+    /// running, which is why closing is only ever a display decision.
+    fn close_overlay(&mut self) {
+        if self.screen == AppScreen::Chat {
+            self.chat.open = false;
+            self.chat.scroll = 0;
         }
+        self.set_screen(AppScreen::Review);
     }
 
     /// Moves by a screenful. The page is measured from the real layout rather than guessed, so it
@@ -1899,12 +1915,14 @@ impl App {
             self.toast = Some("Chat is off; set enabled = true under [chat]".into());
             return;
         }
-        if self.input_mode == InputMode::Chat {
-            self.input_mode = InputMode::Normal;
+        if self.screen == AppScreen::Chat {
+            // Focus goes back to the diff but the side pane stays pinned, so a reply can land
+            // while you read. `Ctrl-Q` is what actually closes it.
+            self.set_screen(AppScreen::Review);
             return;
         }
         self.chat.open = true;
-        self.input_mode = InputMode::Chat;
+        self.set_screen(AppScreen::Chat);
     }
 
     /// Sends the drafted question. The first turn carries the PR, ticket, and current file;
@@ -2025,16 +2043,12 @@ impl App {
         {
             self.sync_map_reviewed(&path, true);
         }
-        self.filter_buffer.clear();
-        self.screen = AppScreen::ReviewMap;
-        self.input_mode = InputMode::ReviewMap;
+        self.set_screen(AppScreen::ReviewMap);
         self.clear_review_selection();
     }
 
     fn show_review_screen(&mut self) {
-        self.filter_buffer.clear();
-        self.screen = AppScreen::Review;
-        self.input_mode = InputMode::Normal;
+        self.set_screen(AppScreen::Review);
     }
 
     fn sync_map_reviewed(&mut self, path: &str, reviewed: bool) {
@@ -2563,11 +2577,16 @@ impl App {
     }
 
     fn base_input_mode(&self) -> InputMode {
-        if self.screen == AppScreen::ReviewMap {
-            InputMode::ReviewMap
-        } else {
-            InputMode::Normal
+        self.screen.input_mode()
+    }
+
+    /// The only writer of `screen` and `input_mode`, so the two can never drift apart.
+    fn set_screen(&mut self, screen: AppScreen) {
+        if screen != self.screen {
+            self.filter_buffer.clear();
         }
+        self.screen = screen;
+        self.input_mode = screen.input_mode();
     }
 
     fn confirm_input(&mut self, viewport: Viewport) {

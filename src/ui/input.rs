@@ -62,7 +62,7 @@ pub enum AppAction {
     ToggleLinearTicket,
     ScrollLinearTicket(PrScroll),
     ToggleChat,
-    CloseChat,
+    CloseOverlay,
     ScrollChat(i32),
     JumpAskAnswer,
     FocusReviewMapFilter,
@@ -92,49 +92,83 @@ pub enum AppAction {
     DismissMessage,
 }
 
+/// The keys that belong to no single screen: `Ctrl-Q` closes whatever is open, and M/L/P/C switch
+/// straight between screens. This runs *ahead* of the per-mode dispatch because `map_review_map`
+/// and `map_document_scroll` both reject every Ctrl event before they match anything.
+///
+/// Text modes are excluded: a reviewer mid-sentence must keep getting their capital letters. Chat
+/// resolves M/L/P/C later, in `App`, where the draft is visible and can be checked for emptiness.
+fn map_overlay_switch(event: KeyEvent, mode: InputMode) -> Option<AppAction> {
+    if event.modifiers.contains(KeyModifiers::CONTROL) && event.code == KeyCode::Char('q') {
+        return Some(AppAction::CloseOverlay);
+    }
+    if !matches!(
+        mode,
+        InputMode::Normal
+            | InputMode::ReviewMap
+            | InputMode::PrDescription
+            | InputMode::LinearTicket
+    ) || event
+        .modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
+    match event.code {
+        KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
+        KeyCode::Char('P') => Some(AppAction::TogglePrDescription),
+        KeyCode::Char('L') => Some(AppAction::ToggleLinearTicket),
+        KeyCode::Char('C') => Some(AppAction::ToggleChat),
+        _ => None,
+    }
+}
+
 pub fn map_key_event(event: KeyEvent, mode: InputMode, pager_mode: bool) -> Option<AppAction> {
-    let action = match mode {
-        InputMode::Normal => map_normal(event),
-        InputMode::ReviewMap => map_review_map(event),
-        InputMode::Filter | InputMode::Note | InputMode::Ask => map_text(event, mode),
-        InputMode::Theme => map_theme(event),
-        InputMode::Help => match event.code {
-            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => Some(AppAction::Cancel),
-            _ => None,
-        },
-        InputMode::AgentSkill => match event.code {
-            KeyCode::Char('y') | KeyCode::Enter => Some(AppAction::CopyAgentSkill),
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('A') => Some(AppAction::Cancel),
-            _ => None,
-        },
-        InputMode::SavePrompt => match event.code {
-            KeyCode::Enter | KeyCode::Char('s') => Some(AppAction::Confirm),
-            KeyCode::Char('q') => Some(AppAction::Discard),
-            KeyCode::Char('n') => Some(AppAction::DisableSavePrompt),
-            KeyCode::Esc => Some(AppAction::Cancel),
-            _ => None,
-        },
-        InputMode::PublishPrompt => match event.code {
-            KeyCode::Char('y') => Some(AppAction::ConfirmPublish),
-            KeyCode::Char('n') | KeyCode::Esc => Some(AppAction::KeepReviewing),
-            KeyCode::Char('d') => Some(AppAction::DiscardRemoteReview),
-            _ => None,
-        },
-        InputMode::VerdictPrompt => match event.code {
-            KeyCode::Char('c') => Some(AppAction::ChooseVerdict(ReviewVerdict::Comment)),
-            KeyCode::Char('a') => Some(AppAction::ChooseVerdict(ReviewVerdict::Approve)),
-            KeyCode::Char('r') => Some(AppAction::ChooseVerdict(ReviewVerdict::RequestChanges)),
-            KeyCode::Char('o') => Some(AppAction::EditOverallComment),
-            KeyCode::Esc => Some(AppAction::KeepReviewing),
-            _ => None,
-        },
-        InputMode::PrDescription => map_pr_description(event),
-        InputMode::LinearTicket => map_linear_ticket(event),
-        InputMode::Chat => map_chat(event),
-        InputMode::OverallComment => map_overall_comment(event),
-        InputMode::Message => match event.code {
-            KeyCode::Enter | KeyCode::Esc => Some(AppAction::DismissMessage),
-            _ => None,
+    let action = match map_overlay_switch(event, mode) {
+        Some(action) => Some(action),
+        None => match mode {
+            InputMode::Normal => map_normal(event),
+            InputMode::ReviewMap => map_review_map(event),
+            InputMode::Filter | InputMode::Note | InputMode::Ask => map_text(event, mode),
+            InputMode::Theme => map_theme(event),
+            InputMode::Help => match event.code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => Some(AppAction::Cancel),
+                _ => None,
+            },
+            InputMode::AgentSkill => match event.code {
+                KeyCode::Char('y') | KeyCode::Enter => Some(AppAction::CopyAgentSkill),
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('A') => Some(AppAction::Cancel),
+                _ => None,
+            },
+            InputMode::SavePrompt => match event.code {
+                KeyCode::Enter | KeyCode::Char('s') => Some(AppAction::Confirm),
+                KeyCode::Char('q') => Some(AppAction::Discard),
+                KeyCode::Char('n') => Some(AppAction::DisableSavePrompt),
+                KeyCode::Esc => Some(AppAction::Cancel),
+                _ => None,
+            },
+            InputMode::PublishPrompt => match event.code {
+                KeyCode::Char('y') => Some(AppAction::ConfirmPublish),
+                KeyCode::Char('n') | KeyCode::Esc => Some(AppAction::KeepReviewing),
+                KeyCode::Char('d') => Some(AppAction::DiscardRemoteReview),
+                _ => None,
+            },
+            InputMode::VerdictPrompt => match event.code {
+                KeyCode::Char('c') => Some(AppAction::ChooseVerdict(ReviewVerdict::Comment)),
+                KeyCode::Char('a') => Some(AppAction::ChooseVerdict(ReviewVerdict::Approve)),
+                KeyCode::Char('r') => Some(AppAction::ChooseVerdict(ReviewVerdict::RequestChanges)),
+                KeyCode::Char('o') => Some(AppAction::EditOverallComment),
+                KeyCode::Esc => Some(AppAction::KeepReviewing),
+                _ => None,
+            },
+            InputMode::PrDescription => map_pr_description(event),
+            InputMode::LinearTicket => map_linear_ticket(event),
+            InputMode::Chat => map_chat(event),
+            InputMode::OverallComment => map_overall_comment(event),
+            InputMode::Message => match event.code {
+                KeyCode::Enter | KeyCode::Esc => Some(AppAction::DismissMessage),
+                _ => None,
+            },
         },
     };
     if pager_mode && !action.as_ref().is_some_and(pager_action) {
@@ -193,11 +227,6 @@ fn map_linear_ticket(event: KeyEvent) -> Option<AppAction> {
 /// The chat pane is a text field that lives beside the diff, so it owns ordinary characters
 /// while `C` and Escape hand focus back and `Ctrl-Q` closes it outright.
 fn map_chat(event: KeyEvent) -> Option<AppAction> {
-    // Ahead of `map_readline`, which owns the rest of the control range — `Ctrl-W` in particular
-    // is delete-word-back and must stay that way while a draft is being written.
-    if event.modifiers.contains(KeyModifiers::CONTROL) && event.code == KeyCode::Char('q') {
-        return Some(AppAction::CloseChat);
-    }
     if matches!(event.code, KeyCode::PageUp | KeyCode::PageDown) {
         return Some(AppAction::ScrollChat(if event.code == KeyCode::PageUp {
             1
@@ -376,10 +405,6 @@ fn map_normal(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Char('n') => review(ReviewAction::ToggleLineNumbers),
         KeyCode::Char('w') => review(ReviewAction::ToggleWrap),
         KeyCode::Char('m') => review(ReviewAction::ToggleHunkHeaders),
-        KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
-        KeyCode::Char('P') => Some(AppAction::TogglePrDescription),
-        KeyCode::Char('L') => Some(AppAction::ToggleLinearTicket),
-        KeyCode::Char('C') => Some(AppAction::ToggleChat),
         KeyCode::Char('e') => review(ReviewAction::EditSelectedFile),
         KeyCode::Char('r') => review(ReviewAction::Reload),
         KeyCode::Char('/') => review(ReviewAction::FocusFilter),
@@ -409,7 +434,6 @@ fn map_review_map(event: KeyEvent) -> Option<AppAction> {
         KeyCode::Enter => map(ReviewMapAction::OpenSelected),
         KeyCode::Char('/') => Some(AppAction::FocusReviewMapFilter),
         KeyCode::Char('r') => map(ReviewMapAction::Retry),
-        KeyCode::Char('M') => Some(AppAction::ToggleReviewMap),
         KeyCode::Char('?') => map(ReviewMapAction::OpenHelp),
         KeyCode::Esc => map(ReviewMapAction::DismissFailure),
         _ => None,
